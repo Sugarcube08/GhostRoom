@@ -24,12 +24,12 @@ jobs:
             artifact_name: ghostroom-android.apk
           - target: ios
             os: macos-latest
-            build_cmd: flutter build ios --release --no-codesign
+            build_cmd: flutter build ios --release --no-codesign --verbose
             artifact_path: client/build/ios/iphoneos/Runner.app
             artifact_name: ghostroom-ios-app.zip
           - target: macos
             os: macos-latest
-            build_cmd: flutter build macos --release
+            build_cmd: flutter build macos --release --verbose
             artifact_path: client/build/macos/Build/Products/Release/ghostroom.app
             artifact_name: ghostroom-macos-app.zip
           - target: windows
@@ -41,7 +41,7 @@ jobs:
             os: ubuntu-latest
             build_cmd: |
               sudo apt-get update
-              sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev libstdc++-14-dev libglu1-mesa-dev
+              sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev libstdc++-14-dev libglu1-mesa-dev libsecret-1-dev libjsoncpp-dev
               flutter build linux --release
             artifact_path: client/build/linux/x64/release/bundle
             artifact_name: ghostroom-linux.tar.gz
