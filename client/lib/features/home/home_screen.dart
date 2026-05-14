@@ -20,7 +20,7 @@ class HomeScreen extends ConsumerWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('VEIL'),
+        title: const Text('GHOST ROOM'),
         actions: [
           IconButton(
             icon: const Icon(Icons.settings_outlined),
@@ -158,10 +158,9 @@ class HomeScreen extends ConsumerWidget {
       final config = await ref.read(spaceServiceProvider).createSpace(relay);
       
       // Save to recent
-      final sodium = ref.read(sodiumProvider);
       await ref.read(relayManagerProvider).addRecentRoom(
         config.roomId,
-        sodium.bin2base64(config.roomKey.extractBytes()),
+        base64Encode(config.roomKey.extractBytes()),
         relay.label,
       );
       ref.invalidate(recentRoomsProvider);
@@ -218,7 +217,7 @@ class HomeScreen extends ConsumerWidget {
               final List<Barcode> barcodes = capture.barcodes;
               for (final barcode in barcodes) {
                 final code = barcode.rawValue;
-                if (code != null && code.startsWith('veil://room/')) {
+                if (code != null && code.startsWith('ghost://room/')) {
                   _handleInviteLink(context, ref, code);
                   break;
                 }
@@ -236,12 +235,27 @@ class HomeScreen extends ConsumerWidget {
     if (image == null) return;
 
     final scanner = MobileScannerController();
-    final barcodes = await scanner.analyzeImage(image.path);
-    if (barcodes != null && barcodes.barcodes.isNotEmpty) {
-      final code = barcodes.barcodes.first.rawValue;
-      if (code != null && code.startsWith('veil://room/')) {
-        _handleInviteLink(context, ref, code);
+    try {
+      // In mobile_scanner 3.x, analyzeImage returns a bool and results are sent to the barcodes stream
+      final found = await scanner.analyzeImage(image.path);
+      if (found) {
+        // We listen to the first result from the stream
+        await for (final capture in scanner.barcodes) {
+          if (capture.barcodes.isNotEmpty) {
+            final code = capture.barcodes.first.rawValue;
+            if (code != null && code.startsWith('ghost://room/')) {
+              if (context.mounted) {
+                _handleInviteLink(context, ref, code);
+              }
+            }
+            break;
+          }
+        }
       }
+    } catch (e) {
+      debugPrint('Error analyzing image: $e');
+    } finally {
+      scanner.dispose();
     }
   }
 
@@ -253,14 +267,14 @@ class HomeScreen extends ConsumerWidget {
         title: const Text('Join Space'),
         content: TextField(
           controller: controller,
-          decoration: const InputDecoration(hintText: 'Paste veil://room/... link'),
+          decoration: const InputDecoration(hintText: 'Paste ghost://room/... link'),
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
           TextButton(
             onPressed: () {
               final link = controller.text;
-              if (link.startsWith('veil://room/')) {
+              if (link.startsWith('ghost://room/')) {
                 Navigator.pop(context);
                 _handleInviteLink(context, ref, link);
               }
@@ -273,14 +287,14 @@ class HomeScreen extends ConsumerWidget {
   }
 
   void _handleInviteLink(BuildContext context, WidgetRef ref, String link) {
-    final uri = Uri.parse(link.replaceFirst('veil://', 'http://'));
+    final uri = Uri.parse(link.replaceFirst('ghost://', 'http://'));
     final roomId = uri.pathSegments.last;
     final keyBase64 = uri.queryParameters['key'];
 
     if (keyBase64 == null) return;
 
     final sodium = ref.read(sodiumProvider);
-    final keyBytes = base64Decode(keyBase64);
+    final keyBytes = base64Decode(keyBase64.trim().replaceAll(" ", ""));
     final roomKey = SecureKey.fromList(sodium, keyBytes);
 
     // Save to recent
@@ -297,7 +311,7 @@ class HomeScreen extends ConsumerWidget {
 
   void _handleManualJoin(BuildContext context, WidgetRef ref, String roomId, String keyBase64) {
     final sodium = ref.read(sodiumProvider);
-    final keyBytes = base64Decode(keyBase64);
+    final keyBytes = base64Decode(keyBase64.trim().replaceAll(" ", ""));
     final roomKey = SecureKey.fromList(sodium, keyBytes);
 
     final config = SpaceConfig(

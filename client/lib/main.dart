@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sodium/sodium.dart';
-import 'core/theme/veil_theme.dart';
+import 'core/theme/ghost_theme.dart';
 import 'core/providers.dart';
 import 'core/widgets/privacy_overlay.dart';
 import 'features/home/home_screen.dart';
@@ -16,20 +16,45 @@ void main() async {
       overrides: [
         sodiumProvider.overrideWithValue(sodium),
       ],
-      child: const VeilApp(),
+      child: const GhostRoomApp(),
     ),
   );
 }
 
-class VeilApp extends ConsumerWidget {
-  const VeilApp({super.key});
+class GhostRoomApp extends ConsumerStatefulWidget {
+  const GhostRoomApp({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<GhostRoomApp> createState() => _GhostRoomAppState();
+}
+
+class _GhostRoomAppState extends ConsumerState<GhostRoomApp> with WidgetsBindingObserver {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.detached || state == AppLifecycleState.hidden) {
+       // Clear recent rooms when app is closed/detached
+       ref.read(relayManagerProvider).clearRecentRooms();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      title: 'Veil',
-      theme: VeilTheme.darkTheme,
+      title: 'Ghost Room',
+      theme: GhostTheme.darkTheme,
       builder: (context, child) => PrivacyOverlay(child: child!),
       home: const SplashScreen(),
     );
@@ -78,7 +103,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Text(
-              'VEIL',
+              'GHOST ROOM',
               style: TextStyle(
                 fontSize: 48,
                 fontWeight: FontWeight.w100,

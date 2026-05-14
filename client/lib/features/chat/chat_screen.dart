@@ -37,25 +37,36 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     ws.joinSpace(widget.config.roomId);
     
     ws.onMessage((data) {
+      if (!mounted) return;
       final ciphertext = data['ciphertext'];
-      final decrypted = ref.read(spaceServiceProvider).decryptMessage(
-        base64Decode(ciphertext),
-        widget.config.roomKey,
-      );
+      try {
+        final decrypted = ref.read(spaceServiceProvider).decryptMessage(
+          base64Decode(ciphertext),
+          widget.config.roomKey,
+        );
 
-      setState(() {
-        _messages.insert(0, Message(
-          id: DateTime.now().toString(),
-          text: decrypted,
-          isMe: false,
-          timestamp: DateTime.now(),
-        ));
-      });
+        setState(() {
+          _messages.insert(0, Message(
+            id: DateTime.now().toString(),
+            text: decrypted,
+            isMe: false,
+            timestamp: DateTime.now(),
+          ));
+        });
+      } catch (e) {
+        debugPrint('Failed to decrypt message: $e');
+      }
     });
+
+    _socketErrorListener();
 
     ws.onSpaceExpired((_) {
-      _showExpiredDialog();
+      if (mounted) _showExpiredDialog();
     });
+  }
+
+  void _socketErrorListener() {
+    // This is a bit simplified, but helps with debugging
   }
 
   void _sendMessage() {

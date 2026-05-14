@@ -1,4 +1,4 @@
-package com.veil.app.veil
+package com.ghostroom.app
 import io.flutter.embedding.android.FlutterActivity
 import android.view.WindowManager
 import android.os.Bundle

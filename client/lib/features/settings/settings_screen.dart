@@ -34,7 +34,7 @@ class SettingsScreen extends ConsumerWidget {
           const SizedBox(height: 32),
           const Center(
             child: Text(
-              'VEIL MVP v0.0.1\nDISPOSABLE INFRASTRUCTURE',
+              'GHOSTROOM MVP v0.0.1\nDISPOSABLE INFRASTRUCTURE',
               textAlign: TextAlign.center,
               style: TextStyle(color: Colors.white24, fontSize: 10, letterSpacing: 2),
             ),

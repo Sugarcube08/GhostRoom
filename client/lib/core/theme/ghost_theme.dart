@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-class VeilTheme {
+class GhostTheme {
   static ThemeData darkTheme = ThemeData(
     useMaterial3: true,
     brightness: Brightness.dark,

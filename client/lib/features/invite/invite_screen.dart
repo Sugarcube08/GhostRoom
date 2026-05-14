@@ -14,7 +14,7 @@ class InviteScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final keyBase64 = base64Encode(config.roomKey.extractBytes());
-    final inviteLink = 'veil://room/${config.roomId}?key=$keyBase64';
+    final inviteLink = 'ghost://room/${config.roomId}?key=$keyBase64';
 
     return Scaffold(
       appBar: AppBar(title: const Text('INVITE')),

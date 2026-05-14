@@ -41,7 +41,7 @@ class _PrivacyOverlayState extends State<PrivacyOverlay> with WidgetsBindingObse
             color: Colors.black,
             child: const Center(
               child: Text(
-                'VEIL',
+                'GHOST ROOM',
                 style: TextStyle(
                   color: Colors.white12,
                   fontSize: 32,

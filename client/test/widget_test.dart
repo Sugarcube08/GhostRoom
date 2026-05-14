@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:veil/main.dart';
+import 'package:ghostroom/main.dart';
 
 void main() {
   testWidgets('Smoke test', (WidgetTester tester) async {

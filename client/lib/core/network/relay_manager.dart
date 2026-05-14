@@ -104,4 +104,8 @@ class RelayManager {
 
     await _storage.write(key: _recentRoomsKey, value: jsonEncode(rooms));
   }
+
+  Future<void> clearRecentRooms() async {
+    await _storage.delete(key: _recentRoomsKey);
+  }
 }

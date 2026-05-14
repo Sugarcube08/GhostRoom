@@ -25,12 +25,12 @@ class WebSocketService {
       connectionUrl = connectionUrl.replaceFirst('wss://', 'https://');
     }
 
-    _socket = io.io(connectionUrl, <String, dynamic>{
-      'transports': ['websocket', 'polling'],
-      'autoConnect': true,
-      'forceNew': true,
-      'extraHeaders': profile.token != null ? {'Authorization': 'Bearer ${profile.token}'} : {},
-    });
+    _socket = io.io(connectionUrl, io.OptionBuilder()
+      .setTransports(['websocket'])
+      .enableAutoConnect()
+      .enableForceNew()
+      .setExtraHeaders(profile.token != null ? {'Authorization': 'Bearer ${profile.token}'} : {})
+      .build());
 
     _socket!.onConnect((_) {
       _logger.i('Connected to relay: ${profile.label} at $connectionUrl');
@@ -47,6 +47,14 @@ class WebSocketService {
     _socket!.onError((err) {
       _logger.e('Socket error: $err');
     });
+
+    _socket!.on('space.joined', (data) {
+      _logger.i('Successfully joined space: ${data['roomId']}');
+    });
+
+    _socket!.on('error', (data) {
+      _logger.e('Server error: ${data['message']}');
+    });
   }
 
   void joinSpace(String roomId) {
@@ -61,10 +69,12 @@ class WebSocketService {
   }
 
   void onMessage(Function(dynamic) callback) {
+    _socket?.off('message.receive');
     _socket?.on('message.receive', (data) => callback(data));
   }
 
   void onSpaceExpired(Function(dynamic) callback) {
+    _socket?.off('space.expired');
     _socket?.on('space.expired', (data) => callback(data));
   }
 

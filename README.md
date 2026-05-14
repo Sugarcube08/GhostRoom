@@ -1,6 +1,6 @@
-# Veil — Privacy-First Ephemeral Communication
+# GhostRoom — Privacy-First Ephemeral Communication
 
-Veil is a production-grade MVP for an anonymous, ephemeral, encrypted communication platform.
+GhostRoom is a production-grade MVP for an anonymous, ephemeral, encrypted communication platform.
 
 ## Core Philosophy
 - **No Identity:** No accounts, phone numbers, or emails.

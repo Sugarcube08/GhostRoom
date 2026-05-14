@@ -38,23 +38,26 @@ export class RelayGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   @SubscribeMessage('space.join')
   async handleJoin(client: Socket, payload: { roomId: string }) {
+    this.logger.log(`Join request for room: ${payload.roomId} from client: ${client.id}`);
     const room = await this.roomsService.getRoom(payload.roomId);
     if (!room) {
+      this.logger.warn(`Room not found: ${payload.roomId}`);
       client.emit('error', { message: 'Space not found or expired' });
       return;
     }
 
-    client.join(payload.roomId);
+    await client.join(payload.roomId);
     client.emit('space.joined', { roomId: payload.roomId });
-    this.logger.log(`Client ${client.id} joined room ${payload.roomId}`);
+    this.logger.log(`Client ${client.id} successfully joined room ${payload.roomId}`);
   }
 
   @SubscribeMessage('message.send')
   async handleMessage(client: Socket, payload: { roomId: string; ciphertext: string; nonce: string; expiry: number }) {
+    this.logger.log(`Message from ${client.id} to room ${payload.roomId}`);
     // Relay to all in room
     client.to(payload.roomId).emit('message.receive', payload);
     
-    // Store in Redis with TTL for late joiners (optional based on privacy preference, but helpful for MVP)
+    // Store in Redis with TTL for late joiners
     await this.roomsService.addMessage(payload.roomId, payload, payload.expiry || 300);
   }
 
