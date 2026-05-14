@@ -10,16 +10,12 @@ import Redis from 'ioredis';
       useFactory: (configService: ConfigService) => {
         console.log('🔍 [Redis Client Debug] STARTING INITIALIZATION');
         
-        // Render often provides REDIS_URL or REDIS_INTERNAL_URL.
-        // We prioritize raw process.env because NestJS ConfigService might be 
-        // shadowed by .env files or .env.example templates.
         const rawUrl = process.env.REDIS_URL || process.env.REDIS_INTERNAL_URL || process.env.REDIS_EXTERNAL_URL;
         const configUrl = configService.get<string>('REDIS_URL');
 
         console.log(`🔍 [Redis Client Debug] Raw process.env URL: ${rawUrl ? 'DETECTED' : 'MISSING'}`);
         console.log(`🔍 [Redis Client Debug] Nest ConfigService URL: ${configUrl ? 'DETECTED' : 'MISSING'}`);
 
-        // If Render provides a real URL, use it. Never fallback if a real one exists.
         const finalUrl = rawUrl || configUrl || 'redis://localhost:6379';
         
         if (finalUrl.includes('localhost') && (rawUrl || configUrl)) {
@@ -42,7 +38,17 @@ import Redis from 'ioredis';
           options.tls = { rejectUnauthorized: false };
         }
 
-        return new Redis(finalUrl, options);
+        const client = new Redis(finalUrl, options);
+        
+        client.on('error', (err) => {
+          console.error('❌ [Redis Client Error]', err.message);
+        });
+
+        client.on('connect', () => {
+          console.log('✅ [Redis Client] Connected successfully');
+        });
+
+        return client;
       },
       inject: [ConfigService],
     },
@@ -60,7 +66,17 @@ import Redis from 'ioredis';
           options.tls = { rejectUnauthorized: false };
         }
 
-        return new Redis(finalUrl, options);
+        const client = new Redis(finalUrl, options);
+        
+        client.on('error', (err) => {
+          console.error('❌ [Redis Subscriber Error]', err.message);
+        });
+
+        client.on('connect', () => {
+          console.log('✅ [Redis Subscriber] Connected successfully');
+        });
+
+        return client;
       },
       inject: [ConfigService],
     },
