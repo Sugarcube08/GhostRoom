@@ -8,45 +8,45 @@ import Redis from 'ioredis';
     {
       provide: 'REDIS_CLIENT',
       useFactory: (configService: ConfigService) => {
-        console.log('🔍 [Redis Client Debug] --- ENVIRONMENT AUDIT ---');
+        console.log('🔍 [Redis Debug] --- ENVIRONMENT AUDIT ---');
         
-        const envs = {
-          'process.env.REDIS_URL': process.env.REDIS_URL,
-          'process.env.REDIS_INTERNAL_URL': process.env.REDIS_INTERNAL_URL,
-          'process.env.REDIS_EXTERNAL_URL': process.env.REDIS_EXTERNAL_URL,
-          'ConfigService.REDIS_URL': configService.get<string>('REDIS_URL'),
+        const urlSources = {
+          'ENV_REDIS_URL': process.env.REDIS_URL,
+          'ENV_REDIS_INTERNAL_URL': process.env.REDIS_INTERNAL_URL,
+          'CONFIG_REDIS_URL': configService.get<string>('REDIS_URL'),
         };
 
-        for (const [key, value] of Object.entries(envs)) {
+        for (const [key, value] of Object.entries(urlSources)) {
           if (value) {
-            const masked = value.replace(/:(.*)@/, ':****@');
-            console.log(`🔍 [Redis Client Debug] ${key}: ${masked}`);
-          } else {
-            console.log(`🔍 [Redis Client Debug] ${key}: MISSING`);
+            console.log(`🔍 [Redis Debug] Found ${key}: ${value.replace(/:(.*)@/, ':****@')}`);
           }
         }
 
-        // Priority Logic
-        let selectedUrl = process.env.REDIS_URL || process.env.REDIS_INTERNAL_URL || process.env.REDIS_EXTERNAL_URL || configService.get<string>('REDIS_URL');
+        // Prioritize internal URL on Render, then standard URL
+        let finalUrl = process.env.REDIS_INTERNAL_URL || process.env.REDIS_URL || configService.get<string>('REDIS_URL');
 
-        // Render-specific Fix:
-        // If we are on Render and the URL is localhost, it's definitely wrong.
-        if (process.env.RENDER === 'true' && selectedUrl?.includes('localhost')) {
-          console.log('⚠️ [Redis Client Debug] DETECTED LOCALHOST ON RENDER. Proactively searching for Internal URL...');
-          selectedUrl = process.env.REDIS_INTERNAL_URL || process.env.REDIS_URL;
-          
-          if (selectedUrl?.includes('localhost')) {
-             console.log('❌ [Redis Client Debug] Still localhost. Reverting to undefined to trigger retry logic or fallback.');
-             selectedUrl = undefined;
-          }
+        // Block localhost on Render
+        if (process.env.RENDER === 'true' && finalUrl?.includes('localhost')) {
+          console.log('❌ [Redis Debug] ERROR: Detected "localhost" URL on Render! This is invalid.');
+          console.log('👉 ACTION REQUIRED: Go to Render Dashboard and set REDIS_URL to your Internal Redis URL.');
+          finalUrl = undefined;
         }
 
-        const finalUrl = selectedUrl || 'redis://localhost:6379';
-        console.log(`🚀 [Redis Client] Final choice: ${finalUrl.replace(/:(.*)@/, ':****@')}`);
+        if (!finalUrl) {
+          console.log('❌ [Redis Debug] ERROR: No Redis URL found! Connection will fail.');
+          // Use a dummy string to prevent ioredis from crashing immediately, but it won't connect.
+          finalUrl = 'redis://invalid-host-missing-config:6379';
+        }
+
+        console.log(`🚀 [Redis Client] Final Connection: ${finalUrl.replace(/:(.*)@/, ':****@')}`);
 
         const options: any = {
           maxRetriesPerRequest: null,
-          retryStrategy: (times) => Math.min(times * 500, 5000),
+          retryStrategy: (times) => {
+            // Stop retrying if the URL is obviously wrong
+            if (finalUrl?.includes('invalid-host') || finalUrl?.includes('localhost') && process.env.RENDER === 'true') return null;
+            return Math.min(times * 500, 5000);
+          },
         };
 
         if (finalUrl.startsWith('rediss://')) {
@@ -65,11 +65,14 @@ import Redis from 'ioredis';
     {
       provide: 'REDIS_SUBSCRIBER',
       useFactory: (configService: ConfigService) => {
-        const finalUrl = process.env.REDIS_URL || process.env.REDIS_INTERNAL_URL || configService.get<string>('REDIS_URL') || 'redis://localhost:6379';
+        const finalUrl = process.env.REDIS_INTERNAL_URL || process.env.REDIS_URL || configService.get<string>('REDIS_URL') || 'redis://invalid-host:6379';
         
         const options: any = {
           maxRetriesPerRequest: null,
-          retryStrategy: (times) => Math.min(times * 500, 5000),
+          retryStrategy: (times) => {
+            if (finalUrl?.includes('invalid-host')) return null;
+            return Math.min(times * 500, 5000);
+          },
         };
 
         if (finalUrl.startsWith('rediss://')) {
