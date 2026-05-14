@@ -38,7 +38,7 @@ jobs:
             os: ubuntu-latest
             build_cmd: |
               sudo apt-get update
-              sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev libstdc++-12-dev
+              sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev libstdc++-14-dev libglu1-mesa-dev
               flutter build linux --release
             artifact_path: client/build/linux/x64/release/bundle
             artifact_name: ghostroom-linux.tar.gz
@@ -54,6 +54,12 @@ jobs:
         with:
           channel: 'stable'
           cache: true
+      - name: Install macOS/iOS dependencies
+        if: runner.os == 'macOS'
+        run: |
+          sudo gem install cocoapods
+          cd client/ios && pod install || true
+          cd ../macos && pod install || true
       - name: Install dependencies
         run: |
           cd client
