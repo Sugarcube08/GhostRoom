@@ -293,12 +293,13 @@ class HomeScreen extends ConsumerWidget {
   void _handleInviteLink(BuildContext context, WidgetRef ref, String link) {
     final uri = Uri.parse(link.replaceFirst('ghost://', 'http://'));
     final roomId = uri.pathSegments.last;
-    final keyBase64 = uri.queryParameters['key'];
+    final rawKey = uri.queryParameters['key'];
 
-    if (keyBase64 == null) return;
+    if (rawKey == null) return;
 
+    final keyBase64 = rawKey.trim().replaceAll(" ", "+");
     final sodium = ref.read(sodiumProvider);
-    final keyBytes = base64Decode(keyBase64.trim().replaceAll(" ", ""));
+    final keyBytes = base64Decode(keyBase64);
     final roomKey = SecureKey.fromList(sodium, keyBytes);
 
     // Save to recent
@@ -315,7 +316,7 @@ class HomeScreen extends ConsumerWidget {
 
   void _handleManualJoin(BuildContext context, WidgetRef ref, String roomId, String keyBase64) {
     final sodium = ref.read(sodiumProvider);
-    final keyBytes = base64Decode(keyBase64.trim().replaceAll(" ", ""));
+    final keyBytes = base64Decode(keyBase64.trim().replaceAll(" ", "+"));
     final roomKey = SecureKey.fromList(sodium, keyBytes);
 
     final config = SpaceConfig(
