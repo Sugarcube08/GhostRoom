@@ -8,30 +8,34 @@ import Redis from 'ioredis';
     {
       provide: 'REDIS_CLIENT',
       useFactory: (configService: ConfigService) => {
-        // Priority: ConfigService -> process.env -> Default
-        let url = configService.get<string>('REDIS_URL');
+        console.log('[Redis] Initializing Factory...');
+        console.log('[Redis] Available Environment Keys:', Object.keys(process.env).filter(k => !k.toLowerCase().includes('secret') && !k.toLowerCase().includes('key') && !k.toLowerCase().includes('pass')));
+
+        let url = configService.get<string>('REDIS_URL') || process.env.REDIS_URL;
         
         if (!url) {
-          console.warn('[Redis Client] REDIS_URL not found in ConfigService. Checking process.env...');
-          url = process.env.REDIS_URL;
-        }
-
-        if (!url) {
-          console.error('[Redis Client] CRITICAL: REDIS_URL environment variable is MISSING.');
-          console.warn('[Redis Client] Falling back to: redis://localhost:6379 (This will likely fail in production)');
+          console.error('**********************************************************');
+          console.error('[Redis Client] CRITICAL ERROR: REDIS_URL IS MISSING!');
+          console.error('[Redis Client] Please set REDIS_URL in your environment.');
+          console.error('**********************************************************');
           url = 'redis://localhost:6379';
         }
 
         const maskedUrl = url.replace(/:(.*)@/, ':****@');
-        console.log(`[Redis Client] Initializing connection to: ${maskedUrl}`);
+        console.log(`[Redis Client] Connecting to: ${maskedUrl}`);
 
-        const client = new Redis(url, {
+        const options: any = {
           maxRetriesPerRequest: null,
-          retryStrategy: (times) => {
-            const delay = Math.min(times * 100, 3000);
-            return delay;
-          },
-        });
+          retryStrategy: (times) => Math.min(times * 100, 3000),
+        };
+
+        // Enable TLS for rediss:// URLs (required by most cloud providers)
+        if (url.startsWith('rediss://')) {
+          console.log('[Redis Client] TLS detected, enabling secure connection options.');
+          options.tls = { rejectUnauthorized: false };
+        }
+
+        const client = new Redis(url, options);
 
         client.on('error', (err) => {
           console.error('[Redis Client Error]', err);
@@ -48,12 +52,18 @@ import Redis from 'ioredis';
     {
       provide: 'REDIS_SUBSCRIBER',
       useFactory: (configService: ConfigService) => {
-        let url = configService.get<string>('REDIS_URL') || process.env.REDIS_URL || 'redis://localhost:6379';
+        const url = configService.get<string>('REDIS_URL') || process.env.REDIS_URL || 'redis://localhost:6379';
         
-        const client = new Redis(url, {
+        const options: any = {
           maxRetriesPerRequest: null,
           retryStrategy: (times) => Math.min(times * 100, 3000),
-        });
+        };
+
+        if (url.startsWith('rediss://')) {
+          options.tls = { rejectUnauthorized: false };
+        }
+
+        const client = new Redis(url, options);
 
         client.on('error', (err) => {
           console.error('[Redis Subscriber Error]', err);

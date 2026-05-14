@@ -1,23 +1,26 @@
 #!/bin/bash
 
-# GhostRoom Local Build Script for Pop!_OS (Ubuntu-based)
-# This script builds for Android, Linux, and Web.
+# GhostRoom Cross-Platform Build Script
+# This script builds for Linux, Android, Web, macOS, and iOS depending on the host OS.
 
 set -e
 
 PROJECT_ROOT=$(pwd)
 DIST_DIR="$PROJECT_ROOT/dist"
+OS=$(uname -s)
 
-echo "🚀 Starting local build for GhostRoom..."
+echo "🚀 Starting local build for GhostRoom on $OS..."
 
-# 1. Install System Dependencies
-echo "📦 Installing system dependencies..."
-sudo apt-get update
-sudo apt-get install -y \
-    clang cmake ninja-build pkg-config \
-    libgtk-3-dev liblzma-dev libstdc++-14-dev \
-    libglu1-mesa-dev libsecret-1-dev libjsoncpp-dev \
-    zip tar
+# 1. Install System Dependencies (Linux only)
+if [ "$OS" = "Linux" ]; then
+    echo "📦 Installing Linux system dependencies..."
+    sudo apt-get update
+    sudo apt-get install -y \
+        clang cmake ninja-build pkg-config \
+        libgtk-3-dev liblzma-dev libstdc++-14-dev \
+        libglu1-mesa-dev libsecret-1-dev libjsoncpp-dev \
+        zip tar alien
+fi
 
 # 2. Get Flutter Dependencies
 echo "📥 Getting Flutter packages..."
@@ -28,41 +31,145 @@ flutter pub get
 echo "🌐 Building Web..."
 flutter build web --release
 
-# 4. Build Linux
-echo "🐧 Building Linux..."
-flutter build linux --release
+# 4. Build Linux (Linux only)
+if [ "$OS" = "Linux" ]; then
+    echo "🐧 Building Linux..."
+    flutter build linux --release
+fi
 
 # 5. Build Android (Requires Android SDK)
 echo "🤖 Building Android APK..."
-if command -v flutter &> /dev/null && [ -d "$ANDROID_HOME" ] || [ -d "$HOME/Android/Sdk" ]; then
+if command -v flutter &> /dev/null && { [ -d "$ANDROID_HOME" ] || [ -d "$HOME/Android/Sdk" ] || [ -d "$HOME/Library/Android/sdk" ]; }; then
     flutter build apk --release
 else
     echo "⚠️ Android SDK not found. Skipping Android build."
-    echo "   Please set ANDROID_HOME or install Android Studio."
 fi
 
-# 6. Package Artifacts
+# 6. Build macOS & iOS (macOS only)
+if [ "$OS" = "Darwin" ]; then
+    echo "🍎 Building macOS..."
+    flutter build macos --release
+    
+    echo "📱 Building iOS..."
+    flutter build ipa --release || echo "⚠️ iOS build failed. Note: iOS builds require a valid code signing setup in Xcode."
+fi
+
+# 7. Package Artifacts
 echo "📦 Packaging artifacts..."
 mkdir -p "$DIST_DIR"
 
 # Web
 echo "📦 Packaging Web..."
-(cd build/web && zip -r "$DIST_DIR/ghostroom-web.zip" .)
+(cd build/web && zip -r "$DIST_DIR/ghostroom-web.zip" .) > /dev/null
 
-# Linux
-echo "📦 Packaging Linux..."
-(cd build/linux/x64/release/bundle && tar -czvf "$DIST_DIR/ghostroom-linux.tar.gz" .)
+# Linux Packages
+if [ "$OS" = "Linux" ]; then
+    echo "📦 Packaging Linux (tar.gz)..."
+    (cd build/linux/x64/release/bundle && tar -czvf "$DIST_DIR/ghostroom-linux.tar.gz" .) > /dev/null
+
+    echo "📦 Packaging Linux (.deb)..."
+    if command -v dpkg-deb &> /dev/null; then
+        DEB_DIR="build/linux/deb/ghostroom_1.0.0-1_amd64"
+        mkdir -p "$DEB_DIR/DEBIAN" "$DEB_DIR/usr/bin" "$DEB_DIR/opt/ghostroom" "$DEB_DIR/usr/share/applications" "$DEB_DIR/usr/share/icons/hicolor/512x512/apps"
+        cp -r build/linux/x64/release/bundle/* "$DEB_DIR/opt/ghostroom/"
+        ln -sf /opt/ghostroom/ghostroom "$DEB_DIR/usr/bin/ghostroom"
+        
+        cat <<CTRL > "$DEB_DIR/DEBIAN/control"
+Package: ghostroom
+Version: 1.0.0-1
+Section: utils
+Priority: optional
+Architecture: amd64
+Depends: libgtk-3-0, libsecret-1-0
+Maintainer: GhostRoom Team
+Description: Privacy-First Ephemeral Communication
+CTRL
+
+        cat <<DESK > "$DEB_DIR/usr/share/applications/ghostroom.desktop"
+[Desktop Entry]
+Version=1.0
+Name=GhostRoom
+GenericName=GhostRoom
+Comment=Privacy-First Ephemeral Communication
+Terminal=false
+Type=Application
+Categories=Network;Chat;
+Exec=/opt/ghostroom/ghostroom
+Icon=ghostroom
+DESK
+        
+        cp web/icons/Icon-512.png "$DEB_DIR/usr/share/icons/hicolor/512x512/apps/ghostroom.png"
+        dpkg-deb --build "$DEB_DIR" "$DIST_DIR/ghostroom-linux.deb" > /dev/null
+        echo "✅ Debian package created."
+    else
+        echo "⚠️ dpkg-deb not found. Skipping .deb creation."
+    fi
+
+    echo "📦 Packaging Linux (.rpm)..."
+    if command -v alien &> /dev/null; then
+        (cd "$DIST_DIR" && sudo alien -r ghostroom-linux.deb || echo "⚠️ RPM creation failed") > /dev/null
+        echo "✅ RPM package created."
+    else
+        echo "⚠️ alien not found. Skipping .rpm creation. (Run: sudo apt install alien)"
+    fi
+
+    echo "📦 Packaging Linux (.AppImage)..."
+    APPIMAGE_TOOL="$PROJECT_ROOT/appimagetool-x86_64.AppImage"
+    if [ ! -f "$APPIMAGE_TOOL" ]; then
+        echo "📥 Downloading appimagetool..."
+        wget -qO "$APPIMAGE_TOOL" "https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage"
+        chmod +x "$APPIMAGE_TOOL"
+    fi
+    
+    APPDIR="build/linux/AppDir"
+    mkdir -p "$APPDIR"
+    cp -r build/linux/x64/release/bundle/* "$APPDIR/"
+    
+    # AppImage metadata
+    cp "$DEB_DIR/usr/share/applications/ghostroom.desktop" "$APPDIR/"
+    cp "$DEB_DIR/usr/share/icons/hicolor/512x512/apps/ghostroom.png" "$APPDIR/"
+    
+    cat <<APP > "$APPDIR/AppRun"
+#!/bin/sh
+HERE="\$(dirname "\$(readlink -f "\${0}")")"
+export LD_LIBRARY_PATH="\${HERE}/lib:\${LD_LIBRARY_PATH}"
+exec "\${HERE}/ghostroom" "\$@"
+APP
+    chmod +x "$APPDIR/AppRun"
+    
+    # We use --appimage-extract-and-run because many FUSE environments (like Docker/WSL) 
+    # don't support mounting AppImages directly
+    ARCH=x86_64 "$APPIMAGE_TOOL" --appimage-extract-and-run "$APPDIR" "$DIST_DIR/ghostroom-linux.AppImage" > /dev/null 2>&1 || \
+    ARCH=x86_64 "$APPIMAGE_TOOL" "$APPDIR" "$DIST_DIR/ghostroom-linux.AppImage" > /dev/null 2>&1 || \
+    echo "⚠️ AppImage creation failed"
+    
+    if [ -f "$DIST_DIR/ghostroom-linux.AppImage" ]; then
+        echo "✅ AppImage created."
+    fi
+fi
 
 # Android
-echo "📦 Packaging Android..."
+echo "📦 Packaging Android (.apk)..."
 APK_PATH="build/app/outputs/flutter-apk/app-release.apk"
 if [ -f "$APK_PATH" ]; then
     cp "$APK_PATH" "$DIST_DIR/ghostroom-android.apk"
     echo "✅ Android APK copied to dist/"
-else
-    echo "⚠️ Android APK not found at $APK_PATH"
 fi
 
-echo "✅ Local builds complete! Artifacts are in the 'dist' folder:"
+# macOS & iOS
+if [ "$OS" = "Darwin" ]; then
+    echo "📦 Packaging macOS (.zip)..."
+    if [ -d "build/macos/Build/Products/Release/ghostroom.app" ]; then
+        (cd build/macos/Build/Products/Release && zip -r "$DIST_DIR/ghostroom-macos.zip" ghostroom.app) > /dev/null
+        echo "✅ macOS App copied to dist/"
+    fi
+    
+    echo "📦 Packaging iOS (.ipa)..."
+    if ls build/ios/ipa/*.ipa 1> /dev/null 2>&1; then
+        cp build/ios/ipa/*.ipa "$DIST_DIR/ghostroom-ios.ipa"
+        echo "✅ iOS IPA copied to dist/"
+    fi
+fi
+
+echo "✅ Builds complete! Artifacts generated in the 'dist' folder:"
 ls -lh "$DIST_DIR"
-echo "⚠️ Note: iOS, macOS, and Windows builds still require their respective native environments."
