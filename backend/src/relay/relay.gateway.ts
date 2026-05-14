@@ -95,8 +95,8 @@ export class RelayGateway implements OnGatewayConnection, OnGatewayDisconnect {
         payload,
         payload.expiry || 300,
       );
-    } catch (e) {
-      this.logger.error(`Failed to store message for room ${payload.roomId}: ${e.message}`);
+    } catch (e: any) {
+      this.logger.error(`Failed to store message for room ${payload.roomId}: ${e?.message || e}`);
     }
   }
 
