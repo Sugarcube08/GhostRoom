@@ -51,11 +51,12 @@ export class RelayGateway implements OnGatewayConnection, OnGatewayDisconnect {
     await client.join(payload.roomId);
     client.emit("space.joined", { roomId: payload.roomId });
 
-    // Fetch message history
-    const allMessages = await this.roomsService.getMessages(payload.roomId);
+    // FETCH AND PURGE (Absolute Ephemeral Policy)
+    // We fetch ALL messages, filter for the ones the joiner didn't send,
+    // and then DELETE the entire list so it's fresh for the next time.
+    const allMessages = await this.roomsService.consumeMessages(payload.roomId);
     
-    // Filter history: Only send messages that the joiner DID NOT send
-    // and that are 'waiting' for a recipient.
+    // Filter out messages sent by this device
     const historyToDeliver = allMessages.filter(msg => msg.senderId !== payload.deviceId);
     
     if (historyToDeliver.length > 0) {
@@ -63,17 +64,9 @@ export class RelayGateway implements OnGatewayConnection, OnGatewayDisconnect {
         roomId: payload.roomId,
         messages: historyToDeliver,
       });
-
-      // GHOST POLICY: Once history is delivered to a recipient, 
-      // we can clear those specific messages from the server.
-      // For simplicity, we'll clear the whole history if a recipient joins.
-      await this.roomsService.consumeMessages(payload.roomId);
-      
-      this.logger.log(
-        `Delivered ${historyToDeliver.length} waiting messages to recipient ${client.id} and cleared history`,
-      );
+      this.logger.log(`Delivered ${historyToDeliver.length} messages to ${client.id} and purged room history.`);
     } else {
-      this.logger.log(`Client ${client.id} joined. No new messages for them.`);
+      this.logger.log(`Client ${client.id} joined. Room history was already empty or only contained their own messages (now purged).`);
     }
   }
 
