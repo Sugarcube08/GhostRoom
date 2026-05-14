@@ -9,10 +9,23 @@ import Redis from 'ioredis';
       provide: 'REDIS_CLIENT',
       useFactory: (configService: ConfigService) => {
         const url = configService.get<string>('REDIS_URL', 'redis://localhost:6379');
-        return new Redis(url, {
+        const client = new Redis(url, {
           maxRetriesPerRequest: null,
-          retryStrategy: (times) => Math.min(times * 50, 2000),
+          retryStrategy: (times) => {
+            const delay = Math.min(times * 50, 2000);
+            return delay;
+          },
         });
+
+        client.on('error', (err) => {
+          console.error('[Redis Client Error]', err.message);
+        });
+
+        client.on('connect', () => {
+          console.log('Successfully connected to Redis');
+        });
+
+        return client;
       },
       inject: [ConfigService],
     },
@@ -20,10 +33,23 @@ import Redis from 'ioredis';
       provide: 'REDIS_SUBSCRIBER',
       useFactory: (configService: ConfigService) => {
         const url = configService.get<string>('REDIS_URL', 'redis://localhost:6379');
-        return new Redis(url, {
+        const client = new Redis(url, {
           maxRetriesPerRequest: null,
-          retryStrategy: (times) => Math.min(times * 50, 2000),
+          retryStrategy: (times) => {
+            const delay = Math.min(times * 50, 2000);
+            return delay;
+          },
         });
+
+        client.on('error', (err) => {
+          console.error('[Redis Subscriber Error]', err.message);
+        });
+
+        client.on('connect', () => {
+          console.log('Successfully connected to Redis (Subscriber)');
+        });
+
+        return client;
       },
       inject: [ConfigService],
     },

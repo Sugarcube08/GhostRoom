@@ -12,10 +12,19 @@ services:
       - NODE_ENV=development
       - REDIS_URL=redis://redis:6379
     command: npm run start:dev
+    depends_on:
+      - redis
     networks:
-      - default
-      - db_default
+      - ghostroom_net
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    command: ["redis-server", "--appendonly", "yes", "--notify-keyspace-events", "Ex"]
+    networks:
+      - ghostroom_net
 
 networks:
-  db_default:
-    external: true
+  ghostroom_net:
+    driver: bridge

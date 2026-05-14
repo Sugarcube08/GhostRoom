@@ -52,7 +52,7 @@ Users can join spaces via:
 ```bash
 docker-compose up --build
 ```
-*Relay API:* `http://localhost:3000` | *WebSocket:* `ws://localhost:3000`
+*Relay API:* `http://localhost:4000` | *WebSocket:* `ws://localhost:4000`
 
 ### 3. Run the Client
 ```bash
