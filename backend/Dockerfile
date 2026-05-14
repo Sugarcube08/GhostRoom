@@ -4,15 +4,14 @@ FROM node:22-alpine AS development
 # Create app directory
 WORKDIR /usr/src/app
 
-# Copy package files from the backend subdirectory
-# This assumes the build context is the root of the repository
-COPY backend/package*.json ./
+# Copy package files
+COPY package*.json ./
 
 # Install app dependencies
 RUN npm install
 
-# Copy backend source code
-COPY backend/ .
+# Copy source code
+COPY . .
 
 # Build the app
 RUN npm run build
@@ -26,7 +25,7 @@ ENV NODE_ENV=${NODE_ENV}
 WORKDIR /usr/src/app
 
 # Copy package files for production
-COPY backend/package*.json ./
+COPY package*.json ./
 
 # Install only production dependencies
 RUN npm install --omit=dev
