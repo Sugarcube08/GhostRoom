@@ -38,9 +38,20 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   void _setupListeners() {
     debugPrint('GHOST_LOG: ChatScreen _setupListeners starting');
     final ws = ref.read(webSocketServiceProvider);
+    final crypto = ref.read(cryptoServiceProvider);
+    
     debugPrint('GHOST_LOG: ChatScreen ws provider ready');
-    ws.joinSpace(widget.config.roomId);
-    debugPrint('GHOST_LOG: ChatScreen joinSpace called');
+    
+    // Get device ID for sender-aware history filtering
+    crypto.getDeviceId().then((deviceId) {
+      if (deviceId != null) {
+        ws.joinSpace(widget.config.roomId, deviceId);
+        debugPrint('GHOST_LOG: ChatScreen joinSpace called with DeviceID');
+      } else {
+        debugPrint('GHOST_LOG: ChatScreen Error: No DeviceID found');
+        ws.joinSpace(widget.config.roomId, 'unknown_device');
+      }
+    });
     
     ws.onMessage((data) {
       debugPrint('GHOST_LOG: ChatScreen onMessage received: $data');
@@ -48,7 +59,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     });
 
     ws.onHistory((data) {
-      debugPrint('GHOST_LOG: ChatScreen onHistory received');
+      debugPrint('GHOST_LOG: ChatScreen onHistory received. Messages: ${data['messages']?.length}');
       final List<dynamic> messages = data['messages'] ?? [];
       for (final msg in messages) {
         _processMessage(msg, isMe: false);
@@ -66,12 +77,17 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   void _processMessage(dynamic data, {required bool isMe}) {
     if (!mounted) return;
     final ciphertext = data['ciphertext'];
+    if (ciphertext == null) {
+      debugPrint('GHOST_LOG: ChatScreen Error: Received message with no ciphertext');
+      return;
+    }
+    
     try {
       final decrypted = ref.read(spaceServiceProvider).decryptMessage(
         base64Decode(ciphertext),
         widget.config.roomKey,
       );
-      debugPrint('GHOST_LOG: ChatScreen message decrypted');
+      debugPrint('GHOST_LOG: ChatScreen message decrypted successfully');
 
       setState(() {
         _messages.insert(0, Message(
@@ -82,7 +98,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         ));
       });
     } catch (e) {
-      debugPrint('GHOST_LOG: ChatScreen decryption error: $e');
+      debugPrint('GHOST_LOG: ChatScreen Decryption Error: $e');
+      debugPrint('GHOST_LOG: Ciphertext was: $ciphertext');
     }
   }
 
@@ -90,7 +107,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     // This is a bit simplified, but helps with debugging
   }
 
-  void _sendMessage() {
+  void _sendMessage() async {
     if (_controller.text.isEmpty) return;
 
     final plaintext = _controller.text;
@@ -99,9 +116,12 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       widget.config.roomKey,
     );
 
+    final deviceId = await ref.read(cryptoServiceProvider).getDeviceId();
+
     ref.read(webSocketServiceProvider).sendMessage(widget.config.roomId, {
       'ciphertext': base64Encode(encrypted),
       'expiry': 300, // 5 minutes message TTL
+      'senderId': deviceId,
     });
 
     _processMessage({

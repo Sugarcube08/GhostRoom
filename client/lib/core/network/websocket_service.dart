@@ -62,8 +62,8 @@ class WebSocketService {
     });
   }
 
-  void joinSpace(String roomId) {
-    _socket?.emit('space.join', {'roomId': roomId});
+  void joinSpace(String roomId, String deviceId) {
+    _socket?.emit('space.join', {'roomId': roomId, 'deviceId': deviceId});
   }
 
   void sendMessage(String roomId, Map<String, dynamic> payload) {

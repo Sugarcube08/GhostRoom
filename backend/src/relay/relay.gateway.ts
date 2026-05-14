@@ -37,9 +37,9 @@ export class RelayGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }
 
   @SubscribeMessage("space.join")
-  async handleJoin(client: Socket, payload: { roomId: string }) {
+  async handleJoin(client: Socket, payload: { roomId: string; deviceId?: string }) {
     this.logger.log(
-      `Join request for room: ${payload.roomId} from client: ${client.id}`,
+      `Join request for room: ${payload.roomId} from client: ${client.id} (Device: ${payload.deviceId || 'unknown'})`,
     );
     const room = await this.roomsService.getRoom(payload.roomId);
     if (!room) {
@@ -51,18 +51,30 @@ export class RelayGateway implements OnGatewayConnection, OnGatewayDisconnect {
     await client.join(payload.roomId);
     client.emit("space.joined", { roomId: payload.roomId });
 
-    // Fetch and send message history to the late joiner, then clear it (One-time delivery)
-    const history = await this.roomsService.consumeMessages(payload.roomId);
-    if (history.length > 0) {
+    // Fetch message history
+    const allMessages = await this.roomsService.getMessages(payload.roomId);
+    
+    // Filter history: Only send messages that the joiner DID NOT send
+    // and that are 'waiting' for a recipient.
+    const historyToDeliver = allMessages.filter(msg => msg.senderId !== payload.deviceId);
+    
+    if (historyToDeliver.length > 0) {
       client.emit("space.history", {
         roomId: payload.roomId,
-        messages: history,
+        messages: historyToDeliver,
       });
-    }
 
-    this.logger.log(
-      `Client ${client.id} successfully joined room ${payload.roomId} and consumed ${history.length} messages`,
-    );
+      // GHOST POLICY: Once history is delivered to a recipient, 
+      // we can clear those specific messages from the server.
+      // For simplicity, we'll clear the whole history if a recipient joins.
+      await this.roomsService.consumeMessages(payload.roomId);
+      
+      this.logger.log(
+        `Delivered ${historyToDeliver.length} waiting messages to recipient ${client.id} and cleared history`,
+      );
+    } else {
+      this.logger.log(`Client ${client.id} joined. No new messages for them.`);
+    }
   }
 
   @SubscribeMessage("message.send")
@@ -71,16 +83,19 @@ export class RelayGateway implements OnGatewayConnection, OnGatewayDisconnect {
     payload: {
       roomId: string;
       ciphertext: string;
-      nonce: string;
+      nonce?: string;
       expiry: number;
+      senderId?: string;
     },
   ) {
-    this.logger.log(`Incoming message to room ${payload.roomId} from client ${client.id}`);
+    this.logger.log(`Incoming message to room ${payload.roomId} from client ${client.id} (Sender: ${payload.senderId || 'unknown'})`);
     
-    // Relay to all other clients in the room
+    // Relay to all other clients currently in the room
     client.to(payload.roomId).emit("message.receive", payload);
 
-    // Store in Redis with TTL for the NEXT person who joins (if any)
+    // Store in Redis ONLY if there are fewer than 2 people in the room 
+    // (meaning the recipient might be offline/not joined yet)
+    // Or just always store it and let handleJoin consume it.
     try {
       await this.roomsService.addMessage(
         payload.roomId,
