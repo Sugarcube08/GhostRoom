@@ -24,12 +24,12 @@ jobs:
             artifact_name: ghostroom-android.apk
           - target: ios
             os: macos-latest
-            build_cmd: flutter build ios --release --no-codesign --verbose
+            build_cmd: flutter build ios --release --no-codesign
             artifact_path: client/build/ios/iphoneos/Runner.app
             artifact_name: ghostroom-ios-app.zip
           - target: macos
             os: macos-latest
-            build_cmd: flutter build macos --release --verbose
+            build_cmd: flutter build macos --release
             artifact_path: client/build/macos/Build/Products/Release/ghostroom.app
             artifact_name: ghostroom-macos-app.zip
           - target: windows
@@ -57,12 +57,6 @@ jobs:
         with:
           channel: 'stable'
           cache: true
-      - name: Install macOS/iOS dependencies
-        if: runner.os == 'macOS'
-        run: |
-          sudo gem install cocoapods
-          cd client/ios && pod install || true
-          cd ../macos && pod install || true
       - name: Install dependencies
         run: |
           cd client
