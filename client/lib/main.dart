@@ -43,10 +43,7 @@ class _GhostRoomAppState extends ConsumerState<GhostRoomApp> with WidgetsBinding
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.detached || state == AppLifecycleState.hidden) {
-       // Clear recent rooms when app is closed/detached
-       ref.read(relayManagerProvider).clearRecentRooms();
-    }
+    // No-op - we keep recent rooms for persistence
   }
 
   @override
@@ -55,7 +52,10 @@ class _GhostRoomAppState extends ConsumerState<GhostRoomApp> with WidgetsBinding
       debugShowCheckedModeBanner: false,
       title: 'Ghost Room',
       theme: GhostTheme.darkTheme,
-      builder: (context, child) => PrivacyOverlay(child: child!),
+      builder: (context, child) {
+        if (child == null) return const SizedBox.shrink();
+        return PrivacyOverlay(child: child);
+      },
       home: const SplashScreen(),
     );
   }
@@ -76,18 +76,34 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
   }
 
   Future<void> _init() async {
-    // Initialize identity
-    await ref.read(cryptoServiceProvider).initIdentity();
+    print('GHOST_LOG: SplashScreen initializing...');
+    try {
+      final relayManager = ref.read(relayManagerProvider);
+      await relayManager.clearRecentRooms();
+      print('GHOST_LOG: Recent rooms cleared from storage.');
+      ref.invalidate(recentRoomsProvider);
+      // Give a tiny moment for the invalidation to propagate
+      await Future.delayed(const Duration(milliseconds: 100));
+    } catch (e) {
+      print('GHOST_LOG: Error clearing recent rooms: $e');
+    }
 
-    await Future.delayed(const Duration(seconds: 2));
+    // Initialize identity
+    print('GHOST_LOG: Initializing identity...');
+    await ref.read(cryptoServiceProvider).initIdentity();
+    print('GHOST_LOG: Identity initialized.');
+
+    await Future.delayed(const Duration(seconds: 1));
     
     // Auto-connect to active relay if available
     final relay = await ref.read(activeRelayProvider.future);
     if (relay != null) {
+      print('GHOST_LOG: Auto-connecting to relay: ${relay.label}');
       ref.read(webSocketServiceProvider).connect(relay);
     }
 
     if (mounted) {
+      print('GHOST_LOG: Navigating to HomeScreen');
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(builder: (_) => const HomeScreen()),

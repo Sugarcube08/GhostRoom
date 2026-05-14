@@ -14,6 +14,7 @@ class RelaySettingsScreen extends ConsumerStatefulWidget {
 class _RelaySettingsScreenState extends ConsumerState<RelaySettingsScreen> {
   @override
   Widget build(BuildContext context) {
+    print('GHOST_LOG: RelaySettingsScreen building');
     final relaysAsync = ref.watch(relayProfilesProvider);
     final activeRelayAsync = ref.watch(activeRelayProvider);
 

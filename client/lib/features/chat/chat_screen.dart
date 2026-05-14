@@ -29,14 +29,20 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   @override
   void initState() {
     super.initState();
+    print('GHOST_LOG: ChatScreen initState starting');
     _setupListeners();
+    print('GHOST_LOG: ChatScreen initState completed');
   }
 
   void _setupListeners() {
+    print('GHOST_LOG: ChatScreen _setupListeners starting');
     final ws = ref.read(webSocketServiceProvider);
+    print('GHOST_LOG: ChatScreen ws provider ready');
     ws.joinSpace(widget.config.roomId);
+    print('GHOST_LOG: ChatScreen joinSpace called');
     
     ws.onMessage((data) {
+      print('GHOST_LOG: ChatScreen onMessage received: $data');
       if (!mounted) return;
       final ciphertext = data['ciphertext'];
       try {
@@ -44,6 +50,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
           base64Decode(ciphertext),
           widget.config.roomKey,
         );
+        print('GHOST_LOG: ChatScreen message decrypted');
 
         setState(() {
           _messages.insert(0, Message(
@@ -54,13 +61,14 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
           ));
         });
       } catch (e) {
-        debugPrint('Failed to decrypt message: $e');
+        print('GHOST_LOG: ChatScreen decryption error: $e');
       }
     });
 
     _socketErrorListener();
 
     ws.onSpaceExpired((_) {
+      print('GHOST_LOG: ChatScreen space expired');
       if (mounted) _showExpiredDialog();
     });
   }

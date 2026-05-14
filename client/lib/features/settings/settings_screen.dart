@@ -8,6 +8,7 @@ class SettingsScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    print('GHOST_LOG: SettingsScreen building');
     return Scaffold(
       appBar: AppBar(title: const Text('SETTINGS')),
       body: ListView(

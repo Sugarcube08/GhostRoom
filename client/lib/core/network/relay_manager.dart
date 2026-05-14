@@ -34,7 +34,9 @@ class RelayProfile {
 }
 
 class RelayManager {
-  final FlutterSecureStorage _storage = const FlutterSecureStorage();
+  final FlutterSecureStorage _storage = const FlutterSecureStorage(
+    aOptions: AndroidOptions(encryptedSharedPreferences: true),
+  );
   static const String _relaysKey = 'saved_relays';
   static const String _activeRelayIdKey = 'active_relay_id';
   static const String _recentRoomsKey = 'recent_rooms';

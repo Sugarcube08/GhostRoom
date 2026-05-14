@@ -24,10 +24,13 @@ class HomeScreen extends ConsumerWidget {
         actions: [
           IconButton(
             icon: const Icon(Icons.settings_outlined),
-            onPressed: () => Navigator.push(
-              context, 
-              MaterialPageRoute(builder: (_) => const SettingsScreen())
-            ),
+            onPressed: () {
+              print('GHOST_LOG: Settings icon pressed');
+              Navigator.push(
+                context, 
+                MaterialPageRoute(builder: (_) => const SettingsScreen())
+              );
+            },
           ),
         ],
       ),
@@ -89,7 +92,7 @@ class HomeScreen extends ConsumerWidget {
     showModalBottomSheet(
       context: context,
       backgroundColor: const Color(0xFF121212),
-      builder: (context) => Padding(
+      builder: (sheetContext) => Padding(
         padding: const EdgeInsets.symmetric(vertical: 32.0),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -98,7 +101,7 @@ class HomeScreen extends ConsumerWidget {
               leading: const Icon(Icons.qr_code_scanner),
               title: const Text('SCAN QR CODE'),
               onTap: () {
-                Navigator.pop(context);
+                Navigator.pop(sheetContext);
                 _joinSpace(context, ref);
               },
             ),
@@ -106,7 +109,7 @@ class HomeScreen extends ConsumerWidget {
               leading: const Icon(Icons.image_outlined),
               title: const Text('SELECT FROM GALLERY'),
               onTap: () {
-                Navigator.pop(context);
+                Navigator.pop(sheetContext);
                 _joinFromGallery(context, ref);
               },
             ),
@@ -114,7 +117,7 @@ class HomeScreen extends ConsumerWidget {
               leading: const Icon(Icons.link),
               title: const Text('ENTER LINK MANUALLY'),
               onTap: () {
-                Navigator.pop(context);
+                Navigator.pop(sheetContext);
                 _showManualEntry(context, ref);
               },
             ),
@@ -179,7 +182,7 @@ class HomeScreen extends ConsumerWidget {
     showModalBottomSheet(
       context: context,
       backgroundColor: const Color(0xFF121212),
-      builder: (context) => Padding(
+      builder: (sheetContext) => Padding(
         padding: const EdgeInsets.symmetric(vertical: 32.0),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -188,7 +191,7 @@ class HomeScreen extends ConsumerWidget {
               leading: const Icon(Icons.qr_code),
               title: const Text('SHOW INVITE QR'),
               onTap: () {
-                Navigator.pop(context);
+                Navigator.pop(sheetContext);
                 Navigator.push(context, MaterialPageRoute(builder: (_) => InviteScreen(config: config)));
               },
             ),
@@ -196,7 +199,7 @@ class HomeScreen extends ConsumerWidget {
               leading: const Icon(Icons.chat_bubble_outline),
               title: const Text('ENTER SPACE'),
               onTap: () {
-                Navigator.pop(context);
+                Navigator.pop(sheetContext);
                 Navigator.push(context, MaterialPageRoute(builder: (_) => ChatScreen(config: config)));
               },
             ),
@@ -211,7 +214,7 @@ class HomeScreen extends ConsumerWidget {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => Scaffold(
+        builder: (scannerContext) => Scaffold(
           appBar: AppBar(title: const Text('SCAN INVITE')),
           body: MobileScanner(
             onDetect: (capture) {
@@ -221,7 +224,7 @@ class HomeScreen extends ConsumerWidget {
                 final code = barcode.rawValue;
                 if (code != null && code.startsWith('ghost://room/')) {
                   detected = true;
-                  Navigator.pop(context); // Pop scanner
+                  Navigator.pop(scannerContext);
                   _handleInviteLink(context, ref, code);
                   break;
                 }
@@ -240,24 +243,54 @@ class HomeScreen extends ConsumerWidget {
 
     final scanner = MobileScannerController();
     try {
-      // In mobile_scanner 3.x, analyzeImage returns a bool and results are sent to the barcodes stream
-      final found = await scanner.analyzeImage(image.path);
+      print('GHOST_LOG: GalleryScan starting for: ${image.path}');
+      
+      // We don't need to await 'start()' for analyzeImage, but we need to listen
+      final captureFuture = scanner.barcodes.first.timeout(
+        const Duration(seconds: 10),
+        onTimeout: () => throw Exception('Timeout waiting for barcode results'),
+      );
+      
+      final bool found = await scanner.analyzeImage(image.path);
+      print('GHOST_LOG: GalleryScan analyzeImage returned: $found');
+      
       if (found) {
-        // We listen to the first result from the stream
-        await for (final capture in scanner.barcodes) {
-          if (capture.barcodes.isNotEmpty) {
-            final code = capture.barcodes.first.rawValue;
-            if (code != null && code.startsWith('ghost://room/')) {
-              if (context.mounted) {
-                _handleInviteLink(context, ref, code);
-              }
+        final BarcodeCapture capture = await captureFuture;
+        print('GHOST_LOG: GalleryScan detected ${capture.barcodes.length} barcodes.');
+        
+        if (capture.barcodes.isNotEmpty) {
+          final code = capture.barcodes.first.rawValue;
+          print('GHOST_LOG: GalleryScan raw value: $code');
+          
+          if (code != null && code.startsWith('ghost://room/')) {
+            if (context.mounted) {
+              print('GHOST_LOG: GalleryScan valid invite found. Handling...');
+              _handleInviteLink(context, ref, code);
+            } else {
+              print('GHOST_LOG: GalleryScan context NOT mounted after scan');
             }
-            break;
+          } else {
+            if (context.mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Not a valid Ghost Room invite.')),
+              );
+            }
           }
+        }
+      } else {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('No QR code found in image.')),
+          );
         }
       }
     } catch (e) {
-      debugPrint('Error analyzing image: $e');
+      print('GHOST_LOG: GalleryScan error: $e');
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error scanning image: $e')),
+        );
+      }
     } finally {
       scanner.dispose();
     }
@@ -267,19 +300,19 @@ class HomeScreen extends ConsumerWidget {
     final controller = TextEditingController();
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         title: const Text('Join Space'),
         content: TextField(
           controller: controller,
           decoration: const InputDecoration(hintText: 'Paste ghost://room/... link'),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+          TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Cancel')),
           TextButton(
             onPressed: () {
               final link = controller.text;
               if (link.startsWith('ghost://room/')) {
-                Navigator.pop(context);
+                Navigator.pop(dialogContext);
                 _handleInviteLink(context, ref, link);
               }
             },
@@ -291,42 +324,77 @@ class HomeScreen extends ConsumerWidget {
   }
 
   void _handleInviteLink(BuildContext context, WidgetRef ref, String link) {
+    print('GHOST_LOG: _handleInviteLink processing: $link');
     final uri = Uri.parse(link.replaceFirst('ghost://', 'http://'));
     final roomId = uri.pathSegments.last;
     final rawKey = uri.queryParameters['key'];
 
-    if (rawKey == null) return;
+    if (rawKey == null) {
+      print('GHOST_LOG: _handleInviteLink error: No key found');
+      return;
+    }
 
     final keyBase64 = rawKey.trim().replaceAll(" ", "+");
     final sodium = ref.read(sodiumProvider);
-    final keyBytes = base64Decode(keyBase64);
-    final roomKey = SecureKey.fromList(sodium, keyBytes);
+    try {
+      final keyBytes = base64Decode(keyBase64);
+      final roomKey = SecureKey.fromList(sodium, keyBytes);
 
-    // Save to recent
-    final activeRelay = ref.read(activeRelayProvider).value;
-    ref.read(relayManagerProvider).addRecentRoom(
-      roomId,
-      keyBase64,
-      activeRelay?.label ?? 'Joined Relay',
-    );
-    ref.invalidate(recentRoomsProvider);
+      print('GHOST_LOG: _handleInviteLink RoomID: $roomId');
+      // Save to recent
+      final activeRelay = ref.read(activeRelayProvider).value;
+      ref.read(relayManagerProvider).addRecentRoom(
+        roomId,
+        keyBase64,
+        activeRelay?.label ?? 'Joined Relay',
+      );
+      ref.invalidate(recentRoomsProvider);
 
-    _handleManualJoin(context, ref, roomId, keyBase64);
+      _handleManualJoin(context, ref, roomId, keyBase64);
+    } catch (e) {
+      print('GHOST_LOG: _handleInviteLink decode error: $e');
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Invalid invite key: $e')),
+        );
+      }
+    }
   }
 
   void _handleManualJoin(BuildContext context, WidgetRef ref, String roomId, String keyBase64) {
-    final sodium = ref.read(sodiumProvider);
-    final keyBytes = base64Decode(keyBase64.trim().replaceAll(" ", "+"));
-    final roomKey = SecureKey.fromList(sodium, keyBytes);
+    print('GHOST_LOG: _handleManualJoin starting for roomId: $roomId');
+    try {
+      final sodium = ref.read(sodiumProvider);
+      print('GHOST_LOG: _handleManualJoin sodium ready');
+      
+      final keyBytes = base64Decode(keyBase64.trim().replaceAll(" ", "+"));
+      print('GHOST_LOG: _handleManualJoin key decoded, length: ${keyBytes.length}');
+      
+      final roomKey = SecureKey.fromList(sodium, keyBytes);
+      print('GHOST_LOG: _handleManualJoin roomKey created');
 
-    final config = SpaceConfig(
-      roomId: roomId,
-      roomKey: roomKey,
-      expiry: DateTime.now().add(const Duration(hours: 2)),
-    );
+      final config = SpaceConfig(
+        roomId: roomId,
+        roomKey: roomKey,
+        expiry: DateTime.now().add(const Duration(hours: 2)),
+      );
 
-    if (context.mounted) {
-      Navigator.push(context, MaterialPageRoute(builder: (_) => ChatScreen(config: config)));
+      if (context.mounted) {
+        print('GHOST_LOG: _handleManualJoin navigating to ChatScreen...');
+        Navigator.push(
+          context, 
+          MaterialPageRoute(builder: (context) {
+            print('GHOST_LOG: ChatScreen builder called');
+            return ChatScreen(config: config);
+          })
+        ).then((_) => print('GHOST_LOG: Navigator.push completed'))
+         .catchError((err) => print('GHOST_LOG: Navigator.push error: $err'));
+      } else {
+        print('GHOST_LOG: _handleManualJoin context not mounted');
+      }
+    } catch (e, stack) {
+      print('GHOST_LOG: _handleManualJoin error: $e');
+      print('GHOST_LOG: _handleManualJoin stack: $stack');
     }
   }
 }

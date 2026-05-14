@@ -1,6 +1,6 @@
 {
-    "name": "veil",
-    "short_name": "veil",
+    "name": "GhostRoom",
+    "short_name": "GhostRoom",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",

@@ -1,8 +1,8 @@
 {
-  "name": "veil-backend",
+  "name": "ghostroom-backend",
   "version": "0.0.1",
   "description": "Privacy-first ephemeral communication relay",
-  "author": "Veil Team",
+  "author": "GhostRoom Team",
   "private": true,
   "license": "UNLICENSED",
   "scripts": {

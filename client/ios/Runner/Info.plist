@@ -66,5 +66,9 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>GhostRoom needs access to your photo library to save invite QR codes.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>GhostRoom needs access to your photo library to save invite QR codes.</string>
 </dict>
 </plist>

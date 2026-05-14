@@ -89,13 +89,13 @@ BEGIN
     BEGIN
         BLOCK "040904e4"
         BEGIN
-            VALUE "CompanyName", "com.veil.app" "\0"
-            VALUE "FileDescription", "veil" "\0"
+            VALUE "CompanyName", "com.ghostroom.app" "\0"
+            VALUE "FileDescription", "GhostRoom" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
-            VALUE "InternalName", "veil" "\0"
-            VALUE "LegalCopyright", "Copyright (C) 2026 com.veil.app. All rights reserved." "\0"
-            VALUE "OriginalFilename", "veil.exe" "\0"
-            VALUE "ProductName", "veil" "\0"
+            VALUE "InternalName", "ghostroom" "\0"
+            VALUE "LegalCopyright", "Copyright (C) 2026 com.ghostroom.app. All rights reserved." "\0"
+            VALUE "OriginalFilename", "ghostroom.exe" "\0"
+            VALUE "ProductName", "GhostRoom" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END
