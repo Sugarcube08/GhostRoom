@@ -8,83 +8,59 @@ import Redis from 'ioredis';
     {
       provide: 'REDIS_CLIENT',
       useFactory: (configService: ConfigService) => {
-        console.log('🔍 [Redis Client Debug] Initializing Redis Client...');
+        console.log('🔍 [Redis Client Debug] STARTING INITIALIZATION');
         
-        // Debug environment variables
+        // Render often provides REDIS_URL or REDIS_INTERNAL_URL.
+        // We prioritize raw process.env because NestJS ConfigService might be 
+        // shadowed by .env files or .env.example templates.
+        const rawUrl = process.env.REDIS_URL || process.env.REDIS_INTERNAL_URL || process.env.REDIS_EXTERNAL_URL;
         const configUrl = configService.get<string>('REDIS_URL');
-        const envUrl = process.env.REDIS_URL;
-        const internalUrl = process.env.REDIS_INTERNAL_URL;
-        const externalUrl = process.env.REDIS_EXTERNAL_URL;
-        
-        console.log(`🔍 [Redis Client Debug] ConfigService REDIS_URL: ${configUrl ? 'FOUND' : 'NOT FOUND'}`);
-        console.log(`🔍 [Redis Client Debug] process.env.REDIS_URL: ${envUrl ? 'FOUND' : 'NOT FOUND'}`);
-        console.log(`🔍 [Redis Client Debug] process.env.REDIS_INTERNAL_URL: ${internalUrl ? 'FOUND' : 'NOT FOUND'}`);
-        console.log(`🔍 [Redis Client Debug] process.env.REDIS_EXTERNAL_URL: ${externalUrl ? 'FOUND' : 'NOT FOUND'}`);
 
-        const url = configUrl || envUrl || internalUrl || externalUrl;
+        console.log(`🔍 [Redis Client Debug] Raw process.env URL: ${rawUrl ? 'DETECTED' : 'MISSING'}`);
+        console.log(`🔍 [Redis Client Debug] Nest ConfigService URL: ${configUrl ? 'DETECTED' : 'MISSING'}`);
+
+        // If Render provides a real URL, use it. Never fallback if a real one exists.
+        const finalUrl = rawUrl || configUrl || 'redis://localhost:6379';
         
-        if (!url) {
-          console.log('⚠️ [Redis Client] WARNING: No REDIS_URL found in environment! Falling back to localhost:6379');
+        if (finalUrl.includes('localhost') && (rawUrl || configUrl)) {
+          console.log('⚠️ [Redis Client Debug] WARNING: One of the URLs contains localhost but we found env vars. Checking for shadowing...');
         }
 
-        const redisUrl = url || 'redis://localhost:6379';
-        const maskedUrl = redisUrl.replace(/:(.*)@/, ':****@');
-        console.log(`🚀 [Redis Client] Connecting to: ${maskedUrl}`);
+        const maskedUrl = finalUrl.replace(/:(.*)@/, ':****@');
+        console.log(`🚀 [Redis Client] Final Connection String: ${maskedUrl}`);
 
         const options: any = {
           maxRetriesPerRequest: null,
           retryStrategy: (times) => {
             const delay = Math.min(times * 500, 5000);
-            console.log(`🔄 [Redis Client] Retry #${times} in ${delay}ms...`);
             return delay;
           },
         };
 
-        if (redisUrl.startsWith('rediss://')) {
-          console.log('🔒 [Redis Client] Using secure connection (TLS)');
+        if (finalUrl.startsWith('rediss://')) {
+          console.log('🔒 [Redis Client] TLS/SSL detected');
           options.tls = { rejectUnauthorized: false };
         }
 
-        const client = new Redis(redisUrl, options);
-
-        client.on('error', (err) => {
-          console.log(`❌ [Redis Client Error] ${err.message}`);
-        });
-
-        client.on('connect', () => {
-          console.log('✅ [Redis Client] Connected');
-        });
-
-        return client;
+        return new Redis(finalUrl, options);
       },
       inject: [ConfigService],
     },
     {
       provide: 'REDIS_SUBSCRIBER',
       useFactory: (configService: ConfigService) => {
-        const url = configService.get<string>('REDIS_URL') || process.env.REDIS_URL || process.env.REDIS_INTERNAL_URL;
-        const redisUrl = url || 'redis://localhost:6379';
+        const finalUrl = process.env.REDIS_URL || process.env.REDIS_INTERNAL_URL || configService.get<string>('REDIS_URL') || 'redis://localhost:6379';
         
         const options: any = {
           maxRetriesPerRequest: null,
           retryStrategy: (times) => Math.min(times * 500, 5000),
         };
 
-        if (redisUrl.startsWith('rediss://')) {
+        if (finalUrl.startsWith('rediss://')) {
           options.tls = { rejectUnauthorized: false };
         }
 
-        const client = new Redis(redisUrl, options);
-
-        client.on('error', (err) => {
-          console.log(`❌ [Redis Subscriber Error] ${err.message}`);
-        });
-
-        client.on('connect', () => {
-          console.log('✅ [Redis Subscriber] Connected');
-        });
-
-        return client;
+        return new Redis(finalUrl, options);
       },
       inject: [ConfigService],
     },
