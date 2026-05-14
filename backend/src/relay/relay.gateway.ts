@@ -1,0 +1,71 @@
+import {
+  WebSocketGateway,
+  WebSocketServer,
+  SubscribeMessage,
+  OnGatewayConnection,
+  OnGatewayDisconnect,
+} from '@nestjs/websockets';
+import { Server, Socket } from 'socket.io';
+import { RoomsService } from '../rooms/rooms.service';
+import { Inject, Logger } from '@nestjs/common';
+import Redis from 'ioredis';
+
+@WebSocketGateway({
+  cors: {
+    origin: '*',
+  },
+})
+export class RelayGateway implements OnGatewayConnection, OnGatewayDisconnect {
+  private readonly logger = new Logger(RelayGateway.name);
+
+  @WebSocketServer()
+  server: Server;
+
+  constructor(
+    private readonly roomsService: RoomsService,
+    @Inject('REDIS_SUBSCRIBER') private readonly redisSub: Redis,
+  ) {
+    this.setupKeyspaceNotifications();
+  }
+
+  handleConnection(client: Socket) {
+    this.logger.log(`Client connected: ${client.id}`);
+  }
+
+  handleDisconnect(client: Socket) {
+    this.logger.log(`Client disconnected: ${client.id}`);
+  }
+
+  @SubscribeMessage('space.join')
+  async handleJoin(client: Socket, payload: { roomId: string }) {
+    const room = await this.roomsService.getRoom(payload.roomId);
+    if (!room) {
+      client.emit('error', { message: 'Space not found or expired' });
+      return;
+    }
+
+    client.join(payload.roomId);
+    client.emit('space.joined', { roomId: payload.roomId });
+    this.logger.log(`Client ${client.id} joined room ${payload.roomId}`);
+  }
+
+  @SubscribeMessage('message.send')
+  async handleMessage(client: Socket, payload: { roomId: string; ciphertext: string; nonce: string; expiry: number }) {
+    // Relay to all in room
+    client.to(payload.roomId).emit('message.receive', payload);
+    
+    // Store in Redis with TTL for late joiners (optional based on privacy preference, but helpful for MVP)
+    await this.roomsService.addMessage(payload.roomId, payload, payload.expiry || 300);
+  }
+
+  private setupKeyspaceNotifications() {
+    this.redisSub.subscribe('__keyevent@0__:expired');
+    this.redisSub.on('message', (channel, message) => {
+      if (message.startsWith('room:')) {
+        const roomId = message.split(':')[1];
+        this.server.to(roomId).emit('space.expired', { roomId });
+        this.logger.log(`Space expired: ${roomId}`);
+      }
+    });
+  }
+}
