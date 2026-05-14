@@ -131,12 +131,12 @@ class HomeScreen extends ConsumerWidget {
     return activeRelay.when(
       data: (relay) => Column(
         children: [
-          Icon(
-            relay != null ? Icons.sensors : Icons.sensors_off,
-            size: 48,
-            color: relay != null ? Colors.white : Colors.white24,
+          Image.asset(
+            'assets/images/banner.png',
+            height: 120,
+            fit: BoxFit.contain,
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 32),
           Text(
             relay?.label ?? 'NO RELAY CONFIGURED',
             style: const TextStyle(fontWeight: FontWeight.bold, letterSpacing: 2),
@@ -217,7 +217,7 @@ class HomeScreen extends ConsumerWidget {
         builder: (scannerContext) => Scaffold(
           appBar: AppBar(title: const Text('SCAN INVITE')),
           body: MobileScanner(
-            onDetect: (capture) {
+            onDetect: (capture) async {
               if (detected) return;
               final List<Barcode> barcodes = capture.barcodes;
               for (final barcode in barcodes) {
@@ -225,7 +225,7 @@ class HomeScreen extends ConsumerWidget {
                 if (code != null && code.startsWith('ghost://room/')) {
                   detected = true;
                   Navigator.pop(scannerContext);
-                  _handleInviteLink(context, ref, code);
+                  await _handleInviteLink(context, ref, code);
                   break;
                 }
               }
@@ -265,7 +265,7 @@ class HomeScreen extends ConsumerWidget {
           if (code != null && code.startsWith('ghost://room/')) {
             if (context.mounted) {
               print('GHOST_LOG: GalleryScan valid invite found. Handling...');
-              _handleInviteLink(context, ref, code);
+              await _handleInviteLink(context, ref, code);
             } else {
               print('GHOST_LOG: GalleryScan context NOT mounted after scan');
             }
@@ -309,11 +309,11 @@ class HomeScreen extends ConsumerWidget {
         actions: [
           TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Cancel')),
           TextButton(
-            onPressed: () {
+            onPressed: () async {
               final link = controller.text;
               if (link.startsWith('ghost://room/')) {
                 Navigator.pop(dialogContext);
-                _handleInviteLink(context, ref, link);
+                await _handleInviteLink(context, ref, link);
               }
             },
             child: const Text('Join'),
@@ -323,39 +323,48 @@ class HomeScreen extends ConsumerWidget {
     );
   }
 
-  void _handleInviteLink(BuildContext context, WidgetRef ref, String link) {
+  Future<void> _handleInviteLink(BuildContext context, WidgetRef ref, String link) async {
     print('GHOST_LOG: _handleInviteLink processing: $link');
-    final uri = Uri.parse(link.replaceFirst('ghost://', 'http://'));
-    final roomId = uri.pathSegments.last;
-    final rawKey = uri.queryParameters['key'];
-
-    if (rawKey == null) {
-      print('GHOST_LOG: _handleInviteLink error: No key found');
-      return;
-    }
-
-    final keyBase64 = rawKey.trim().replaceAll(" ", "+");
-    final sodium = ref.read(sodiumProvider);
     try {
+      final uri = Uri.parse(link.replaceFirst('ghost://', 'http://'));
+      final roomId = uri.pathSegments.last;
+      final rawKey = uri.queryParameters['key'];
+
+      if (rawKey == null) {
+        print('GHOST_LOG: _handleInviteLink error: No key found');
+        return;
+      }
+
+      // Consolidate key cleaning
+      final keyBase64 = rawKey.trim().replaceAll(" ", "+");
+      
+      // Verify key is valid base64 before saving
+      final sodium = ref.read(sodiumProvider);
       final keyBytes = base64Decode(keyBase64);
+      // We create the roomKey just to verify it works
       final roomKey = SecureKey.fromList(sodium, keyBytes);
 
       print('GHOST_LOG: _handleInviteLink RoomID: $roomId');
-      // Save to recent
+      
+      // Save to recent - AWAIT this to avoid race condition with invalidation
       final activeRelay = ref.read(activeRelayProvider).value;
-      ref.read(relayManagerProvider).addRecentRoom(
+      await ref.read(relayManagerProvider).addRecentRoom(
         roomId,
         keyBase64,
         activeRelay?.label ?? 'Joined Relay',
       );
+      
+      // Refresh the UI list
       ref.invalidate(recentRoomsProvider);
 
-      _handleManualJoin(context, ref, roomId, keyBase64);
+      if (context.mounted) {
+        _handleManualJoin(context, ref, roomId, keyBase64);
+      }
     } catch (e) {
-      print('GHOST_LOG: _handleInviteLink decode error: $e');
+      print('GHOST_LOG: _handleInviteLink error: $e');
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Invalid invite key: $e')),
+          SnackBar(content: Text('Invalid invite: $e')),
         );
       }
     }

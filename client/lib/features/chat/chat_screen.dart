@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/providers.dart';
 import '../spaces/space_service.dart';
+import '../invite/invite_screen.dart';
 import 'dart:convert';
 
 class Message {
@@ -135,6 +136,19 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
             ),
           ],
         ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.qr_code_2),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => InviteScreen(config: widget.config),
+                ),
+              );
+            },
+          ),
+        ],
       ),
       body: Column(
         children: [

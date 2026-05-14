@@ -113,21 +113,22 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return const Scaffold(
+    return Scaffold(
+      backgroundColor: const Color(0xFF0A0A0A), // Deep dark background
       body: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Text(
-              'GHOST ROOM',
-              style: TextStyle(
-                fontSize: 48,
-                fontWeight: FontWeight.w100,
-                letterSpacing: 8.0,
-              ),
+            Image.asset(
+              'assets/images/banner.png',
+              height: 180,
+              fit: BoxFit.contain,
             ),
-            SizedBox(height: 20),
-            CircularProgressIndicator(color: Colors.white, strokeWidth: 1),
+            const SizedBox(height: 48),
+            const CircularProgressIndicator(
+              color: Colors.white24, 
+              strokeWidth: 1,
+            ),
           ],
         ),
       ),
