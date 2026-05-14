@@ -51,8 +51,8 @@ export class RelayGateway implements OnGatewayConnection, OnGatewayDisconnect {
     await client.join(payload.roomId);
     client.emit("space.joined", { roomId: payload.roomId });
 
-    // Fetch and send message history to the late joiner
-    const history = await this.roomsService.getMessages(payload.roomId);
+    // Fetch and send message history to the late joiner, then clear it (One-time delivery)
+    const history = await this.roomsService.consumeMessages(payload.roomId);
     if (history.length > 0) {
       client.emit("space.history", {
         roomId: payload.roomId,
@@ -61,7 +61,7 @@ export class RelayGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
 
     this.logger.log(
-      `Client ${client.id} successfully joined room ${payload.roomId} and received ${history.length} messages`,
+      `Client ${client.id} successfully joined room ${payload.roomId} and consumed ${history.length} messages`,
     );
   }
 
@@ -75,16 +75,21 @@ export class RelayGateway implements OnGatewayConnection, OnGatewayDisconnect {
       expiry: number;
     },
   ) {
-    this.logger.log(`Message from ${client.id} to room ${payload.roomId}`);
-    // Relay to all in room
+    this.logger.log(`Incoming message to room ${payload.roomId} from client ${client.id}`);
+    
+    // Relay to all other clients in the room
     client.to(payload.roomId).emit("message.receive", payload);
 
-    // Store in Redis with TTL for late joiners
-    await this.roomsService.addMessage(
-      payload.roomId,
-      payload,
-      payload.expiry || 300,
-    );
+    // Store in Redis with TTL for the NEXT person who joins (if any)
+    try {
+      await this.roomsService.addMessage(
+        payload.roomId,
+        payload,
+        payload.expiry || 300,
+      );
+    } catch (e) {
+      this.logger.error(`Failed to store message for room ${payload.roomId}: ${e.message}`);
+    }
   }
 
   private setupKeyspaceNotifications() {
