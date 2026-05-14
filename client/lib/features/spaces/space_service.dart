@@ -52,7 +52,7 @@ class SpaceService {
   Uint8List encryptMessage(String plaintext, SecureKey roomKey) {
     final nonce = sodium.randombytes.buf(sodium.crypto.secretBox.nonceBytes);
     final ciphertext = sodium.crypto.secretBox.easy(
-      message: utf8.encode(plaintext) as Uint8List,
+      message: utf8.encode(plaintext),
       nonce: nonce,
       key: roomKey,
     );

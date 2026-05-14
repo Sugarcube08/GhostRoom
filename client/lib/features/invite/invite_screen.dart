@@ -5,7 +5,6 @@ import 'package:share_plus/share_plus.dart';
 import 'package:gal/gal.dart';
 import 'package:flutter/rendering.dart';
 import 'dart:ui' as ui;
-import 'dart:typed_data';
 import 'dart:io';
 import 'package:path_provider/path_provider.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -25,7 +24,8 @@ class _InviteScreenState extends ConsumerState<InviteScreen> {
 
   Future<void> _saveToGallery() async {
     try {
-      final boundary = _qrKey.currentContext?.findRenderObject() as RenderRepaintBoundary?;
+      final boundary =
+          _qrKey.currentContext?.findRenderObject() as RenderRepaintBoundary?;
       if (boundary == null) return;
 
       final image = await boundary.toImage(pixelRatio: 3.0);
@@ -34,24 +34,26 @@ class _InviteScreenState extends ConsumerState<InviteScreen> {
 
       final bytes = byteData.buffer.asUint8List();
 
-      // Save to temp file first (Gal needs a path or bytes depending on version, 
+      // Save to temp file first (Gal needs a path or bytes depending on version,
       // but usually bytes or path. Let's use putUint8List if available or temporary file)
       final tempDir = await getTemporaryDirectory();
-      final file = await File('${tempDir.path}/ghost_invite_${widget.config.roomId.substring(0, 8)}.png').create();
+      final file = await File(
+        '${tempDir.path}/ghost_invite_${widget.config.roomId.substring(0, 8)}.png',
+      ).create();
       await file.writeAsBytes(bytes);
 
       await Gal.putImage(file.path);
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Saved to gallery!')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Saved to gallery!')));
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to save: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Failed to save: $e')));
       }
     }
   }
@@ -120,4 +122,3 @@ class _InviteScreenState extends ConsumerState<InviteScreen> {
     );
   }
 }
-

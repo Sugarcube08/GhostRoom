@@ -5,8 +5,6 @@ import 'package:logger/logger.dart';
 class WebSocketService {
   final Logger _logger = Logger();
   io.Socket? _socket;
-  RelayProfile? _currentProfile;
-
   bool get isConnected => _socket?.connected ?? false;
 
   void connect(RelayProfile profile) {
@@ -15,8 +13,6 @@ class WebSocketService {
       _socket!.dispose();
     }
 
-    _currentProfile = profile;
-    
     // Ensure the URL is in a format socket_io_client likes (http/https instead of ws/wss for the handshake)
     String connectionUrl = profile.websocketUrl;
     if (connectionUrl.startsWith('ws://')) {
@@ -25,12 +21,19 @@ class WebSocketService {
       connectionUrl = connectionUrl.replaceFirst('wss://', 'https://');
     }
 
-    _socket = io.io(connectionUrl, io.OptionBuilder()
-      .setTransports(['websocket'])
-      .enableAutoConnect()
-      .enableForceNew()
-      .setExtraHeaders(profile.token != null ? {'Authorization': 'Bearer ${profile.token}'} : {})
-      .build());
+    _socket = io.io(
+      connectionUrl,
+      io.OptionBuilder()
+          .setTransports(['websocket'])
+          .enableAutoConnect()
+          .enableForceNew()
+          .setExtraHeaders(
+            profile.token != null
+                ? {'Authorization': 'Bearer ${profile.token}'}
+                : {},
+          )
+          .build(),
+    );
 
     _socket!.onConnect((_) {
       _logger.i('Connected to relay: ${profile.label} at $connectionUrl');
@@ -41,7 +44,9 @@ class WebSocketService {
     });
 
     _socket!.onConnectError((err) {
-      _logger.e('Connection error for ${profile.label} at $connectionUrl: $err');
+      _logger.e(
+        'Connection error for ${profile.label} at $connectionUrl: $err',
+      );
     });
 
     _socket!.onError((err) {
@@ -62,10 +67,7 @@ class WebSocketService {
   }
 
   void sendMessage(String roomId, Map<String, dynamic> payload) {
-    _socket?.emit('message.send', {
-      'roomId': roomId,
-      ...payload,
-    });
+    _socket?.emit('message.send', {'roomId': roomId, ...payload});
   }
 
   void onMessage(Function(dynamic) callback) {

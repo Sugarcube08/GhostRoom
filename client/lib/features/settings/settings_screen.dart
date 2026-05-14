@@ -48,16 +48,19 @@ class SettingsScreen extends ConsumerWidget {
   void _showPanicConfirm(BuildContext context, WidgetRef ref) {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         title: const Text('SURE?'),
         content: const Text('This will erase all relays, keys, and local data. This action is irreversible.'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('CANCEL')),
+          TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('CANCEL')),
           TextButton(
             onPressed: () async {
               await ref.read(relayManagerProvider).panicWipe();
-              // In a real app, we'd probably restart or exit
-              Navigator.pop(context);
+              
+              if (!dialogContext.mounted) return;
+              Navigator.pop(dialogContext);
+              
+              if (!context.mounted) return;
               Navigator.pop(context);
             },
             child: const Text('ERASE EVERYTHING', style: TextStyle(color: Colors.red)),

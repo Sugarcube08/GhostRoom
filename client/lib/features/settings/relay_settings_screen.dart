@@ -72,7 +72,7 @@ class _RelaySettingsScreenState extends ConsumerState<RelaySettingsScreen> {
 
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         title: const Text('Add Relay'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
@@ -91,7 +91,7 @@ class _RelaySettingsScreenState extends ConsumerState<RelaySettingsScreen> {
           ],
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+          TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Cancel')),
           TextButton(
             onPressed: () async {
               final newRelay = RelayProfile(
@@ -111,7 +111,8 @@ class _RelaySettingsScreenState extends ConsumerState<RelaySettingsScreen> {
               // Connect to the new relay
               ref.read(webSocketServiceProvider).connect(newRelay);
               
-              Navigator.pop(context);
+              if (!dialogContext.mounted) return;
+              Navigator.pop(dialogContext);
             },
             child: const Text('Save'),
           ),
@@ -123,17 +124,19 @@ class _RelaySettingsScreenState extends ConsumerState<RelaySettingsScreen> {
   void _showDeleteConfirm(BuildContext context, RelayProfile relay) {
      showDialog(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         title: const Text('Delete Relay?'),
         content: Text('Remove ${relay.label} from your profiles?'),
         actions: [
-           TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+           TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Cancel')),
            TextButton(
             onPressed: () async {
               await ref.read(relayManagerProvider).deleteRelay(relay.id);
               ref.invalidate(relayProfilesProvider);
               ref.invalidate(activeRelayProvider);
-              Navigator.pop(context);
+              
+              if (!dialogContext.mounted) return;
+              Navigator.pop(dialogContext);
             },
             child: const Text('Delete', style: TextStyle(color: Colors.red)),
           ),

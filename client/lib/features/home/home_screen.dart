@@ -84,7 +84,7 @@ class HomeScreen extends ConsumerWidget {
         );
       },
       loading: () => const SizedBox.shrink(),
-      error: (_, __) => const SizedBox.shrink(),
+      error: (_, _) => const SizedBox.shrink(),
     );
   }
 
@@ -149,7 +149,7 @@ class HomeScreen extends ConsumerWidget {
         ],
       ),
       loading: () => const CircularProgressIndicator(),
-      error: (_, __) => const Icon(Icons.error_outline, color: Colors.red),
+      error: (_, _) => const Icon(Icons.error_outline, color: Colors.red),
     );
   }
 
@@ -342,7 +342,7 @@ class HomeScreen extends ConsumerWidget {
       final sodium = ref.read(sodiumProvider);
       final keyBytes = base64Decode(keyBase64);
       // We create the roomKey just to verify it works
-      final roomKey = SecureKey.fromList(sodium, keyBytes);
+      SecureKey.fromList(sodium, keyBytes);
 
       print('GHOST_LOG: _handleInviteLink RoomID: $roomId');
       
