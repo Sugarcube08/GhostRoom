@@ -8,7 +8,7 @@
     "allowSyntheticDefaultImports": true,
     "target": "ES2021",
     "sourceMap": true,
-    "outDir": "./dist-new",
+    "outDir": "./dist",
     "rootDir": "src",
     "baseUrl": "./",
     "incremental": false,

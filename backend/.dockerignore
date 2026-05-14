@@ -1,0 +1,8 @@
+node_modules
+dist
+dist-new
+npm-debug.log
+.env
+.dockerignore
+**/.git
+**/.DS_Store
