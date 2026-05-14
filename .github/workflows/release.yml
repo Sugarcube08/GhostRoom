@@ -1,0 +1,104 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    name: Build ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [android, ios, macos, windows, linux, web]
+        include:
+          - target: android
+            os: ubuntu-latest
+            build_cmd: flutter build apk --release
+            artifact_path: client/build/app/outputs/flutter-apk/app-release.apk
+            artifact_name: ghostroom-android.apk
+          - target: ios
+            os: macos-latest
+            build_cmd: flutter build ios --release --no-codesign
+            artifact_path: client/build/ios/iphoneos/Runner.app
+            artifact_name: ghostroom-ios-app.zip
+          - target: macos
+            os: macos-latest
+            build_cmd: flutter build macos --release
+            artifact_path: client/build/macos/Build/Products/Release/ghostroom.app
+            artifact_name: ghostroom-macos-app.zip
+          - target: windows
+            os: windows-latest
+            build_cmd: flutter build windows --release
+            artifact_path: client/build/windows/x64/runner/Release
+            artifact_name: ghostroom-windows.zip
+          - target: linux
+            os: ubuntu-latest
+            build_cmd: |
+              sudo apt-get update
+              sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev libstdc++-12-dev
+              flutter build linux --release
+            artifact_path: client/build/linux/x64/release/bundle
+            artifact_name: ghostroom-linux.tar.gz
+          - target: web
+            os: ubuntu-latest
+            build_cmd: flutter build web --release
+            artifact_path: client/build/web
+            artifact_name: ghostroom-web.zip
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+      - name: Install dependencies
+        run: |
+          cd client
+          flutter pub get
+      - name: Build
+        run: |
+          cd client
+          ${{ matrix.build_cmd }}
+      
+      - name: Package Artifacts
+        shell: bash
+        run: |
+          if [ "${{ matrix.target }}" == "web" ]; then
+            cd client/build/web && zip -r ../../../${{ matrix.artifact_name }} .
+          elif [ "${{ matrix.target }}" == "windows" ]; then
+            cd client/build/windows/x64/runner/Release && 7z a ../../../../../../${{ matrix.artifact_name }} .
+          elif [ "${{ matrix.target }}" == "linux" ]; then
+            cd client/build/linux/x64/release/bundle && tar -czvf ../../../../../../${{ matrix.artifact_name }} .
+          elif [ "${{ matrix.target }}" == "macos" ]; then
+            cd client/build/macos/Build/Products/Release && zip -r ../../../../../../${{ matrix.artifact_name }} ghostroom.app
+          elif [ "${{ matrix.target }}" == "ios" ]; then
+            cd client/build/ios/iphoneos && zip -r ../../../../${{ matrix.artifact_name }} Runner.app
+          else
+            cp ${{ matrix.artifact_path }} ${{ matrix.artifact_name }}
+          fi
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.target }}-artifact
+          path: ${{ matrix.artifact_name }}
+
+  release:
+    name: Create Release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*
+          generate_release_notes: true
