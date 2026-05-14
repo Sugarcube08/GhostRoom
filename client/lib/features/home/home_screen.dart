@@ -207,6 +207,7 @@ class HomeScreen extends ConsumerWidget {
   }
 
   void _joinSpace(BuildContext context, WidgetRef ref) {
+    bool detected = false;
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -214,10 +215,13 @@ class HomeScreen extends ConsumerWidget {
           appBar: AppBar(title: const Text('SCAN INVITE')),
           body: MobileScanner(
             onDetect: (capture) {
+              if (detected) return;
               final List<Barcode> barcodes = capture.barcodes;
               for (final barcode in barcodes) {
                 final code = barcode.rawValue;
                 if (code != null && code.startsWith('ghost://room/')) {
+                  detected = true;
+                  Navigator.pop(context); // Pop scanner
                   _handleInviteLink(context, ref, code);
                   break;
                 }
