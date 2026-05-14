@@ -1,18 +1,36 @@
-flutter_ios_podfile_setup_path = File.expand_path(File.join('..', '..', 'packages', 'flutter_tools', 'bin', 'podhelper.rb'), ENV['FLUTTER_ROOT'])
-load flutter_ios_podfile_setup_path
+# Standard Flutter iOS Podfile with deployment target overrides
+
+# The next line is used by Flutter to locate generated config file.
+import_file = File.expand_path(File.join('..', 'Flutter', 'Generated.xcconfig'), __FILE__)
+if File.exist?(import_file)
+  File.readlines(import_file).each do |line|
+    variable, value = line.split('=')
+    if variable == 'FLUTTER_ROOT'
+      $flutter_root = value.strip
+    end
+  end
+end
+
+if $flutter_root.nil?
+  # Fallback to environment variable if xcconfig is missing
+  $flutter_root = ENV['FLUTTER_ROOT']
+end
+
+if $flutter_root.nil?
+  puts "FLUTTER_ROOT not found. Ensure you have run 'flutter pub get'"
+  exit 1
+end
+
+require File.expand_path(File.join('packages', 'flutter_tools', 'bin', 'podhelper'), $flutter_root)
 
 platform :ios, '13.0'
-
-# CocoaPods analytics sends network stats synchronously affecting your build performance.
-ENV['COCOAPODS_DISABLE_STATS'] = 'true'
-
-project 'Runner.xcodeproj'
 
 target 'Runner' do
   use_frameworks!
   use_modular_headers!
 
   flutter_install_all_ios_pods File.dirname(File.realpath(__FILE__))
+  
   target 'RunnerTests' do
     inherit! :search_paths
   end
