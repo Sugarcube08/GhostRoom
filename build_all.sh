@@ -5,6 +5,9 @@
 
 set -e
 
+PROJECT_ROOT=$(pwd)
+DIST_DIR="$PROJECT_ROOT/dist"
+
 echo "🚀 Starting local build for GhostRoom..."
 
 # 1. Install System Dependencies
@@ -18,7 +21,7 @@ sudo apt-get install -y \
 
 # 2. Get Flutter Dependencies
 echo "📥 Getting Flutter packages..."
-cd client
+cd "$PROJECT_ROOT/client"
 flutter pub get
 
 # 3. Build Web
@@ -40,16 +43,26 @@ fi
 
 # 6. Package Artifacts
 echo "📦 Packaging artifacts..."
-mkdir -p ../dist
+mkdir -p "$DIST_DIR"
 
 # Web
-cd build/web && zip -r ../../../dist/ghostroom-web.zip . && cd ../..
+echo "📦 Packaging Web..."
+(cd build/web && zip -r "$DIST_DIR/ghostroom-web.zip" .)
+
 # Linux
-cd build/linux/x64/release/bundle && tar -czvf ../../../../../../dist/ghostroom-linux.tar.gz . && cd ../../../../../..
+echo "📦 Packaging Linux..."
+(cd build/linux/x64/release/bundle && tar -czvf "$DIST_DIR/ghostroom-linux.tar.gz" .)
+
 # Android
-if [ -f "build/app/outputs/flutter-apk/app-release.apk" ]; then
-    cp build/app/outputs/flutter-apk/app-release.apk ../dist/ghostroom-android.apk
+echo "📦 Packaging Android..."
+APK_PATH="build/app/outputs/flutter-apk/app-release.apk"
+if [ -f "$APK_PATH" ]; then
+    cp "$APK_PATH" "$DIST_DIR/ghostroom-android.apk"
+    echo "✅ Android APK copied to dist/"
+else
+    echo "⚠️ Android APK not found at $APK_PATH"
 fi
 
-echo "✅ Local builds complete! Artifacts are in the 'dist' folder."
+echo "✅ Local builds complete! Artifacts are in the 'dist' folder:"
+ls -lh "$DIST_DIR"
 echo "⚠️ Note: iOS, macOS, and Windows builds still require their respective native environments."

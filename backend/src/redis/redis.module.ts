@@ -8,16 +8,27 @@ import Redis from 'ioredis';
     {
       provide: 'REDIS_CLIENT',
       useFactory: (configService: ConfigService) => {
-        const url = configService.get<string>('REDIS_URL', 'redis://localhost:6379');
+        // Priority: ConfigService -> process.env -> Default
+        let url = configService.get<string>('REDIS_URL');
         
-        // Mask password in logs
+        if (!url) {
+          console.warn('[Redis Client] REDIS_URL not found in ConfigService. Checking process.env...');
+          url = process.env.REDIS_URL;
+        }
+
+        if (!url) {
+          console.error('[Redis Client] CRITICAL: REDIS_URL environment variable is MISSING.');
+          console.warn('[Redis Client] Falling back to: redis://localhost:6379 (This will likely fail in production)');
+          url = 'redis://localhost:6379';
+        }
+
         const maskedUrl = url.replace(/:(.*)@/, ':****@');
-        console.log(`[Redis] Attempting to connect to: ${maskedUrl}`);
+        console.log(`[Redis Client] Initializing connection to: ${maskedUrl}`);
 
         const client = new Redis(url, {
           maxRetriesPerRequest: null,
           retryStrategy: (times) => {
-            const delay = Math.min(times * 50, 2000);
+            const delay = Math.min(times * 100, 3000);
             return delay;
           },
         });
@@ -37,14 +48,11 @@ import Redis from 'ioredis';
     {
       provide: 'REDIS_SUBSCRIBER',
       useFactory: (configService: ConfigService) => {
-        const url = configService.get<string>('REDIS_URL', 'redis://localhost:6379');
+        let url = configService.get<string>('REDIS_URL') || process.env.REDIS_URL || 'redis://localhost:6379';
         
         const client = new Redis(url, {
           maxRetriesPerRequest: null,
-          retryStrategy: (times) => {
-            const delay = Math.min(times * 50, 2000);
-            return delay;
-          },
+          retryStrategy: (times) => Math.min(times * 100, 3000),
         });
 
         client.on('error', (err) => {
