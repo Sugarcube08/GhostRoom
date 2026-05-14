@@ -9,6 +9,11 @@ import Redis from 'ioredis';
       provide: 'REDIS_CLIENT',
       useFactory: (configService: ConfigService) => {
         const url = configService.get<string>('REDIS_URL', 'redis://localhost:6379');
+        
+        // Mask password in logs
+        const maskedUrl = url.replace(/:(.*)@/, ':****@');
+        console.log(`[Redis] Attempting to connect to: ${maskedUrl}`);
+
         const client = new Redis(url, {
           maxRetriesPerRequest: null,
           retryStrategy: (times) => {
@@ -18,11 +23,11 @@ import Redis from 'ioredis';
         });
 
         client.on('error', (err) => {
-          console.error('[Redis Client Error]', err.message);
+          console.error('[Redis Client Error]', err);
         });
 
         client.on('connect', () => {
-          console.log('Successfully connected to Redis');
+          console.log('[Redis Client] Successfully connected');
         });
 
         return client;
@@ -33,6 +38,7 @@ import Redis from 'ioredis';
       provide: 'REDIS_SUBSCRIBER',
       useFactory: (configService: ConfigService) => {
         const url = configService.get<string>('REDIS_URL', 'redis://localhost:6379');
+        
         const client = new Redis(url, {
           maxRetriesPerRequest: null,
           retryStrategy: (times) => {
@@ -42,11 +48,11 @@ import Redis from 'ioredis';
         });
 
         client.on('error', (err) => {
-          console.error('[Redis Subscriber Error]', err.message);
+          console.error('[Redis Subscriber Error]', err);
         });
 
         client.on('connect', () => {
-          console.log('Successfully connected to Redis (Subscriber)');
+          console.log('[Redis Subscriber] Successfully connected');
         });
 
         return client;
