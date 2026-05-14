@@ -75,6 +75,11 @@ class WebSocketService {
     _socket?.on('message.receive', (data) => callback(data));
   }
 
+  void onHistory(Function(dynamic) callback) {
+    _socket?.off('space.history');
+    _socket?.on('space.history', (data) => callback(data));
+  }
+
   void onSpaceExpired(Function(dynamic) callback) {
     _socket?.off('space.expired');
     _socket?.on('space.expired', (data) => callback(data));

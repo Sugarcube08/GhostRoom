@@ -25,7 +25,7 @@ class HomeScreen extends ConsumerWidget {
           IconButton(
             icon: const Icon(Icons.settings_outlined),
             onPressed: () {
-              print('GHOST_LOG: Settings icon pressed');
+              debugPrint('GHOST_LOG: Settings icon pressed');
               Navigator.push(
                 context, 
                 MaterialPageRoute(builder: (_) => const SettingsScreen())
@@ -243,7 +243,7 @@ class HomeScreen extends ConsumerWidget {
 
     final scanner = MobileScannerController();
     try {
-      print('GHOST_LOG: GalleryScan starting for: ${image.path}');
+      debugPrint('GHOST_LOG: GalleryScan starting for: ${image.path}');
       
       // We don't need to await 'start()' for analyzeImage, but we need to listen
       final captureFuture = scanner.barcodes.first.timeout(
@@ -252,22 +252,22 @@ class HomeScreen extends ConsumerWidget {
       );
       
       final bool found = await scanner.analyzeImage(image.path);
-      print('GHOST_LOG: GalleryScan analyzeImage returned: $found');
+      debugPrint('GHOST_LOG: GalleryScan analyzeImage returned: $found');
       
       if (found) {
         final BarcodeCapture capture = await captureFuture;
-        print('GHOST_LOG: GalleryScan detected ${capture.barcodes.length} barcodes.');
+        debugPrint('GHOST_LOG: GalleryScan detected ${capture.barcodes.length} barcodes.');
         
         if (capture.barcodes.isNotEmpty) {
           final code = capture.barcodes.first.rawValue;
-          print('GHOST_LOG: GalleryScan raw value: $code');
+          debugPrint('GHOST_LOG: GalleryScan raw value: $code');
           
           if (code != null && code.startsWith('ghost://room/')) {
             if (context.mounted) {
-              print('GHOST_LOG: GalleryScan valid invite found. Handling...');
+              debugPrint('GHOST_LOG: GalleryScan valid invite found. Handling...');
               await _handleInviteLink(context, ref, code);
             } else {
-              print('GHOST_LOG: GalleryScan context NOT mounted after scan');
+              debugPrint('GHOST_LOG: GalleryScan context NOT mounted after scan');
             }
           } else {
             if (context.mounted) {
@@ -285,7 +285,7 @@ class HomeScreen extends ConsumerWidget {
         }
       }
     } catch (e) {
-      print('GHOST_LOG: GalleryScan error: $e');
+      debugPrint('GHOST_LOG: GalleryScan error: $e');
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Error scanning image: $e')),
@@ -324,14 +324,14 @@ class HomeScreen extends ConsumerWidget {
   }
 
   Future<void> _handleInviteLink(BuildContext context, WidgetRef ref, String link) async {
-    print('GHOST_LOG: _handleInviteLink processing: $link');
+    debugPrint('GHOST_LOG: _handleInviteLink processing: $link');
     try {
       final uri = Uri.parse(link.replaceFirst('ghost://', 'http://'));
       final roomId = uri.pathSegments.last;
       final rawKey = uri.queryParameters['key'];
 
       if (rawKey == null) {
-        print('GHOST_LOG: _handleInviteLink error: No key found');
+        debugPrint('GHOST_LOG: _handleInviteLink error: No key found');
         return;
       }
 
@@ -344,7 +344,7 @@ class HomeScreen extends ConsumerWidget {
       // We create the roomKey just to verify it works
       SecureKey.fromList(sodium, keyBytes);
 
-      print('GHOST_LOG: _handleInviteLink RoomID: $roomId');
+      debugPrint('GHOST_LOG: _handleInviteLink RoomID: $roomId');
       
       // Save to recent - AWAIT this to avoid race condition with invalidation
       final activeRelay = ref.read(activeRelayProvider).value;
@@ -361,7 +361,7 @@ class HomeScreen extends ConsumerWidget {
         _handleManualJoin(context, ref, roomId, keyBase64);
       }
     } catch (e) {
-      print('GHOST_LOG: _handleInviteLink error: $e');
+      debugPrint('GHOST_LOG: _handleInviteLink error: $e');
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Invalid invite: $e')),
@@ -371,16 +371,16 @@ class HomeScreen extends ConsumerWidget {
   }
 
   void _handleManualJoin(BuildContext context, WidgetRef ref, String roomId, String keyBase64) {
-    print('GHOST_LOG: _handleManualJoin starting for roomId: $roomId');
+    debugPrint('GHOST_LOG: _handleManualJoin starting for roomId: $roomId');
     try {
       final sodium = ref.read(sodiumProvider);
-      print('GHOST_LOG: _handleManualJoin sodium ready');
+      debugPrint('GHOST_LOG: _handleManualJoin sodium ready');
       
       final keyBytes = base64Decode(keyBase64.trim().replaceAll(" ", "+"));
-      print('GHOST_LOG: _handleManualJoin key decoded, length: ${keyBytes.length}');
+      debugPrint('GHOST_LOG: _handleManualJoin key decoded, length: ${keyBytes.length}');
       
       final roomKey = SecureKey.fromList(sodium, keyBytes);
-      print('GHOST_LOG: _handleManualJoin roomKey created');
+      debugPrint('GHOST_LOG: _handleManualJoin roomKey created');
 
       final config = SpaceConfig(
         roomId: roomId,
@@ -389,21 +389,21 @@ class HomeScreen extends ConsumerWidget {
       );
 
       if (context.mounted) {
-        print('GHOST_LOG: _handleManualJoin navigating to ChatScreen...');
+        debugPrint('GHOST_LOG: _handleManualJoin navigating to ChatScreen...');
         Navigator.push(
           context, 
           MaterialPageRoute(builder: (context) {
-            print('GHOST_LOG: ChatScreen builder called');
+            debugPrint('GHOST_LOG: ChatScreen builder called');
             return ChatScreen(config: config);
           })
-        ).then((_) => print('GHOST_LOG: Navigator.push completed'))
-         .catchError((err) => print('GHOST_LOG: Navigator.push error: $err'));
+        ).then((_) => debugPrint('GHOST_LOG: Navigator.push completed'))
+         .catchError((err) => debugPrint('GHOST_LOG: Navigator.push error: $err'));
       } else {
-        print('GHOST_LOG: _handleManualJoin context not mounted');
+        debugPrint('GHOST_LOG: _handleManualJoin context not mounted');
       }
     } catch (e, stack) {
-      print('GHOST_LOG: _handleManualJoin error: $e');
-      print('GHOST_LOG: _handleManualJoin stack: $stack');
+      debugPrint('GHOST_LOG: _handleManualJoin error: $e');
+      debugPrint('GHOST_LOG: _handleManualJoin stack: $stack');
     }
   }
 }

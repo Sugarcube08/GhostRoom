@@ -30,48 +30,60 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   @override
   void initState() {
     super.initState();
-    print('GHOST_LOG: ChatScreen initState starting');
+    debugPrint('GHOST_LOG: ChatScreen initState starting');
     _setupListeners();
-    print('GHOST_LOG: ChatScreen initState completed');
+    debugPrint('GHOST_LOG: ChatScreen initState completed');
   }
 
   void _setupListeners() {
-    print('GHOST_LOG: ChatScreen _setupListeners starting');
+    debugPrint('GHOST_LOG: ChatScreen _setupListeners starting');
     final ws = ref.read(webSocketServiceProvider);
-    print('GHOST_LOG: ChatScreen ws provider ready');
+    debugPrint('GHOST_LOG: ChatScreen ws provider ready');
     ws.joinSpace(widget.config.roomId);
-    print('GHOST_LOG: ChatScreen joinSpace called');
+    debugPrint('GHOST_LOG: ChatScreen joinSpace called');
     
     ws.onMessage((data) {
-      print('GHOST_LOG: ChatScreen onMessage received: $data');
-      if (!mounted) return;
-      final ciphertext = data['ciphertext'];
-      try {
-        final decrypted = ref.read(spaceServiceProvider).decryptMessage(
-          base64Decode(ciphertext),
-          widget.config.roomKey,
-        );
-        print('GHOST_LOG: ChatScreen message decrypted');
+      debugPrint('GHOST_LOG: ChatScreen onMessage received: $data');
+      _processMessage(data, isMe: false);
+    });
 
-        setState(() {
-          _messages.insert(0, Message(
-            id: DateTime.now().toString(),
-            text: decrypted,
-            isMe: false,
-            timestamp: DateTime.now(),
-          ));
-        });
-      } catch (e) {
-        print('GHOST_LOG: ChatScreen decryption error: $e');
+    ws.onHistory((data) {
+      debugPrint('GHOST_LOG: ChatScreen onHistory received');
+      final List<dynamic> messages = data['messages'] ?? [];
+      for (final msg in messages) {
+        _processMessage(msg, isMe: false);
       }
     });
 
     _socketErrorListener();
 
     ws.onSpaceExpired((_) {
-      print('GHOST_LOG: ChatScreen space expired');
+      debugPrint('GHOST_LOG: ChatScreen space expired');
       if (mounted) _showExpiredDialog();
     });
+  }
+
+  void _processMessage(dynamic data, {required bool isMe}) {
+    if (!mounted) return;
+    final ciphertext = data['ciphertext'];
+    try {
+      final decrypted = ref.read(spaceServiceProvider).decryptMessage(
+        base64Decode(ciphertext),
+        widget.config.roomKey,
+      );
+      debugPrint('GHOST_LOG: ChatScreen message decrypted');
+
+      setState(() {
+        _messages.insert(0, Message(
+          id: DateTime.now().toString() + (isMe ? '_me' : '_other'),
+          text: decrypted,
+          isMe: isMe,
+          timestamp: DateTime.now(),
+        ));
+      });
+    } catch (e) {
+      debugPrint('GHOST_LOG: ChatScreen decryption error: $e');
+    }
   }
 
   void _socketErrorListener() {
@@ -92,14 +104,10 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       'expiry': 300, // 5 minutes message TTL
     });
 
-    setState(() {
-      _messages.insert(0, Message(
-        id: DateTime.now().toString(),
-        text: plaintext,
-        isMe: true,
-        timestamp: DateTime.now(),
-      ));
-    });
+    _processMessage({
+      'ciphertext': base64Encode(encrypted),
+    }, isMe: true);
+    
     _controller.clear();
   }
 

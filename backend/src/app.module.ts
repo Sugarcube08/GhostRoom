@@ -1,23 +1,27 @@
-import { Module } from '@nestjs/common';
-import { ConfigModule } from '@nestjs/config';
-import { RedisModule } from './redis/redis.module';
-import { RoomsModule } from './rooms/rooms.module';
-import { RelayModule } from './relay/relay.module';
+import { Module } from "@nestjs/common";
+import { ConfigModule } from "@nestjs/config";
+import { RedisModule } from "./redis/redis.module";
+import { RoomsModule } from "./rooms/rooms.module";
+import { RelayModule } from "./relay/relay.module";
+import { AppController } from "./app.controller";
 
-import { ThrottlerModule } from '@nestjs/throttler';
+import { ThrottlerModule } from "@nestjs/throttler";
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
     }),
-    ThrottlerModule.forRoot([{
-      ttl: 60000,
-      limit: 10,
-    }]),
+    ThrottlerModule.forRoot([
+      {
+        ttl: 60000,
+        limit: 10,
+      },
+    ]),
     RedisModule,
     RoomsModule,
     RelayModule,
   ],
+  controllers: [AppController],
 })
 export class AppModule {}

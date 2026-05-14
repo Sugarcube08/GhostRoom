@@ -1,5 +1,7 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:http/http.dart' as http;
 
 class RelayProfile {
   final String id;
@@ -40,6 +42,20 @@ class RelayManager {
   static const String _relaysKey = 'saved_relays';
   static const String _activeRelayIdKey = 'active_relay_id';
   static const String _recentRoomsKey = 'recent_rooms';
+
+  /// Pings the relay's API to wake it up (for Render free tier)
+  Future<void> wakeUpRelay(RelayProfile profile) async {
+    try {
+      debugPrint('GHOST_LOG: Waking up relay: ${profile.apiUrl}');
+      // We don't care about the response, just that it reaches the server
+      final response = await http.get(Uri.parse('${profile.apiUrl}/health')).timeout(
+        const Duration(seconds: 5),
+      );
+      debugPrint('GHOST_LOG: Relay wake-up signal sent. Status: ${response.statusCode}');
+    } catch (e) {
+      debugPrint('GHOST_LOG: Relay wake-up signal failed (expected if server is starting): $e');
+    }
+  }
 
   Future<List<RelayProfile>> getRelays() async {
     final data = await _storage.read(key: _relaysKey);

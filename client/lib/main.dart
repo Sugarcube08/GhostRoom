@@ -76,34 +76,38 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
   }
 
   Future<void> _init() async {
-    print('GHOST_LOG: SplashScreen initializing...');
+    debugPrint('GHOST_LOG: SplashScreen initializing...');
     try {
       final relayManager = ref.read(relayManagerProvider);
       await relayManager.clearRecentRooms();
-      print('GHOST_LOG: Recent rooms cleared from storage.');
+      debugPrint('GHOST_LOG: Recent rooms cleared from storage.');
       ref.invalidate(recentRoomsProvider);
       // Give a tiny moment for the invalidation to propagate
       await Future.delayed(const Duration(milliseconds: 100));
     } catch (e) {
-      print('GHOST_LOG: Error clearing recent rooms: $e');
+      debugPrint('GHOST_LOG: Error clearing recent rooms: $e');
     }
 
     // Initialize identity
-    print('GHOST_LOG: Initializing identity...');
+    debugPrint('GHOST_LOG: Initializing identity...');
     await ref.read(cryptoServiceProvider).initIdentity();
-    print('GHOST_LOG: Identity initialized.');
+    debugPrint('GHOST_LOG: Identity initialized.');
 
     await Future.delayed(const Duration(seconds: 1));
     
     // Auto-connect to active relay if available
     final relay = await ref.read(activeRelayProvider.future);
+    final relayManager = ref.read(relayManagerProvider);
     if (relay != null) {
-      print('GHOST_LOG: Auto-connecting to relay: ${relay.label}');
+      // Wake up the relay before connecting
+      await relayManager.wakeUpRelay(relay);
+      
+      debugPrint('GHOST_LOG: Auto-connecting to relay: ${relay.label}');
       ref.read(webSocketServiceProvider).connect(relay);
     }
 
     if (mounted) {
-      print('GHOST_LOG: Navigating to HomeScreen');
+      debugPrint('GHOST_LOG: Navigating to HomeScreen');
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(builder: (_) => const HomeScreen()),

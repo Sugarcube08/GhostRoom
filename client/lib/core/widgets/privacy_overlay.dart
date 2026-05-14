@@ -26,13 +26,13 @@ class _PrivacyOverlayState extends State<PrivacyOverlay> with WidgetsBindingObse
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    print('GHOST_LOG: PrivacyOverlay lifecycle state changed to: $state');
+    debugPrint('GHOST_LOG: PrivacyOverlay lifecycle state changed to: $state');
     setState(() {
       // Inactive can happen during navigation transitions on some devices, 
       // or when a system dialog is shown. We only want to hide when fully backgrounded.
       _isPaused = state == AppLifecycleState.paused;
     });
-    print('GHOST_LOG: PrivacyOverlay _isPaused: $_isPaused');
+    debugPrint('GHOST_LOG: PrivacyOverlay _isPaused: $_isPaused');
   }
 
   @override
@@ -42,7 +42,7 @@ class _PrivacyOverlayState extends State<PrivacyOverlay> with WidgetsBindingObse
         widget.child,
         if (_isPaused)
           GestureDetector(
-            onTap: () => print('GHOST_LOG: PrivacyOverlay tap intercepted (app paused)'),
+            onTap: () => debugPrint('GHOST_LOG: PrivacyOverlay tap intercepted (app paused)'),
             child: Container(
               color: Colors.black,
               child: const Center(
