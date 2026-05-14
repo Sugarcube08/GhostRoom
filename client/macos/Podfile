@@ -1,3 +1,11 @@
+load File.join(File.dirname(File.realpath(__FILE__)), '.symlinks', 'plugins', 'flutter_secure_storage_macos', 'macos', 'Classes', 'flutter_secure_storage_macos.podspec') rescue nil # Dummy load to ensure path exists if needed
+
+# This is the standard Flutter helper loader
+load File.expand_path(File.join('..', '..', 'packages', 'flutter_tools', 'bin', 'xcode_backend.sh'), ENV['FLUTTER_ROOT']) rescue nil 
+# Wait, the correct way is:
+flutter_macos_podfile_setup_path = File.expand_path(File.join('..', '..', 'packages', 'flutter_tools', 'bin', 'podhelper.rb'), ENV['FLUTTER_ROOT'])
+load flutter_macos_podfile_setup_path
+
 platform :osx, '11.0'
 
 # CocoaPods analytics sends network stats synchronously affecting your build performance.

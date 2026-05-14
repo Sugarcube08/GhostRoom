@@ -1,4 +1,6 @@
-# Uncomment this line to define a global platform for your project
+flutter_ios_podfile_setup_path = File.expand_path(File.join('..', '..', 'packages', 'flutter_tools', 'bin', 'podhelper.rb'), ENV['FLUTTER_ROOT'])
+load flutter_ios_podfile_setup_path
+
 platform :ios, '13.0'
 
 # CocoaPods analytics sends network stats synchronously affecting your build performance.
