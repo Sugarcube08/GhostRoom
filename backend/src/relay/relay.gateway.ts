@@ -7,8 +7,11 @@ import {
 } from "@nestjs/websockets";
 import { Server, Socket } from "socket.io";
 import { RoomsService } from "../rooms/rooms.service";
+import { InboxService } from "../inbox/inbox.service";
+import { CryptoUtils } from "../inbox/crypto-utils.service";
 import { Inject, Logger } from "@nestjs/common";
 import Redis from "ioredis";
+import { randomBytes } from "crypto";
 
 @WebSocketGateway({
   cors: {
@@ -23,17 +26,80 @@ export class RelayGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   constructor(
     private readonly roomsService: RoomsService,
+    private readonly inboxService: InboxService,
+    private readonly cryptoUtils: CryptoUtils,
     @Inject("REDIS_SUBSCRIBER") private readonly redisSub: Redis,
   ) {
     this.setupKeyspaceNotifications();
   }
 
-  handleConnection(client: Socket) {
+  async handleConnection(client: Socket) {
     this.logger.log(`Client connected: ${client.id}`);
+    
+    // Auto-send challenge for V2 identities
+    const nonce = randomBytes(32).toString('hex');
+    await this.inboxService.storeChallenge(client.id, nonce);
+    client.emit("identity.challenge", { nonce });
   }
 
-  handleDisconnect(client: Socket) {
+  async handleDisconnect(client: Socket) {
     this.logger.log(`Client disconnected: ${client.id}`);
+    await this.inboxService.deleteChallenge(client.id);
+  }
+
+  @SubscribeMessage("identity.prove")
+  async handleIdentityProve(
+    client: Socket,
+    payload: { public_id: string; public_key: string; signature: string },
+  ) {
+    const nonce = await this.inboxService.getChallenge(client.id);
+    if (!nonce) {
+      client.emit("error", { message: "Challenge expired or not found" });
+      return;
+    }
+
+    // 1. Verify Public ID derivation
+    const derivedId = this.cryptoUtils.derivePublicId(payload.public_key);
+    if (derivedId !== payload.public_id) {
+      client.emit("error", { message: "Invalid Public ID for provided key" });
+      return;
+    }
+
+    // 2. Verify Signature
+    const isValid = this.cryptoUtils.verifySignature(nonce, payload.signature, payload.public_key);
+    if (!isValid) {
+      client.emit("error", { message: "Cryptographic proof failed" });
+      return;
+    }
+
+    // 3. Bind Identity
+    client.data.publicId = payload.public_id;
+    await client.join(`inbox:${payload.public_id}`);
+    
+    this.logger.log(`Client ${client.id} verified as ${payload.public_id}`);
+    client.emit("identity.verified", { public_id: payload.public_id });
+    await this.inboxService.deleteChallenge(client.id);
+  }
+
+  @SubscribeMessage("inbox.fetch")
+  async handleInboxFetch(client: Socket, payload: { since?: number }) {
+    const publicId = client.data.publicId;
+    if (!publicId) {
+      client.emit("error", { message: "Unauthenticated. Prove identity first." });
+      return;
+    }
+
+    const messages = await this.inboxService.fetchMessages(publicId, payload.since || 0);
+    client.emit("inbox.messages", { messages });
+  }
+
+  @SubscribeMessage("message.ack")
+  async handleMessageAck(client: Socket, payload: { message_id: string }) {
+    const publicId = client.data.publicId;
+    if (!publicId) return;
+
+    await this.inboxService.acknowledgeMessage(publicId, payload.message_id);
+    this.logger.log(`Message ${payload.message_id} acknowledged by ${publicId}`);
   }
 
   @SubscribeMessage("space.join")
@@ -51,12 +117,7 @@ export class RelayGateway implements OnGatewayConnection, OnGatewayDisconnect {
     await client.join(payload.roomId);
     client.emit("space.joined", { roomId: payload.roomId });
 
-    // FETCH AND PURGE (Absolute Ephemeral Policy)
-    // We fetch ALL messages, filter for the ones the joiner didn't send,
-    // and then DELETE the entire list so it's fresh for the next time.
     const allMessages = await this.roomsService.consumeMessages(payload.roomId);
-    
-    // Filter out messages sent by this device
     const historyToDeliver = allMessages.filter(msg => msg.senderId !== payload.deviceId);
     
     if (historyToDeliver.length > 0) {
@@ -64,9 +125,6 @@ export class RelayGateway implements OnGatewayConnection, OnGatewayDisconnect {
         roomId: payload.roomId,
         messages: historyToDeliver,
       });
-      this.logger.log(`Delivered ${historyToDeliver.length} messages to ${client.id} and purged room history.`);
-    } else {
-      this.logger.log(`Client ${client.id} joined. Room history was already empty or only contained their own messages (now purged).`);
     }
   }
 
@@ -74,29 +132,47 @@ export class RelayGateway implements OnGatewayConnection, OnGatewayDisconnect {
   async handleMessage(
     client: Socket,
     payload: {
-      roomId: string;
+      target_id: string;
       ciphertext: string;
       nonce?: string;
-      expiry: number;
+      expiry?: number;
       senderId?: string;
+      v?: number;
     },
   ) {
-    this.logger.log(`Incoming message to room ${payload.roomId} from client ${client.id} (Sender: ${payload.senderId || 'unknown'})`);
-    
-    // Relay to all other clients currently in the room
-    client.to(payload.roomId).emit("message.receive", payload);
+    const version = payload.v || 1;
 
-    // Store in Redis ONLY if there are fewer than 2 people in the room 
-    // (meaning the recipient might be offline/not joined yet)
-    // Or just always store it and let handleJoin consume it.
-    try {
-      await this.roomsService.addMessage(
-        payload.roomId,
-        payload,
-        payload.expiry || 300,
-      );
-    } catch (e: any) {
-      this.logger.error(`Failed to store message for room ${payload.roomId}: ${e?.message || e}`);
+    if (version === 2) {
+      // V2 Identity-based routing
+      this.logger.log(`V2 message to ${payload.target_id} from ${client.id}`);
+      
+      try {
+        const envelope = await this.inboxService.queueMessage(payload.target_id, {
+          n: payload.nonce || '',
+          c: payload.ciphertext,
+        });
+
+        // Live delivery
+        this.server.to(`inbox:${payload.target_id}`).emit("message.receive", envelope);
+      } catch (e: any) {
+        this.logger.error(`Failed to queue V2 message: ${e?.message || e}`);
+      }
+    } else {
+      // V1 Space-based routing
+      const roomId = payload.target_id;
+      this.logger.log(`V1 message to room ${roomId} from client ${client.id}`);
+      
+      client.to(roomId).emit("message.receive", payload);
+
+      try {
+        await this.roomsService.addMessage(
+          roomId,
+          payload,
+          payload.expiry || 300,
+        );
+      } catch (e: any) {
+        this.logger.error(`Failed to store V1 message for room ${roomId}: ${e?.message || e}`);
+      }
     }
   }
 

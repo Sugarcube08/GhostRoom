@@ -6,11 +6,17 @@ import 'network/websocket_service.dart';
 
 import '../features/spaces/space_service.dart';
 
+import '../features/contacts/contact_service.dart';
+
 final sodiumProvider = Provider<Sodium>((ref) => throw UnimplementedError());
 
 final identityServiceProvider = Provider<IdentityService>((ref) {
   final sodium = ref.watch(sodiumProvider);
   return IdentityService(sodium);
+});
+
+final contactServiceProvider = Provider<ContactService>((ref) {
+  return ContactService();
 });
 
 // Alias for V1 backward compatibility
