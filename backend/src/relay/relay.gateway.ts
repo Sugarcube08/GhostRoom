@@ -148,6 +148,7 @@ export class RelayGateway implements OnGatewayConnection, OnGatewayDisconnect {
       
       try {
         const envelope = await this.inboxService.queueMessage(payload.target_id, {
+          id: (payload as any).id,
           n: payload.nonce || '',
           c: payload.ciphertext,
         });

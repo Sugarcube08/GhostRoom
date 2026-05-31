@@ -19,8 +19,8 @@ export class InboxService {
   private readonly INBOX_TTL = 14 * 24 * 60 * 60; // 14 days in seconds
   private readonly MAX_QUEUE_DEPTH = 100;
 
-  async queueMessage(publicId: string, payload: { n: string; c: string }): Promise<MessageEnvelope> {
-    const messageId = uuidv4();
+  async queueMessage(publicId: string, payload: { id?: string; n: string; c: string }): Promise<MessageEnvelope> {
+    const messageId = payload.id || uuidv4();
     const timestamp = Date.now();
     
     const envelope: MessageEnvelope = {

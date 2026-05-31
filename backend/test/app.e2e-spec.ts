@@ -1,0 +1,103 @@
+import { Test, TestingModule } from '@nestjs/testing';
+import { INestApplication } from '@nestjs/common';
+import { AppModule } from '../src/app.module';
+import { io, Socket } from 'socket.io-client';
+import { describe, expect, it, beforeAll, afterAll, beforeEach, afterEach, jest } from '@jest/globals';
+
+describe('RelayGateway (Dual-Mode E2E)', () => {
+  let app: INestApplication;
+  let clientV1: Socket;
+  let clientV2: Socket;
+  let mockRedis: any;
+  let port: number;
+
+  beforeAll(async () => {
+    mockRedis = {
+      pipeline: jest.fn().mockReturnValue({
+        setex: jest.fn().mockReturnThis(),
+        zadd: jest.fn().mockReturnThis(),
+        zremrangebyrank: jest.fn().mockReturnThis(),
+        expire: jest.fn().mockReturnThis(),
+        zrem: jest.fn().mockReturnThis(),
+        del: jest.fn().mockReturnThis(),
+        exec: (jest.fn() as any).mockResolvedValue([]),
+      }),
+      multi: jest.fn().mockReturnValue({
+        lrange: jest.fn().mockReturnThis(),
+        del: jest.fn().mockReturnThis(),
+        exec: (jest.fn() as any).mockResolvedValue([[], []]),
+      }),
+      zrangebyscore: (jest.fn() as any).mockResolvedValue([]),
+      mget: (jest.fn() as any).mockResolvedValue([]),
+      zrem: (jest.fn() as any).mockResolvedValue(0),
+      setex: (jest.fn() as any).mockResolvedValue('OK'),
+      get: (jest.fn() as any).mockResolvedValue(null),
+      del: (jest.fn() as any).mockResolvedValue(1),
+      lpush: (jest.fn() as any).mockResolvedValue(1),
+      ltrim: (jest.fn() as any).mockResolvedValue('OK'),
+      expire: (jest.fn() as any).mockResolvedValue(1),
+      on: jest.fn(),
+      subscribe: jest.fn(),
+    };
+
+    const moduleFixture: TestingModule = await Test.createTestingModule({
+      imports: [AppModule],
+    })
+    .overrideProvider('REDIS_CLIENT')
+    .useValue(mockRedis)
+    .overrideProvider('REDIS_SUBSCRIBER')
+    .useValue(mockRedis)
+    .compile();
+
+    app = moduleFixture.createNestApplication();
+    await app.listen(0);
+    const address = app.getHttpServer().address();
+    port = typeof address === 'string' ? 0 : address.port;
+  });
+
+  afterAll(async () => {
+    await app.close();
+  });
+
+  afterEach(() => {
+    if (clientV1) clientV1.disconnect();
+    if (clientV2) clientV2.disconnect();
+  });
+
+  it('should handle V1 Space flow (Broadcast)', (done) => {
+    const url = `http://localhost:${port}`;
+    clientV1 = io(url);
+    clientV2 = io(url);
+    
+    const roomId = 'test-room-v1';
+    mockRedis.get.mockResolvedValue(JSON.stringify({ id: roomId }));
+
+    clientV1.emit('space.join', { roomId });
+    clientV1.on('space.joined', () => {
+      clientV2.emit('space.join', { roomId });
+    });
+
+    clientV2.on('space.joined', () => {
+      clientV1.emit('message.send', {
+        target_id: roomId,
+        ciphertext: 'hello-v1',
+        v: 1
+      });
+    });
+
+    clientV2.on('message.receive', (payload) => {
+      expect(payload.ciphertext).toBe('hello-v1');
+      done();
+    });
+  });
+
+  it('should receive challenge upon connection', (done) => {
+    const url = `http://localhost:${port}`;
+    clientV1 = io(url);
+    clientV1.on('identity.challenge', (data) => {
+      expect(data.nonce).toBeDefined();
+      expect(data.nonce.length).toBe(64);
+      done();
+    });
+  });
+});
