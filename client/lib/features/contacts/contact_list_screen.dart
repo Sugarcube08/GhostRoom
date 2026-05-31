@@ -17,41 +17,120 @@ class ContactListScreen extends ConsumerWidget {
     final contacts = ref.watch(contactServiceProvider).getAllContacts();
 
     return Scaffold(
+      backgroundColor: const Color(0xFF080808),
       appBar: AppBar(
         title: const Text('CONTACTS'),
+        backgroundColor: const Color(0xFF080808),
+        elevation: 0,
         actions: [
           IconButton(
-            icon: const Icon(Icons.person_add_alt_1_outlined),
-            onPressed: () => _showAddContactOptions(context, ref),
+            icon: const Icon(Icons.qr_code_scanner),
+            onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const QRScannerScreen())),
           ),
         ],
       ),
-      body: contacts.isEmpty
-          ? _buildEmptyState(context, ref)
-          : ListView.builder(
-              itemCount: contacts.length,
-              itemBuilder: (context, index) {
-                final contact = contacts[index];
-                return ListTile(
-                  leading: CircleAvatar(
-                    backgroundColor: Colors.white10,
-                    child: Text(contact.alias.isNotEmpty ? contact.alias[0].toUpperCase() : '?'),
-                  ),
-                  title: Text(contact.alias),
-                  subtitle: Text(
-                    contact.publicId,
-                    style: const TextStyle(fontSize: 10, color: Colors.white24),
-                  ),
-                  onTap: () => _showContactDetails(context, ref, contact),
-                );
-              },
+      body: Column(
+        children: [
+          _buildMyPassportCard(context, ref),
+          const Padding(
+            padding: EdgeInsets.fromLTRB(16, 32, 16, 8),
+            child: Row(
+              children: [
+                Text(
+                  'YOUR CONNECTIONS',
+                  style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.white24, letterSpacing: 1.5),
+                ),
+              ],
             ),
+          ),
+          Expanded(
+            child: contacts.isEmpty
+                ? _buildEmptyState(context, ref)
+                : ListView.builder(
+                    itemCount: contacts.length,
+                    itemBuilder: (context, index) {
+                      final contact = contacts[index];
+                      return ListTile(
+                        leading: CircleAvatar(
+                          backgroundColor: Colors.white.withAlpha(5),
+                          child: Text(
+                            contact.alias.isNotEmpty ? contact.alias[0].toUpperCase() : '?',
+                            style: const TextStyle(color: Colors.white70),
+                          ),
+                        ),
+                        title: Text(contact.alias, style: const TextStyle(fontWeight: FontWeight.bold)),
+                        subtitle: Text(
+                          contact.publicId,
+                          style: const TextStyle(fontSize: 10, color: Colors.white10),
+                        ),
+                        trailing: const Icon(Icons.chevron_right, size: 16, color: Colors.white10),
+                        onTap: () => _showContactDetails(context, ref, contact),
+                      );
+                    },
+                  ),
+          ),
+        ],
+      ),
       floatingActionButton: FloatingActionButton(
-        onPressed: () => Navigator.push(
-          context,
-          MaterialPageRoute(builder: (_) => const MyIdentityScreen()),
+        backgroundColor: Colors.white,
+        foregroundColor: Colors.black,
+        onPressed: () => _showAddOptions(context, ref),
+        child: const Icon(Icons.person_add_alt_1),
+      ),
+    );
+  }
+
+  Widget _buildMyPassportCard(BuildContext context, WidgetRef ref) {
+    final identity = ref.watch(identityServiceProvider).currentIdentity;
+    if (identity == null) return const SizedBox.shrink();
+
+    return GestureDetector(
+      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const MyPassportScreen())),
+      child: Container(
+        margin: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: [Colors.white.withAlpha(10), Colors.white.withAlpha(5)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: Colors.white.withAlpha(5)),
         ),
-        child: const Icon(Icons.qr_code_2),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12)),
+              child: QrImageView(
+                data: identity.publicId,
+                version: QrVersions.auto,
+                size: 60.0,
+                gapless: false,
+              ),
+            ),
+            const SizedBox(width: 20),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('MY IDENTITY PASSPORT', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.blueAccent, letterSpacing: 1)),
+                  const SizedBox(height: 4),
+                  Text(
+                    identity.publicId,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, letterSpacing: 0.5),
+                  ),
+                  const SizedBox(height: 4),
+                  const Text('Tap to share your QR and Identity Package', style: TextStyle(fontSize: 10, color: Colors.white24)),
+                ],
+              ),
+            ),
+            const Icon(Icons.arrow_forward_ios, size: 14, color: Colors.white10),
+          ],
+        ),
       ),
     );
   }
@@ -61,26 +140,34 @@ class ContactListScreen extends ConsumerWidget {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const Icon(Icons.people_outline, size: 64, color: Colors.white10),
-          const SizedBox(height: 16),
-          const Text('No contacts yet', style: TextStyle(color: Colors.white38)),
-          const SizedBox(height: 32),
-          ElevatedButton(
-            onPressed: () => _showAddContactOptions(context, ref),
-            child: const Text('ADD CONTACT'),
+          Icon(Icons.diversity_3_outlined, size: 64, color: Colors.white.withAlpha(5)),
+          const SizedBox(height: 24),
+          const Text(
+            'The Social Graph is Local.',
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white70),
+          ),
+          const SizedBox(height: 8),
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 48),
+            child: Text(
+              'GhostRoom does not store your contacts in the cloud. Exchange identities in person or via secure channels.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Colors.white24, fontSize: 12, height: 1.5),
+            ),
           ),
         ],
       ),
     );
   }
 
-  void _showAddContactOptions(BuildContext context, WidgetRef ref) {
+  void _showAddOptions(BuildContext context, WidgetRef ref) {
     showModalBottomSheet(
       context: context,
       backgroundColor: const Color(0xFF121212),
       builder: (context) => Column(
         mainAxisSize: MainAxisSize.min,
         children: [
+          const SizedBox(height: 16),
           ListTile(
             leading: const Icon(Icons.qr_code_scanner),
             title: const Text('SCAN QR CODE'),
@@ -91,12 +178,20 @@ class ContactListScreen extends ConsumerWidget {
           ),
           ListTile(
             leading: const Icon(Icons.paste),
-            title: const Text('PASTE PACKAGE'),
+            title: const Text('PASTE IDENTITY PACKAGE'),
             onTap: () {
               Navigator.pop(context);
               _showManualImport(context, ref);
             },
           ),
+          ListTile(
+            leading: const Icon(Icons.input),
+            title: const Text('ENTER PUBLIC ID MANUALLY'),
+            onTap: () {
+              Navigator.pop(context);
+            },
+          ),
+          const SizedBox(height: 16),
         ],
       ),
     );
@@ -107,16 +202,20 @@ class ContactListScreen extends ConsumerWidget {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFF121212),
         title: const Text('IMPORT PACKAGE'),
         content: TextField(
           controller: controller,
           decoration: const InputDecoration(hintText: 'Paste Identity Package string...'),
           maxLines: 4,
+          style: const TextStyle(fontSize: 12, fontFamily: 'monospace'),
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context), child: const Text('CANCEL')),
           TextButton(
-            onPressed: () => _importPackage(context, ref, controller.text),
+            onPressed: () {
+              _importPackage(context, ref, controller.text);
+            },
             child: const Text('IMPORT'),
           ),
         ],
@@ -164,8 +263,8 @@ class ContactListScreen extends ConsumerWidget {
   }
 }
 
-class MyIdentityScreen extends ConsumerWidget {
-  const MyIdentityScreen({super.key});
+class MyPassportScreen extends ConsumerWidget {
+  const MyPassportScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -174,12 +273,18 @@ class MyIdentityScreen extends ConsumerWidget {
     if (identity == null) return const Scaffold(body: Center(child: Text('Loading...')));
 
     return Scaffold(
-      appBar: AppBar(title: const Text('MY IDENTITY')),
+      backgroundColor: const Color(0xFF080808),
+      appBar: AppBar(
+        title: const Text('MY PASSPORT'),
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+      ),
       body: SingleChildScrollView(
         child: Padding(
-          padding: const EdgeInsets.all(32.0),
+          padding: const EdgeInsets.symmetric(horizontal: 32.0),
           child: Column(
             children: [
+              const SizedBox(height: 24),
               FutureBuilder<IdentityPackage>(
                 future: idService.createPackage([]),
                 builder: (context, snapshot) {
@@ -187,42 +292,53 @@ class MyIdentityScreen extends ConsumerWidget {
                   final pkgString = snapshot.data!.toEncodedString();
                   return Column(
                     children: [
-                      QrImageView(
-                        data: pkgString,
-                        version: QrVersions.auto,
-                        size: 280,
-                        gapless: false,
-                        eyeStyle: const QrEyeStyle(
-                          eyeShape: QrEyeShape.square,
+                      Container(
+                        padding: const EdgeInsets.all(24),
+                        decoration: BoxDecoration(
                           color: Colors.white,
+                          borderRadius: BorderRadius.circular(32),
                         ),
-                        dataModuleStyle: const QrDataModuleStyle(
-                          dataModuleShape: QrDataModuleShape.square,
-                          color: Colors.white,
+                        child: QrImageView(
+                          data: pkgString,
+                          version: QrVersions.auto,
+                          size: 260,
+                          gapless: false,
                         ),
                       ),
+                      const SizedBox(height: 48),
+                      const Text('PUBLIC ID', style: TextStyle(color: Colors.white24, fontSize: 10, letterSpacing: 4, fontWeight: FontWeight.bold)),
+                      const SizedBox(height: 12),
+                      SelectableText(
+                        identity.publicId, 
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, letterSpacing: 1),
+                      ),
                       const SizedBox(height: 32),
-                      const Text('YOUR PUBLIC ID', style: TextStyle(color: Colors.white24, fontSize: 10, letterSpacing: 2)),
-                      const SizedBox(height: 8),
-                      SelectableText(identity.publicId, textAlign: TextAlign.center),
-                      const SizedBox(height: 32),
-                      const Text('YOUR FINGERPRINT', style: TextStyle(color: Colors.white24, fontSize: 10, letterSpacing: 2)),
-                      const SizedBox(height: 8),
-                      Text(identity.fingerprint, style: const TextStyle(fontFamily: 'monospace', fontSize: 12, color: Colors.greenAccent)),
+                      const Text('FINGERPRINT', style: TextStyle(color: Colors.white24, fontSize: 10, letterSpacing: 4, fontWeight: FontWeight.bold)),
+                      const SizedBox(height: 12),
+                      Text(
+                        identity.fingerprint, 
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(fontFamily: 'monospace', fontSize: 11, color: Colors.blueAccent, fontWeight: FontWeight.bold),
+                      ),
                     ],
                   );
                 },
               ),
-              const SizedBox(height: 48),
-              const Divider(color: Colors.white10),
-              const SizedBox(height: 24),
-              const Text('RECOVERY PHRASE', style: TextStyle(color: Colors.redAccent, fontSize: 10, letterSpacing: 2)),
-              const SizedBox(height: 16),
-              Text(
-                identity.mnemonic,
-                textAlign: TextAlign.center,
-                style: const TextStyle(fontSize: 14, color: Colors.white54),
+              const SizedBox(height: 64),
+              ElevatedButton.icon(
+                icon: const Icon(Icons.share),
+                onPressed: () async {
+                   // Placeholder for share
+                },
+                style: ElevatedButton.styleFrom(
+                  minimumSize: const Size(double.infinity, 56),
+                  backgroundColor: Colors.white10,
+                  foregroundColor: Colors.white,
+                ),
+                label: const Text('SHARE IDENTITY PACKAGE'),
               ),
+              const SizedBox(height: 48),
             ],
           ),
         ),
@@ -237,7 +353,7 @@ class QRScannerScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return Scaffold(
-      appBar: AppBar(title: const Text('SCAN IDENTITY')),
+      appBar: AppBar(title: const Text('SCAN PASSPORT')),
       body: MobileScanner(
         onDetect: (capture) {
           final List<Barcode> barcodes = capture.barcodes;
@@ -295,8 +411,11 @@ class ContactDetailScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return Scaffold(
+      backgroundColor: const Color(0xFF080808),
       appBar: AppBar(
-        title: const Text('CONTACT DETAILS'),
+        title: const Text('CONTACT'),
+        backgroundColor: Colors.transparent,
+        elevation: 0,
         actions: [
           IconButton(
             icon: const Icon(Icons.edit_outlined),
@@ -309,18 +428,25 @@ class ContactDetailScreen extends ConsumerWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('ALIAS', style: TextStyle(color: Colors.white24, fontSize: 10, letterSpacing: 2)),
-            const SizedBox(height: 8),
-            Text(contact.alias, style: const TextStyle(fontSize: 24)),
-            const SizedBox(height: 32),
-            const Text('PUBLIC ID', style: TextStyle(color: Colors.white24, fontSize: 10, letterSpacing: 2)),
-            const SizedBox(height: 8),
-            SelectableText(contact.publicId),
-            const SizedBox(height: 32),
-            const Text('FINGERPRINT', style: TextStyle(color: Colors.white24, fontSize: 10, letterSpacing: 2)),
-            const SizedBox(height: 8),
-            Text(contact.fingerprint, style: const TextStyle(fontFamily: 'monospace', fontSize: 12, color: Colors.greenAccent)),
+            const Text('ALIAS', style: TextStyle(color: Colors.white24, fontSize: 10, letterSpacing: 2, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 12),
+            Text(contact.alias, style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold)),
             const SizedBox(height: 48),
+            const Text('PUBLIC ID', style: TextStyle(color: Colors.white24, fontSize: 10, letterSpacing: 2, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 12),
+            SelectableText(contact.publicId, style: const TextStyle(fontSize: 16, fontFamily: 'monospace')),
+            const SizedBox(height: 48),
+            const Text('SAFETY NUMBERS', style: TextStyle(color: Colors.white24, fontSize: 10, letterSpacing: 2, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(color: Colors.white.withAlpha(5), borderRadius: BorderRadius.circular(12)),
+              child: Text(
+                contact.fingerprint, 
+                style: const TextStyle(fontFamily: 'monospace', fontSize: 12, color: Colors.blueAccent, fontWeight: FontWeight.bold, letterSpacing: 1),
+              ),
+            ),
+            const SizedBox(height: 64),
             SizedBox(
               width: double.infinity,
               child: ElevatedButton(
@@ -336,16 +462,19 @@ class ContactDetailScreen extends ConsumerWidget {
                     MaterialPageRoute(builder: (_) => ConversationScreen(conversation: conv)),
                   );
                 },
-                child: const Text('START CHAT'),
+                style: ElevatedButton.styleFrom(
+                  minimumSize: const Size(double.infinity, 60),
+                  backgroundColor: Colors.white,
+                  foregroundColor: Colors.black,
+                ),
+                child: const Text('OPEN SECURE CHANNEL'),
               ),
             ),
             const Spacer(),
-            SizedBox(
-              width: double.infinity,
-              child: OutlinedButton(
+            Center(
+              child: TextButton(
                 onPressed: () => _deleteContact(context, ref),
-                style: OutlinedButton.styleFrom(foregroundColor: Colors.red),
-                child: const Text('DELETE CONTACT'),
+                child: const Text('DELETE CONTACT', style: TextStyle(color: Colors.redAccent, fontSize: 12, fontWeight: FontWeight.bold)),
               ),
             ),
           ],
@@ -359,6 +488,7 @@ class ContactDetailScreen extends ConsumerWidget {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFF121212),
         title: const Text('RENAME CONTACT'),
         content: TextField(
           controller: controller,

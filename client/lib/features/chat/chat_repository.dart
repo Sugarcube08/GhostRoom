@@ -198,6 +198,7 @@ class ChatRepository {
     required String recipientId,
     required String text,
     MessageType type = MessageType.text,
+    String retention = 'PERSISTENT',
     Map<String, dynamic>? metadata,
   }) async {
     final contact = _contactService.getContact(recipientId);
@@ -221,7 +222,10 @@ class ChatRepository {
       senderIdentity: identity,
     );
 
-    _wsService.sendMessage(recipientId, envelope.toJson(), version: 2);
+    _wsService.sendMessage(recipientId, {
+      ...envelope.toJson(),
+      'retention': retention,
+    }, version: 2);
 
     final message = Message(
       id: envelope.id,

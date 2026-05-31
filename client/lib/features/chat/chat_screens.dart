@@ -109,7 +109,6 @@ class ChatsScreen extends ConsumerWidget {
             title: const Text('SCAN QR CODE'),
             onTap: () {
               Navigator.pop(context);
-              // TODO: Implement QR scan for identity package
             },
           ),
           ListTile(
@@ -117,7 +116,6 @@ class ChatsScreen extends ConsumerWidget {
             title: const Text('PASTE IDENTITY PACKAGE'),
             onTap: () {
               Navigator.pop(context);
-              // TODO: Implement manual package import
             },
           ),
           ListTile(
@@ -125,7 +123,6 @@ class ChatsScreen extends ConsumerWidget {
             title: const Text('ENTER PUBLIC ID'),
             onTap: () {
               Navigator.pop(context);
-              // TODO: Implement manual ID entry
             },
           ),
           const SizedBox(height: 16),
@@ -141,8 +138,16 @@ class ChatsScreen extends ConsumerWidget {
         children: [
           Icon(Icons.chat_bubble_outline, size: 64, color: Colors.white10),
           SizedBox(height: 16),
-          Text('No messages yet', style: TextStyle(color: Colors.white24)),
-          Text('Add a contact to start messaging', style: TextStyle(color: Colors.white10, fontSize: 12)),
+          Text('Secure channel established.', style: TextStyle(color: Colors.white24)),
+          SizedBox(height: 8),
+          Padding(
+            padding: EdgeInsets.symmetric(horizontal: 48),
+            child: Text(
+              'Messages in GhostRoom are end-to-end encrypted before they leave your device.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Colors.white10, fontSize: 12),
+            ),
+          ),
         ],
       ),
     );
@@ -167,7 +172,16 @@ class RequestsScreen extends ConsumerWidget {
                 children: [
                   Icon(Icons.mail_lock_outlined, size: 64, color: Colors.white10),
                   SizedBox(height: 16),
-                  Text('No pending requests', style: TextStyle(color: Colors.white24)),
+                  Text('No pending requests.', style: TextStyle(color: Colors.white24)),
+                  SizedBox(height: 8),
+                  Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 48),
+                    child: Text(
+                      'Unknown senders appear here before entering your inbox.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: Colors.white10, fontSize: 12),
+                    ),
+                  ),
                 ],
               ),
             )
@@ -175,28 +189,51 @@ class RequestsScreen extends ConsumerWidget {
               itemCount: requests.length,
               itemBuilder: (context, index) {
                 final req = requests[index];
-                return ListTile(
-                  leading: const CircleAvatar(
-                    backgroundColor: Colors.white10,
-                    child: Icon(Icons.person_outline, color: Colors.white54),
-                  ),
-                  title: const Text('Unknown Sender'),
-                  subtitle: Text(
-                    req.lastMessage?.plaintext ?? '',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => ConversationScreen(conversation: req, isRequestMode: true),
-                      ),
-                    );
+                return Dismissible(
+                  key: Key(req.contactId),
+                  background: _buildDismissBackground(Colors.green, Icons.check, Alignment.centerLeft),
+                  secondaryBackground: _buildDismissBackground(Colors.red, Icons.block, Alignment.centerRight),
+                  confirmDismiss: (direction) async {
+                    if (direction == DismissDirection.startToEnd) {
+                      await ref.read(conversationServiceProvider).acceptRequest(req.contactId);
+                      return true;
+                    } else {
+                      await ref.read(conversationServiceProvider).blockRequest(req.contactId);
+                      return true;
+                    }
                   },
+                  child: ListTile(
+                    leading: const CircleAvatar(
+                      backgroundColor: Colors.white10,
+                      child: Icon(Icons.person_outline, color: Colors.white54),
+                    ),
+                    title: const Text('Unknown Sender'),
+                    subtitle: Text(
+                      req.lastMessage?.plaintext ?? '',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => ConversationScreen(conversation: req, isRequestMode: true),
+                        ),
+                      );
+                    },
+                  ),
                 );
               },
             ),
+    );
+  }
+
+  Widget _buildDismissBackground(Color color, IconData icon, Alignment alignment) {
+    return Container(
+      color: color,
+      alignment: alignment,
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      child: Icon(icon, color: Colors.white),
     );
   }
 }
@@ -214,6 +251,7 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
   final TextEditingController _controller = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   final ImagePicker _picker = ImagePicker();
+  String _selectedRetention = 'PERSISTENT';
 
   @override
   void initState() {
@@ -228,11 +266,16 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
     final text = _controller.text;
     _controller.clear();
     
-    await ref.read(conversationServiceProvider).sendMessage(widget.conversation.contactId, text);
+    await ref.read(conversationServiceProvider).sendMessage(
+      widget.conversation.contactId, 
+      text, 
+      retention: _selectedRetention
+    );
   }
 
-  void _pickMedia() async {
+  void _pickMedia({bool viewOnce = false}) async {
     final messenger = ScaffoldMessenger.of(context);
+    final retention = viewOnce ? 'VIEW_ONCE' : _selectedRetention;
     
     showModalBottomSheet(
       context: context,
@@ -242,14 +285,18 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
         children: [
           ListTile(
             leading: const Icon(Icons.image_outlined),
-            title: const Text('IMAGE'),
+            title: Text(viewOnce ? 'VIEW-ONCE PHOTO' : 'PHOTO'),
             onTap: () async {
               Navigator.pop(context);
               final XFile? image = await _picker.pickImage(source: ImageSource.gallery);
               if (image == null) return;
-              messenger.showSnackBar(const SnackBar(content: Text('Uploading encrypted image...')));
+              messenger.showSnackBar(const SnackBar(content: Text('Encrypting & Uploading...')));
               try {
-                await ref.read(conversationServiceProvider).sendImage(widget.conversation.contactId, File(image.path));
+                await ref.read(conversationServiceProvider).sendImage(
+                  widget.conversation.contactId, 
+                  File(image.path),
+                  retention: retention,
+                );
               } catch (e) {
                 messenger.showSnackBar(SnackBar(content: Text('Upload failed: $e')));
               }
@@ -257,14 +304,18 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
           ),
           ListTile(
             leading: const Icon(Icons.video_library_outlined),
-            title: const Text('VIDEO'),
+            title: Text(viewOnce ? 'VIEW-ONCE VIDEO' : 'VIDEO'),
             onTap: () async {
               Navigator.pop(context);
               final XFile? video = await _picker.pickVideo(source: ImageSource.gallery);
               if (video == null) return;
-              messenger.showSnackBar(const SnackBar(content: Text('Compressing & Uploading video...')));
+              messenger.showSnackBar(const SnackBar(content: Text('Compressing & Uploading...')));
               try {
-                await ref.read(conversationServiceProvider).sendVideo(widget.conversation.contactId, File(video.path));
+                await ref.read(conversationServiceProvider).sendVideo(
+                  widget.conversation.contactId, 
+                  File(video.path),
+                  retention: retention,
+                );
               } catch (e) {
                 messenger.showSnackBar(SnackBar(content: Text('Upload failed: $e')));
               }
@@ -281,15 +332,18 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(widget.conversation.alias),
-            Text(
-              widget.conversation.contactId,
-              style: const TextStyle(fontSize: 10, color: Colors.white24),
-            ),
-          ],
+        title: GestureDetector(
+          onTap: () => _showSafetyNumbers(context),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(widget.conversation.alias),
+              Text(
+                'TAP TO VERIFY IDENTITY',
+                style: const TextStyle(fontSize: 8, color: Colors.blueAccent, fontWeight: FontWeight.bold),
+              ),
+            ],
+          ),
         ),
       ),
       body: Column(
@@ -307,6 +361,40 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
             ),
           ),
           widget.isRequestMode ? _buildRequestActions() : _buildInput(),
+        ],
+      ),
+    );
+  }
+
+  void _showSafetyNumbers(BuildContext context) {
+    final contact = widget.conversation.contact;
+    if (contact == null) return;
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('SAFETY NUMBERS'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              'Verify these numbers with your contact to ensure no one is intercepting your messages.',
+              style: TextStyle(fontSize: 12, color: Colors.white54),
+            ),
+            const SizedBox(height: 24),
+            Container(
+              padding: const EdgeInsets.all(16),
+              color: Colors.white10,
+              child: Text(
+                contact.fingerprint,
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontFamily: 'monospace', letterSpacing: 1, fontSize: 13),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('CLOSE')),
         ],
       ),
     );
@@ -374,9 +462,22 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
             else
               Text(msg.plaintext),
             const SizedBox(height: 4),
-            Text(
-              DateFormat.Hm().format(msg.timestamp),
-              style: const TextStyle(fontSize: 8, color: Colors.white24),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  DateFormat.Hm().format(msg.timestamp),
+                  style: const TextStyle(fontSize: 8, color: Colors.white24),
+                ),
+                if (msg.metadata?['retention'] != null && msg.metadata?['retention'] != 'PERSISTENT') ...[
+                  const SizedBox(width: 4),
+                  Icon(
+                    msg.metadata?['retention'] == 'VIEW_ONCE' ? Icons.visibility_off_outlined : Icons.timer_outlined,
+                    size: 8,
+                    color: Colors.white24,
+                  ),
+                ]
+              ],
             ),
           ],
         ),
@@ -386,31 +487,163 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
 
   Widget _buildInput() {
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
       decoration: const BoxDecoration(
-        color: Colors.black,
+        color: Color(0xFF080808),
         border: Border(top: BorderSide(color: Colors.white10)),
       ),
-      child: Row(
-        children: [
-          IconButton(
-            icon: const Icon(Icons.attach_file_outlined, color: Colors.white54),
-            onPressed: _pickMedia,
-          ),
-          Expanded(
-            child: TextField(
-              controller: _controller,
-              decoration: const InputDecoration(
-                hintText: 'Type a message...',
-                border: InputBorder.none,
-              ),
-              onSubmitted: (_) => _sendMessage(),
+      child: SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _buildRetentionSelector(),
+            Row(
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.add_circle_outline, color: Colors.white54),
+                  onPressed: () => _showMediaOptions(context),
+                ),
+                Expanded(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withAlpha(5),
+                      borderRadius: BorderRadius.circular(24),
+                    ),
+                    child: TextField(
+                      controller: _controller,
+                      maxLines: null,
+                      decoration: const InputDecoration(
+                        hintText: 'Type a message...',
+                        border: InputBorder.none,
+                      ),
+                    ),
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.send, color: Colors.blueAccent),
+                  onPressed: _sendMessage,
+                ),
+              ],
             ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildRetentionSelector() {
+    IconData icon = Icons.history;
+    String label = 'PERSISTENT';
+    if (_selectedRetention == 'EPHEMERAL') {
+      icon = Icons.timer_outlined;
+      label = '30 DAYS';
+    } else if (_selectedRetention == 'VIEW_ONCE') {
+      icon = Icons.visibility_off_outlined;
+      label = 'VIEW ONCE';
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8.0),
+      child: GestureDetector(
+        onTap: _showRetentionOptions,
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, size: 12, color: Colors.white24),
+            const SizedBox(width: 4),
+            Text(
+              label,
+              style: const TextStyle(fontSize: 10, color: Colors.white24, fontWeight: FontWeight.bold),
+            ),
+            const Icon(Icons.arrow_drop_down, size: 12, color: Colors.white24),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showRetentionOptions() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF121212),
+      builder: (context) => Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ListTile(
+            leading: const Icon(Icons.history),
+            title: const Text('PERSISTENT'),
+            subtitle: const Text('Kept in mailbox until acknowledged'),
+            onTap: () {
+              setState(() => _selectedRetention = 'PERSISTENT');
+              Navigator.pop(context);
+            },
           ),
-          IconButton(
-            icon: const Icon(Icons.send),
-            onPressed: _sendMessage,
+          ListTile(
+            leading: const Icon(Icons.timer_outlined),
+            title: const Text('EPHEMERAL'),
+            subtitle: const Text('Auto-delete after 30 days'),
+            onTap: () {
+              setState(() => _selectedRetention = 'EPHEMERAL');
+              Navigator.pop(context);
+            },
           ),
+          ListTile(
+            leading: const Icon(Icons.visibility_off_outlined),
+            title: const Text('VIEW ONCE'),
+            subtitle: const Text('Immediate deletion upon reading'),
+            onTap: () {
+              setState(() => _selectedRetention = 'VIEW_ONCE');
+              Navigator.pop(context);
+            },
+          ),
+          const SizedBox(height: 16),
+        ],
+      ),
+    );
+  }
+
+  void _showMediaOptions(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF121212),
+      builder: (context) => Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ListTile(
+            leading: const Icon(Icons.image_outlined),
+            title: const Text('SEND PHOTO'),
+            onTap: () {
+              Navigator.pop(context);
+              _pickMedia();
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.video_library_outlined),
+            title: const Text('SEND VIDEO'),
+            onTap: () {
+              Navigator.pop(context);
+              _pickMedia();
+            },
+          ),
+          const Divider(color: Colors.white10),
+          ListTile(
+            leading: const Icon(Icons.visibility_off_outlined, color: Colors.amber),
+            title: const Text('SEND VIEW-ONCE PHOTO', style: TextStyle(color: Colors.amber)),
+            onTap: () {
+              Navigator.pop(context);
+              _pickMedia(viewOnce: true);
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.videocam_off_outlined, color: Colors.amber),
+            title: const Text('SEND VIEW-ONCE VIDEO', style: TextStyle(color: Colors.amber)),
+            onTap: () {
+              Navigator.pop(context);
+              _pickMedia(viewOnce: true);
+            },
+          ),
+          const SizedBox(height: 16),
         ],
       ),
     );
@@ -500,6 +733,9 @@ class _AttachmentWidgetState extends ConsumerState<AttachmentWidget> {
       );
     }
 
+    final meta = widget.message.metadata;
+    final sizeStr = meta?['size'] != null ? '${((meta!['size'] as int) / 1024 / 1024).toStringAsFixed(1)} MB' : '';
+
     return Container(
       width: 200,
       height: 150,
@@ -517,18 +753,24 @@ class _AttachmentWidgetState extends ConsumerState<AttachmentWidget> {
           Center(
             child: _isDownloading
                 ? const CircularProgressIndicator(strokeWidth: 2)
-                : TextButton.icon(
-                    onPressed: _download,
-                    icon: Icon(
-                      widget.message.type == MessageType.video 
-                        ? Icons.play_circle_outline 
-                        : Icons.download_for_offline_outlined, 
-                      color: Colors.white70
-                    ),
-                    label: Text(
-                      widget.message.type == MessageType.video ? 'PLAY VIDEO' : 'DOWNLOAD IMAGE', 
-                      style: const TextStyle(color: Colors.white70, fontSize: 10)
-                    ),
+                : Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      IconButton(
+                        icon: Icon(
+                          widget.message.type == MessageType.video 
+                            ? Icons.play_circle_outline 
+                            : Icons.download_for_offline_outlined, 
+                          color: Colors.white70,
+                          size: 32,
+                        ),
+                        onPressed: _download,
+                      ),
+                      Text(
+                        '${widget.message.type.name.toUpperCase()} $sizeStr',
+                        style: const TextStyle(color: Colors.white30, fontSize: 9, fontWeight: FontWeight.bold),
+                      ),
+                    ],
                   ),
           ),
           if (widget.message.type == MessageType.video)

@@ -134,11 +134,11 @@ class ConversationService {
     await _contactService.blockIdentity(publicId);
   }
 
-  Future<void> sendMessage(String recipientId, String text) async {
-    await _chatRepository.sendMessage(recipientId: recipientId, text: text);
+  Future<void> sendMessage(String recipientId, String text, {String retention = 'PERSISTENT'}) async {
+    await _chatRepository.sendMessage(recipientId: recipientId, text: text, retention: retention);
   }
 
-  Future<void> sendImage(String recipientId, File file) async {
+  Future<void> sendImage(String recipientId, File file, {String retention = 'PERSISTENT'}) async {
     final contact = _contactService.getContact(recipientId);
     if (contact == null) throw Exception('Contact not found');
 
@@ -158,11 +158,12 @@ class ConversationService {
       recipientId: recipientId,
       text: '[Image]',
       type: MessageType.image,
+      retention: retention,
       metadata: envelope.toJson(),
     );
   }
 
-  Future<void> sendVideo(String recipientId, File file) async {
+  Future<void> sendVideo(String recipientId, File file, {String retention = 'PERSISTENT'}) async {
     final contact = _contactService.getContact(recipientId);
     if (contact == null) throw Exception('Contact not found');
 
@@ -185,6 +186,7 @@ class ConversationService {
       recipientId: recipientId,
       text: '[Video]',
       type: MessageType.video,
+      retention: retention,
       metadata: envelope.toJson(),
     );
   }

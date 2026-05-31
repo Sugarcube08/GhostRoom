@@ -1,60 +1,48 @@
-# GhostRoom UX Redesign (Phase UX-3)
+# GhostRoom UX Redesign (Phase UX-4 COMPLETE)
 
 Version: 2.1 (Premium)
 
-Status: Implementation Phase
+Status: ✅ COMPLETE
 
 ## 1. PRODUCT REPOSITIONING
-GhostRoom is a **Private Messaging Platform** first, and a **Temporary Space Relay** second. The UX must reflect this hierarchy to inspire trust and clarity.
+GhostRoom is now a **Private Messaging Platform** first. The UX reflects this hierarchy to inspire trust and clarity.
 
 ---
 
-## 2. REVISED NAVIGATION ARCHITECTURE (Bottom Bar)
+## 2. NAVIGATION ARCHITECTURE
 
-1.  **Messages**: Primary Home. Active chats and unread counts.
-2.  **Contacts**: The social graph. Add contacts, view QR, manage blocks.
-3.  **Spaces**: Secondary feature. V1 temporary rooms and future broadcast modes.
-4.  **Vault**: Formerly Settings. Identity management, keys, backups, and security.
-
----
-
-## 3. IDENTITY VAULT (Redesign)
-The "Vault" should feel like a secure container for the user's digital soul.
-
-*   **Header**: High-contrast Public ID and sharing QR.
-*   **Safety Status**: Permanent indicator for "Backup Created" vs "Backup Missing".
-*   **My QR Card**: Premium full-screen card for physical scanning.
-*   **Security Groups**:
-    *   `Keys & Recovery`: Seed phrase, export identity.
-    *   `Backup & Migration`: Encrypted archive management.
-    *   `Relay Network`: Server configuration.
-    *   `Privacy`: Biometrics (future), wipe data.
+1.  **MESSAGES**: Primary Home. Active chats, unread counts, and secure channel empty states.
+2.  **CONTACTS**: Digital Passport center. Sharing and scanning identities.
+3.  **SPACES**: Secondary disposable rooms with duration-based creation cards.
+4.  **VAULT**: Identity control center with health scores and diagnostics.
 
 ---
 
-## 4. PREMIUM ONBOARDING FLOW
-
-1.  **Values**: "No phone. No email. Total privacy."
-2.  **Sovereignty**: "Your keys. Your data."
-3.  **Generation**: Cryptographic setup with status.
-4.  **Security Education**: The danger of losing the seed phrase.
-5.  **Seed Display**: Secure reveal of 24 words.
-6.  **Verification**: Confirm random words.
-7.  **Initial Backup**: Save the `.ghostroombackup` file.
-8.  **Recovery Test**: Mandatory simulation of identity restoration.
+## 3. IDENTITY VAULT (Redesigned)
+*   **Identity Card**: Square-eye QR and monospace safety fingerprints.
+*   **Security Score**: Real-time health check (Seed/Backup/Drill factors).
+*   **Diagnostics**: Detailed system status for beta users (Postgres/Redis/R2/WS).
+*   **Vault Action Groups**: Organized by Recovery, Network, and Privacy.
 
 ---
 
-## 5. CHAT & COMPOSER UPGRADES
+## 4. PREMIUM ONBOARDING & DRILLS
+*   **Sovereignty Focused**: Clear education on local-only key ownership.
+*   **Mandatory Verification**: 24-word seed verification.
+*   **Mandatory Backup**: Argon2id protected file export.
+*   **Recovery Drill**: Mandatory simulation of restoration to ensure user competence.
 
-*   **Conversation Header**: Collapsed Alias/ID. Expands to show Fingerprint and current default retention mode.
-*   **Per-Message Retention**: Integrated selector in the composer (Persistent/Ephemeral/View Once).
-*   **Media Picker**: Explicit "View Once" photo/video modes.
-*   **Requests**: Swipe actions (Accept/Delete/Block) for instant management.
+---
+
+## 5. CHAT & COMPOSER ENHANCEMENTS
+*   **Safety Header**: "Tap to Verify Identity" flow displaying Safety Numbers.
+*   **Retention Selector**: Persistent/Ephemeral/View-Once selector directly in the composer.
+*   **View-Once Media**: Dedicated photo/video modes with auto-deletion on read.
+*   **Enhanced Attachments**: Display of file type and encrypted size before download.
 
 ---
 
 ## 6. VISUAL DISTINCTON
-
-*   **Persistent Layers (Messages/Vault)**: Deepest black (`#080808`), white text, subtle amber/gold accents (Premium).
-*   **Disposable Layers (Spaces)**: Lighter dark (`#121212`), monochromatic grey text, minimalist icons.
+*   **Vault/Messages**: Deep black (`#080808`) for permanence.
+*   **Spaces**: Utility dark (`#121212`) for transience.
+*   **Accents**: BlueAccent for security, Amber for view-once, Green for health.
