@@ -1,6 +1,6 @@
 {
   "name": "ghostroom-backend",
-  "version": "2.0.1",
+  "version": "2.1.0",
   "description": "Privacy-first ephemeral communication relay",
   "author": "GhostRoom Team",
   "private": true,

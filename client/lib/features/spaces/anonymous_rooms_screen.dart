@@ -20,38 +20,39 @@ class AnonymousRoomsScreen extends ConsumerWidget {
     return Scaffold(
       backgroundColor: const Color(0xFF121212),
       appBar: AppBar(
-        title: const Text('ANONYMOUS ROOMS'),
+        title: const Text('SPACES'),
         backgroundColor: const Color(0xFF121212),
         elevation: 0,
       ),
       body: SingleChildScrollView(
         child: Padding(
-          padding: const EdgeInsets.all(32.0),
+          padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 32.0),
           child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               _buildIntro(),
               const SizedBox(height: 48),
-              ElevatedButton(
-                onPressed: activeRelay.value != null ? () => _createSpace(context, ref) : null,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.white10,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                ),
-                child: const Text('CREATE TEMPORARY ROOM'),
+              const Text(
+                'CREATE NEW SPACE',
+                style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.white24, letterSpacing: 1.5),
               ),
               const SizedBox(height: 16),
-              OutlinedButton(
-                onPressed: activeRelay.value != null ? () => _showJoinOptions(context, ref) : null,
-                style: OutlinedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  side: const BorderSide(color: Colors.white10),
-                ),
-                child: const Text('JOIN VIA INVITE'),
-              ),
+              _buildCreationCards(context, ref, activeRelay.value != null),
               const SizedBox(height: 48),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text(
+                    'RECENT SPACES',
+                    style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.white24, letterSpacing: 1.5),
+                  ),
+                  TextButton(
+                    onPressed: () => _showJoinOptions(context, ref),
+                    child: const Text('JOIN VIA INVITE', style: TextStyle(fontSize: 10, color: Colors.blueAccent)),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
               _buildRecentRooms(recentRooms, context, ref),
             ],
           ),
@@ -61,20 +62,61 @@ class AnonymousRoomsScreen extends ConsumerWidget {
   }
 
   Widget _buildIntro() {
-    return const Column(
+    return Container(
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: Colors.white.withAlpha(5),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: const Column(
+        children: [
+          Row(
+            children: [
+              Icon(Icons.blur_on, size: 32, color: Colors.white24),
+              SizedBox(width: 16),
+              Expanded(
+                child: Text(
+                  'Disposable. Anonymous.\nZero Footprint.',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white70),
+                ),
+              ),
+            ],
+          ),
+          SizedBox(height: 16),
+          Text(
+            'Spaces use symmetric encryption and temporary storage. No identities are used. Once a space expires, it is gone forever.',
+            style: TextStyle(color: Colors.white24, fontSize: 11, height: 1.5),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCreationCards(BuildContext context, WidgetRef ref, bool enabled) {
+    return Row(
       children: [
-        Icon(Icons.blur_on, size: 80, color: Colors.white10),
-        SizedBox(height: 24),
-        Text(
-          'Disposable Spaces',
-          textAlign: TextAlign.center,
-          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+        _DurationCard(
+          label: 'SHORT',
+          duration: '30 MIN',
+          icon: Icons.timer_outlined,
+          enabled: enabled,
+          onTap: () => _createSpace(context, ref, 1800),
         ),
-        SizedBox(height: 8),
-        Text(
-          'Anonymous, ephemeral, and local-only history.\nPerfect for transient conversations.',
-          textAlign: TextAlign.center,
-          style: TextStyle(color: Colors.white24, fontSize: 13),
+        const SizedBox(width: 12),
+        _DurationCard(
+          label: 'STANDARD',
+          duration: '2 HR',
+          icon: Icons.schedule,
+          enabled: enabled,
+          onTap: () => _createSpace(context, ref, 7200),
+        ),
+        const SizedBox(width: 12),
+        _DurationCard(
+          label: 'LONG',
+          duration: '24 HR',
+          icon: Icons.event_available,
+          enabled: enabled,
+          onTap: () => _createSpace(context, ref, 86400),
         ),
       ],
     );
@@ -83,28 +125,40 @@ class AnonymousRoomsScreen extends ConsumerWidget {
   Widget _buildRecentRooms(AsyncValue recentAsync, BuildContext context, WidgetRef ref) {
     return recentAsync.when(
       data: (rooms) {
-        if (rooms.isEmpty) return const SizedBox.shrink();
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'RECENT ROOMS',
-              style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.white24, letterSpacing: 2),
-            ),
-            const SizedBox(height: 16),
-            ...rooms.map((room) => ListTile(
-              contentPadding: EdgeInsets.zero,
-              leading: const Icon(Icons.history, color: Colors.white10, size: 20),
-              title: Text(room['roomId'].toString().substring(0, 8), style: const TextStyle(fontSize: 14)),
-              subtitle: Text(room['relayLabel'] ?? 'Unknown Relay', style: const TextStyle(fontSize: 10, color: Colors.white10)),
-              trailing: const Icon(Icons.chevron_right, size: 16, color: Colors.white10),
-              onTap: () => _handleManualJoin(context, ref, room['roomId'], room['key']),
-            )),
-          ],
+        if (rooms.isEmpty) return _buildEmptyHistory();
+        return ListView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          itemCount: rooms.length,
+          itemBuilder: (context, index) {
+            final room = rooms[index];
+            return Container(
+              margin: const EdgeInsets.only(bottom: 12),
+              decoration: BoxDecoration(
+                color: Colors.white.withAlpha(5),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: ListTile(
+                leading: const Icon(Icons.history, color: Colors.white10, size: 20),
+                title: Text(room['roomId'].toString().substring(0, 8), style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+                subtitle: Text('Temporary Session', style: const TextStyle(fontSize: 10, color: Colors.white10)),
+                trailing: const Icon(Icons.chevron_right, size: 16, color: Colors.white10),
+                onTap: () => _handleManualJoin(context, ref, room['roomId'], room['key']),
+              ),
+            );
+          },
         );
       },
       loading: () => const SizedBox.shrink(),
       error: (_, _) => const SizedBox.shrink(),
+    );
+  }
+
+  Widget _buildEmptyHistory() {
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 48),
+      alignment: Alignment.center,
+      child: const Text('No recent spaces found', style: TextStyle(color: Colors.white10, fontSize: 12)),
     );
   }
 
@@ -147,12 +201,12 @@ class AnonymousRoomsScreen extends ConsumerWidget {
     );
   }
 
-  void _createSpace(BuildContext context, WidgetRef ref) async {
+  void _createSpace(BuildContext context, WidgetRef ref, int seconds) async {
     final relay = await ref.read(activeRelayProvider.future);
     if (relay == null) return;
 
     try {
-      final config = await ref.read(spaceServiceProvider).createSpace(relay);
+      final config = await ref.read(spaceServiceProvider).createSpace(relay, expirySeconds: seconds);
       
       // Save to recent
       await ref.read(relayManagerProvider).addRecentRoom(
@@ -360,5 +414,50 @@ class AnonymousRoomsScreen extends ConsumerWidget {
     } catch (e) {
       debugPrint('GHOST_LOG: _handleManualJoin error: $e');
     }
+  }
+}
+
+class _DurationCard extends StatelessWidget {
+  final String label;
+  final String duration;
+  final IconData icon;
+  final bool enabled;
+  final VoidCallback onTap;
+
+  const _DurationCard({
+    required this.label,
+    required this.duration,
+    required this.icon,
+    required this.enabled,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: GestureDetector(
+        onTap: enabled ? onTap : null,
+        child: Opacity(
+          opacity: enabled ? 1.0 : 0.3,
+          child: Container(
+            padding: const EdgeInsets.symmetric(vertical: 24),
+            decoration: BoxDecoration(
+              color: Colors.white.withAlpha(enabled ? 8 : 2),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: Colors.white.withAlpha(5)),
+            ),
+            child: Column(
+              children: [
+                Icon(icon, size: 24, color: Colors.white30),
+                const SizedBox(height: 12),
+                Text(label, style: const TextStyle(fontSize: 8, fontWeight: FontWeight.bold, color: Colors.white24, letterSpacing: 1)),
+                const SizedBox(height: 4),
+                Text(duration, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.white70)),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }
