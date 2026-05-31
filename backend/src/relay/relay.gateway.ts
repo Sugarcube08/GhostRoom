@@ -33,6 +33,7 @@ export class RelayGateway implements OnGatewayConnection, OnGatewayDisconnect {
     private readonly auditService: AuditService,
     private readonly cryptoUtils: CryptoUtils,
     @Inject("REDIS_SUBSCRIBER") private readonly redisSub: Redis,
+    @Inject("REDIS_CLIENT") private readonly redis: Redis,
   ) {
     this.setupKeyspaceNotifications();
   }
@@ -158,11 +159,50 @@ export class RelayGateway implements OnGatewayConnection, OnGatewayDisconnect {
       retention?: string;
     },
   ) {
+    const payloadSize = Buffer.byteLength(JSON.stringify(payload), 'utf8');
     const version = payload.v || 1;
 
+    // Size Validation
+    const maxSize = version === 2 ? 65536 : 32768; // 64KB for V2, 32KB for V1
+    if (payloadSize > maxSize) {
+      this.logger.warn(`Payload too large from ${client.id} (Size: ${payloadSize})`);
+      client.emit('error', { message: 'Payload size limit exceeded' });
+      await this.auditService.log('payload_rejected', { socket_id: client.id, size: payloadSize });
+      return;
+    }
+
     if (version === 2) {
-      this.logger.log(`V2 message to ${payload.target_id} from ${client.id}`);
+      // V2 Identity-based routing
+      const senderPublicId = client.data.publicId;
+      if (!senderPublicId) {
+        client.emit("error", { message: "Unauthenticated. Prove identity first." });
+        return;
+      }
+
+      // Rate Limiting (Redis)
+      const hourlyKey = `rate:msg:hr:${senderPublicId}`;
+      const dailyKey = `rate:msg:day:${senderPublicId}`;
+
+      const [hourlyCount, dailyCount] = await Promise.all([
+        this.redis.get(hourlyKey),
+        this.redis.get(dailyKey),
+      ]);
+
+      if (parseInt(hourlyCount || '0') >= 50 || parseInt(dailyCount || '0') >= 500) {
+        client.emit('error', { message: 'Rate limit exceeded' });
+        await this.auditService.log('rate_limit_exceeded', { public_id: senderPublicId });
+        return;
+      }
+
+      const pipeline = this.redis.pipeline();
+      pipeline.incr(hourlyKey);
+      pipeline.expire(hourlyKey, 3600);
+      pipeline.incr(dailyKey);
+      pipeline.expire(dailyKey, 86400);
+      await pipeline.exec();
       
+      this.logger.log(`V2 message to ${payload.target_id} from ${senderPublicId}`);
+
       try {
         const envelope = await this.inboxService.queueMessage(payload.target_id, {
           id: (payload as any).id,
@@ -171,7 +211,7 @@ export class RelayGateway implements OnGatewayConnection, OnGatewayDisconnect {
           k: (payload as any).k || (payload as any).encryptedKey,
           s: (payload as any).s || (payload as any).signature,
           retention: payload.retention,
-        });
+        }, senderPublicId);
 
         this.server.to(`inbox:${payload.target_id}`).emit("message.receive", envelope);
         await this.auditService.log('message_sent', { target: payload.target_id, version: 2, retention: payload.retention });

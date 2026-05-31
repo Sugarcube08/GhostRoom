@@ -8,6 +8,9 @@ export class DeliveryEntity {
   @Column('varchar')
   recipient_id: string;
 
+  @Column('varchar', { nullable: true })
+  sender_id: string;
+
   @Column('varchar', { default: 'PENDING' })
   status: string;
 

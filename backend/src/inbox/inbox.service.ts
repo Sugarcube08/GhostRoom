@@ -1,6 +1,7 @@
 import { Injectable, Inject, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, MoreThan, IsNull } from 'typeorm';
+import { Repository, MoreThan, IsNull, LessThan } from 'typeorm';
+import { Cron, CronExpression } from '@nestjs/schedule';
 import Redis from 'ioredis';
 import { v4 as uuidv4 } from 'uuid';
 import { MessageEntity } from './entities/message.entity';
@@ -31,7 +32,25 @@ export class InboxService {
     private readonly deliveryRepo: Repository<DeliveryEntity>,
   ) {}
 
-  async queueMessage(publicId: string, payload: any): Promise<MessageEnvelope> {
+  async queueMessage(publicId: string, payload: any, senderId?: string): Promise<MessageEnvelope> {
+    // Enforcement 1: Global Inbox Cap
+    const pendingCount = await this.deliveryRepo.count({
+      where: { recipient_id: publicId, status: 'PENDING' },
+    });
+    if (pendingCount >= 5000) {
+      throw new Error('capacity_exceeded: Recipient inbox is full');
+    }
+
+    // Enforcement 2: Sender-Recipient Pair Cap
+    if (senderId) {
+      const pairCount = await this.deliveryRepo.count({
+        where: { recipient_id: publicId, sender_id: senderId, status: 'PENDING' },
+      });
+      if (pairCount >= 50) {
+        throw new Error('capacity_exceeded: Max pending messages for this sender-recipient pair reached');
+      }
+    }
+
     const messageId = payload.id || uuidv4();
     const timestamp = Date.now();
     const retentionMode = payload.retention || 'PERSISTENT';
@@ -69,6 +88,7 @@ export class InboxService {
       const deliveryEntity = this.deliveryRepo.create({
         message_id: messageId,
         recipient_id: publicId,
+        sender_id: senderId,
         status: 'PENDING',
       });
       await this.deliveryRepo.save(deliveryEntity);
@@ -165,5 +185,20 @@ export class InboxService {
 
   async deleteChallenge(socketId: string): Promise<void> {
     await this.redis.del(`challenge:${socketId}`);
+  }
+
+  @Cron(CronExpression.EVERY_HOUR)
+  async cleanupExpiredMessages(): Promise<void> {
+    const now = new Date();
+    try {
+      const result = await this.messageRepo.delete({
+        expires_at: LessThan(now),
+      });
+      if (result.affected && result.affected > 0) {
+        this.logger.log(`Pruned ${result.affected} expired messages.`);
+      }
+    } catch (e: any) {
+      this.logger.error(`Failed to prune expired messages: ${e?.message}`);
+    }
   }
 }

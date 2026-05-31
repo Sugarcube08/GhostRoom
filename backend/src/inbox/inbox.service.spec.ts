@@ -42,6 +42,7 @@ describe('InboxService', () => {
       create: jest.fn().mockImplementation((entity) => entity),
       save: (jest.fn() as any).mockResolvedValue({}),
       update: (jest.fn() as any).mockResolvedValue({}),
+      count: (jest.fn() as any).mockResolvedValue(0),
     };
 
     const module: TestingModule = await Test.createTestingModule({
