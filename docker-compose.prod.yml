@@ -1,0 +1,45 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+      target: production
+    ports:
+      - "4000:4000"
+    env_file:
+      - ./backend/.env
+    restart: always
+    depends_on:
+      - redis
+      - postgres
+    networks:
+      - ghostroom_net
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    restart: always
+    networks:
+      - ghostroom_net
+
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_DB=${POSTGRES_DB:-ghostroom}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: always
+    networks:
+      - ghostroom_net
+
+networks:
+  ghostroom_net:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  redis_data:
