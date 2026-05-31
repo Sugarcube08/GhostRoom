@@ -6,9 +6,40 @@ import 'relay_settings_screen.dart';
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
 
+  void _showBackupDialog(BuildContext context, WidgetRef ref) {
+    final controller = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('EXPORT BACKUP'),
+        content: TextField(
+          controller: controller,
+          decoration: const InputDecoration(hintText: 'Choose a password...'),
+          obscureText: true,
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('CANCEL')),
+          TextButton(
+            onPressed: () async {
+              if (controller.text.isEmpty) return;
+              try {
+                await ref.read(backupServiceProvider).exportBackup(controller.text);
+                if (context.mounted) Navigator.pop(context);
+              } catch (e) {
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Export failed: $e')));
+                }
+              }
+            },
+            child: const Text('EXPORT'),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    debugPrint('GHOST_LOG: SettingsScreen building');
     return Scaffold(
       appBar: AppBar(title: const Text('SETTINGS')),
       body: ListView(
@@ -18,6 +49,12 @@ class SettingsScreen extends ConsumerWidget {
             title: const Text('Relay Configuration'),
             subtitle: const Text('Manage your relay servers'),
             onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const RelaySettingsScreen())),
+          ),
+          ListTile(
+            leading: const Icon(Icons.backup_outlined),
+            title: const Text('Backup & Migration'),
+            subtitle: const Text('Export contacts and identity'),
+            onTap: () => _showBackupDialog(context, ref),
           ),
           ListTile(
             leading: const Icon(Icons.security),
@@ -35,7 +72,7 @@ class SettingsScreen extends ConsumerWidget {
           const SizedBox(height: 32),
           const Center(
             child: Text(
-              'GHOSTROOM MVP v0.0.1\nDISPOSABLE INFRASTRUCTURE',
+              'GHOSTROOM V2.0.1\nDURABLE ANONYMOUS MAILBOX',
               textAlign: TextAlign.center,
               style: TextStyle(color: Colors.white24, fontSize: 10, letterSpacing: 2),
             ),
@@ -55,7 +92,9 @@ class SettingsScreen extends ConsumerWidget {
           TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('CANCEL')),
           TextButton(
             onPressed: () async {
-              await ref.read(relayManagerProvider).panicWipe();
+              // Updated to use identityService.wipeIdentity
+              await ref.read(identityServiceProvider).wipeIdentity();
+              await ref.read(contactServiceProvider).clearAll();
               
               if (!dialogContext.mounted) return;
               Navigator.pop(dialogContext);

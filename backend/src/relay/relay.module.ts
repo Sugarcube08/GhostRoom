@@ -6,6 +6,8 @@ import { InboxModule } from "../inbox/inbox.module";
 import { MediaModule } from "../media/media.module";
 import { RelayAuditEntity } from "./entities/relay-audit.entity";
 import { AuditService } from "./audit.service";
+import { MetricsService } from "./metrics.service";
+import { HealthController } from "./health.controller";
 
 @Module({
   imports: [
@@ -14,7 +16,8 @@ import { AuditService } from "./audit.service";
     MediaModule,
     TypeOrmModule.forFeature([RelayAuditEntity])
   ],
-  providers: [RelayGateway, AuditService],
-  exports: [AuditService],
+  controllers: [HealthController],
+  providers: [RelayGateway, AuditService, MetricsService],
+  exports: [AuditService, MetricsService],
 })
 export class RelayModule {}

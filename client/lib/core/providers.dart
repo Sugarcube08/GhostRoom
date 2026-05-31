@@ -11,6 +11,7 @@ import '../features/chat/dm_service.dart';
 import '../features/chat/chat_repository.dart';
 import '../features/chat/conversation_service.dart';
 import '../features/media/media_service.dart';
+import 'backup/backup_service.dart';
 
 final sodiumProvider = Provider<Sodium>((ref) => throw UnimplementedError());
 
@@ -56,6 +57,15 @@ final mediaServiceProvider = Provider<MediaService>((ref) {
   return MediaService(
     ref.watch(sodiumProvider),
     ref.watch(identityServiceProvider),
+  );
+});
+
+final backupServiceProvider = Provider<BackupService>((ref) {
+  return BackupService(
+    ref.watch(sodiumProvider),
+    ref.watch(identityServiceProvider),
+    ref.watch(contactServiceProvider),
+    ref.watch(relayManagerProvider),
   );
 });
 

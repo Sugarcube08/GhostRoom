@@ -10,8 +10,10 @@ import { RoomsService } from "../rooms/rooms.service";
 import { InboxService } from "../inbox/inbox.service";
 import { MediaService } from "../media/media.service";
 import { AuditService } from "./audit.service";
+import { MetricsService } from "./metrics.service";
 import { CryptoUtils } from "../inbox/crypto-utils.service";
 import { Inject, Logger } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
 import Redis from "ioredis";
 import { randomBytes } from "crypto";
 
@@ -26,15 +28,22 @@ export class RelayGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @WebSocketServer()
   server: Server;
 
+  private readonly RATE_LIMIT_HOUR: number;
+  private readonly RATE_LIMIT_DAY: number;
+
   constructor(
     private readonly roomsService: RoomsService,
     private readonly inboxService: InboxService,
     private readonly mediaService: MediaService,
     private readonly auditService: AuditService,
+    private readonly metricsService: MetricsService,
     private readonly cryptoUtils: CryptoUtils,
+    private readonly configService: ConfigService,
     @Inject("REDIS_SUBSCRIBER") private readonly redisSub: Redis,
     @Inject("REDIS_CLIENT") private readonly redis: Redis,
   ) {
+    this.RATE_LIMIT_HOUR = parseInt(this.configService.get<string>('RATE_LIMIT_HOUR') || '50');
+    this.RATE_LIMIT_DAY = parseInt(this.configService.get<string>('RATE_LIMIT_DAY') || '500');
     this.setupKeyspaceNotifications();
   }
 
@@ -97,6 +106,7 @@ export class RelayGateway implements OnGatewayConnection, OnGatewayDisconnect {
     const messages = await this.inboxService.fetchMessages(publicId, payload.since || 0);
     client.emit("inbox.messages", { messages });
     await this.auditService.log('inbox_fetched', { public_id: publicId, count: messages.length });
+    this.metricsService.downloadsTotal.inc();
   }
 
   @SubscribeMessage("message.ack")
@@ -107,6 +117,7 @@ export class RelayGateway implements OnGatewayConnection, OnGatewayDisconnect {
     await this.inboxService.acknowledgeMessage(publicId, payload.message_id);
     this.logger.log(`Message ${payload.message_id} acknowledged by ${publicId}`);
     await this.auditService.log('message_acked', { message_id: payload.message_id, recipient: publicId });
+    this.metricsService.messagesAcked.inc();
   }
 
   @SubscribeMessage("media.viewed")
@@ -188,9 +199,10 @@ export class RelayGateway implements OnGatewayConnection, OnGatewayDisconnect {
         this.redis.get(dailyKey),
       ]);
 
-      if (parseInt(hourlyCount || '0') >= 50 || parseInt(dailyCount || '0') >= 500) {
+      if (parseInt(hourlyCount || '0') >= this.RATE_LIMIT_HOUR || parseInt(dailyCount || '0') >= this.RATE_LIMIT_DAY) {
         client.emit('error', { message: 'Rate limit exceeded' });
         await this.auditService.log('rate_limit_exceeded', { public_id: senderPublicId });
+        this.metricsService.rateLimitHits.inc();
         return;
       }
 
@@ -215,6 +227,7 @@ export class RelayGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
         this.server.to(`inbox:${payload.target_id}`).emit("message.receive", envelope);
         await this.auditService.log('message_sent', { target: payload.target_id, version: 2, retention: payload.retention });
+        this.metricsService.messagesSent.inc({ version: '2' });
       } catch (e: any) {
         this.logger.error(`Failed to queue V2 message: ${e?.message || e}`);
       }
@@ -231,6 +244,7 @@ export class RelayGateway implements OnGatewayConnection, OnGatewayDisconnect {
           payload.expiry || 300,
         );
         await this.auditService.log('message_sent', { target: roomId, version: 1 });
+        this.metricsService.messagesSent.inc({ version: '1' });
       } catch (e: any) {
         this.logger.error(`Failed to store V1 message for room ${roomId}: ${e?.message || e}`);
       }

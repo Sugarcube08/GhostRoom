@@ -80,13 +80,26 @@ GhostRoom V2 supports per-message retention policies:
 
 ## 5. BACKUP & DISASTER RECOVERY
 
-*   **PostgreSQL Backups**: Nightly snapshots of the database.
-*   **R2 Persistence**: Objects are stored with 99.9% durability.
-*   **Disaster Recovery**: In the event of a full Redis flush, the relay can rehydrate all active user caches by querying Postgres for unacknowledged messages.
+### Server-Side
+*   **PostgreSQL Backups**: Nightly snapshots with 30-day retention.
+*   **R2 Resilience**: Objects stored with 99.9% durability.
+
+### Client-Side (User Migration)
+*   **Format**: `.ghostroombackup` (Encrypted JSON archive).
+*   **Security**: Argon2id (Key Derivation) + XChaCha20-Poly1305 (Encryption).
+*   **Contents**: BIP39 Seed, Contact List (with Aliases/EID/XID), Block List, Preferred Relays, and App Settings.
 
 ---
 
-## 6. RECOVERY FLOWS
+## 6. OPERATIONAL MONITORING
+
+*   **Health Endpoint**: `GET /health` (Checks Postgres, Redis, R2 status).
+*   **Metrics Endpoint**: `GET /metrics` (Prometheus format tracking messages_sent, acks, rate_limits).
+*   **Audit Logging**: `relay_audit` table tracks non-PII operational events.
+
+---
+
+## 7. RECOVERY FLOWS
 
 *   **Relay Restart**: Redis is wiped. Upon client connection, `inbox.fetch` queries Postgres and rehydrates the Redis `inbox:{id}` ZSET for active users.
 *   **Multi-Device Restore**: A user restoring their seed phrase on a new device will fetch all unacknowledged messages directly from PostgreSQL.

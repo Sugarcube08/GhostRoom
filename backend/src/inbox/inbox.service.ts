@@ -22,22 +22,28 @@ export interface MessageEnvelope {
 export class InboxService {
   private readonly logger = new Logger(InboxService.name);
   private readonly INBOX_TTL = 14 * 24 * 60 * 60; // 14 days for cache
-  private readonly MAX_QUEUE_DEPTH = 100;
+  
+  private readonly INBOX_MAX_MESSAGES: number;
+  private readonly PAIR_PENDING_MAX: number;
 
   constructor(
+    private readonly configService: ConfigService,
     @Inject('REDIS_CLIENT') private readonly redis: Redis,
     @InjectRepository(MessageEntity)
     private readonly messageRepo: Repository<MessageEntity>,
     @InjectRepository(DeliveryEntity)
     private readonly deliveryRepo: Repository<DeliveryEntity>,
-  ) {}
+  ) {
+    this.INBOX_MAX_MESSAGES = parseInt(this.configService.get<string>('INBOX_MAX_MESSAGES') || '5000');
+    this.PAIR_PENDING_MAX = parseInt(this.configService.get<string>('PAIR_PENDING_MAX') || '50');
+  }
 
   async queueMessage(publicId: string, payload: any, senderId?: string): Promise<MessageEnvelope> {
     // Enforcement 1: Global Inbox Cap
     const pendingCount = await this.deliveryRepo.count({
       where: { recipient_id: publicId, status: 'PENDING' },
     });
-    if (pendingCount >= 5000) {
+    if (pendingCount >= this.INBOX_MAX_MESSAGES) {
       throw new Error('capacity_exceeded: Recipient inbox is full');
     }
 
@@ -46,7 +52,7 @@ export class InboxService {
       const pairCount = await this.deliveryRepo.count({
         where: { recipient_id: publicId, sender_id: senderId, status: 'PENDING' },
       });
-      if (pairCount >= 50) {
+      if (pairCount >= this.PAIR_PENDING_MAX) {
         throw new Error('capacity_exceeded: Max pending messages for this sender-recipient pair reached');
       }
     }
