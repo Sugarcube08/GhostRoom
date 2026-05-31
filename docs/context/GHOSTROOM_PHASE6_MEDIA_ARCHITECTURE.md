@@ -24,16 +24,49 @@ To prevent orphaned blobs in Cloudflare R2 and ensure ephemerality, every media 
 
 | Field | Type | Description |
 | :--- | :--- | :--- |
-| `owner` | String | Public ID of the uploader (for rate limiting/cleanup). |
+| `owner` | String | Public ID of the uploader. |
 | `size` | Number | Byte size of the encrypted blob. |
-| `mime` | String | Encrypted or generic mime-type. |
+| `hash` | String | SHA256 of the *plaintext* file (for dedup/integrity). |
+| `mime` | String | Mime-type. |
 | `state` | String | Current lifecycle state. |
 | `created_at` | Number | Unix timestamp. |
 | `expires_at` | Number | Unix timestamp for auto-deletion. |
 
 ---
 
-## 3. R2 OBJECT LAYOUT
+## 3. QUOTA ENFORCEMENT
+
+To prevent abuse, the following daily quotas are enforced per Public ID:
+
+*   **Bytes**: 100MB per 24 hours.
+*   **Count**: 50 uploads per 24 hours.
+
+**Implementation**: Redis keys `quota:bytes:{id}` and `quota:count:{id}` with 24h TTL.
+
+---
+
+## 4. STATE TRANSITION RULES
+
+*   **REFERENCED Transition**: A `media_id` can only be transitioned to `REFERENCED` (referenced in a message) if its current state is `UPLOADED`. 
+*   **Ownership**: Only the `owner` (uploader) can initiate the `REFERENCED` transition.
+
+---
+
+## 5. GENERIC ATTACHMENT ENVELOPE (Client)
+
+Inside the hybrid E2EE payload, media is represented by an `AttachmentEnvelope`:
+
+```json
+{
+  "kind": "image | video | file | voice",
+  "media_id": "uuid",
+  "key": "base64(encrypted_media_key)",
+  "hash": "sha256_hex",
+  "name": "filename.jpg",
+  "meta": { "w": 1080, "h": 720, "dur": 30 }
+}
+```
+
 
 Objects are stored in a single bucket with prefix-based organization:
 

@@ -11,6 +11,9 @@ export class MediaService {
   private readonly bucketName: string;
   private readonly logger = new Logger(MediaService.name);
 
+  private readonly BYTES_LIMIT: number;
+  private readonly COUNT_LIMIT: number;
+
   constructor(
     private readonly configService: ConfigService,
     @Inject('REDIS_CLIENT') private readonly redis: Redis,
@@ -19,6 +22,9 @@ export class MediaService {
     const accessKeyId = this.configService.get<string>('R2_ACCESS_KEY_ID');
     const secretAccessKey = this.configService.get<string>('R2_SECRET_ACCESS_KEY');
     this.bucketName = this.configService.get<string>('R2_BUCKET_NAME') || 'ghostroom-media';
+
+    this.BYTES_LIMIT = parseInt(this.configService.get<string>('MEDIA_DAILY_BYTES_LIMIT') || '104857600');
+    this.COUNT_LIMIT = parseInt(this.configService.get<string>('MEDIA_DAILY_COUNT_LIMIT') || '50');
 
     this.s3Client = new S3Client({
       region: 'auto',
@@ -30,7 +36,28 @@ export class MediaService {
     });
   }
 
-  async generateUploadUrl(ownerId: string, size: number, mime: string) {
+  async checkQuotas(ownerId: string, size: number) {
+    const bytesKey = `quota:bytes:${ownerId}`;
+    const countKey = `quota:count:${ownerId}`;
+
+    const [currentBytes, currentCount] = await Promise.all([
+      this.redis.get(bytesKey),
+      this.redis.get(countKey),
+    ]);
+
+    if (parseInt(currentCount || '0') >= this.COUNT_LIMIT) {
+      throw new Error('Daily upload count limit reached');
+    }
+
+    if (parseInt(currentBytes || '0') + size > this.BYTES_LIMIT) {
+      throw new Error('Daily upload size limit reached');
+    }
+  }
+
+  async generateUploadUrl(ownerId: string, size: number, mime: string, hash: string) {
+    // 1. Enforce Quotas
+    await this.checkQuotas(ownerId, size);
+
     const mediaId = uuidv4();
     const expiresAt = Date.now() + 48 * 60 * 60 * 1000; // 48 hours
 
@@ -41,21 +68,60 @@ export class MediaService {
       ContentType: mime,
     });
 
-    const uploadUrl = await getSignedUrl(this.s3Client, command, { expiresIn: 3600 }); // URL expires in 1h
+    const uploadUrl = await getSignedUrl(this.s3Client, command, { expiresIn: 3600 });
 
-    // Store metadata in Redis
+    // 2. Increment Quotas
+    const bytesKey = `quota:bytes:${ownerId}`;
+    const countKey = `quota:count:${ownerId}`;
+    
+    const pipeline = this.redis.pipeline();
+    pipeline.incrby(bytesKey, size);
+    pipeline.incr(countKey);
+    pipeline.expire(bytesKey, 86400); // 24h
+    pipeline.expire(countKey, 86400);
+    
+    // 3. Store metadata
     const metadataKey = `media:${mediaId}`;
-    await this.redis.hset(metadataKey, {
+    pipeline.hset(metadataKey, {
       owner: ownerId,
       size: size.toString(),
       mime: mime,
+      hash: hash,
       state: 'UPLOADING',
       created_at: Date.now().toString(),
       expires_at: expiresAt.toString(),
     });
-    await this.redis.expire(metadataKey, 48 * 60 * 60);
+    pipeline.expire(metadataKey, 48 * 60 * 60);
+
+    await pipeline.exec();
 
     return { mediaId, uploadUrl };
+  }
+
+  async confirmUpload(ownerId: string, mediaId: string) {
+    const key = `media:${mediaId}`;
+    const metadata = await this.redis.hgetall(key);
+    
+    if (!metadata || metadata.owner !== ownerId) {
+      throw new Error('Forbidden: Not the media owner');
+    }
+
+    await this.redis.hset(key, 'state', 'UPLOADED');
+  }
+
+  async referenceMedia(ownerId: string, mediaId: string) {
+    const key = `media:${mediaId}`;
+    const metadata = await this.redis.hgetall(key);
+    
+    if (!metadata || metadata.owner !== ownerId) {
+      throw new Error('Forbidden: Not the media owner');
+    }
+
+    if (metadata.state !== 'UPLOADED') {
+      throw new Error('Bad Request: Media must be UPLOADED before REFERENCED');
+    }
+
+    await this.redis.hset(key, 'state', 'REFERENCED');
   }
 
   async generateDownloadUrl(mediaId: string) {
@@ -73,22 +139,12 @@ export class MediaService {
     return { downloadUrl, metadata };
   }
 
-  async updateState(mediaId: string, state: string) {
-    const key = `media:${mediaId}`;
-    const exists = await this.redis.exists(key);
-    if (exists) {
-      await this.redis.hset(key, 'state', state);
-    }
-  }
-
   async deleteMedia(mediaId: string) {
     try {
-      // 1. Delete from R2
       await this.s3Client.send(new DeleteObjectCommand({
         Bucket: this.bucketName,
         Key: `media/${mediaId}`,
       }));
-      // Also attempt thumb deletion
       await this.s3Client.send(new DeleteObjectCommand({
         Bucket: this.bucketName,
         Key: `thumbs/${mediaId}`,
@@ -96,16 +152,11 @@ export class MediaService {
     } catch (e: any) {
       this.logger.error(`Failed to delete media ${mediaId} from R2: ${e?.message || e}`);
     }
-
-    // 2. Delete from Redis
     await this.redis.del(`media:${mediaId}`);
   }
 
   async cleanup() {
     this.logger.log('Starting media cleanup worker...');
-    // In a production environment, you'd scan for expired keys.
-    // Since we set Redis TTL, we can use Keyspace Notifications or a manual scan.
-    // For simplicity, we'll scan keys.
     const keys = await this.redis.keys('media:*');
     const now = Date.now();
 
@@ -116,14 +167,12 @@ export class MediaService {
       const createdAt = parseInt(metadata.created_at || '0');
       const mediaId = key.split(':')[1];
 
-      // Prune if expired
       if (expiresAt < now) {
         this.logger.log(`Pruning expired media: ${mediaId}`);
         await this.deleteMedia(mediaId);
         continue;
       }
 
-      // Prune if stuck in UPLOADING for > 2 hours
       if (state === 'UPLOADING' && (now - createdAt) > 2 * 60 * 60 * 1000) {
         this.logger.log(`Pruning abandoned upload: ${mediaId}`);
         await this.deleteMedia(mediaId);

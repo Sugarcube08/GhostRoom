@@ -10,6 +10,7 @@ import '../features/contacts/contact_resolver.dart';
 import '../features/chat/dm_service.dart';
 import '../features/chat/chat_repository.dart';
 import '../features/chat/conversation_service.dart';
+import '../features/media/media_service.dart';
 
 final sodiumProvider = Provider<Sodium>((ref) => throw UnimplementedError());
 
@@ -44,6 +45,13 @@ final conversationServiceProvider = Provider<ConversationService>((ref) {
   return ConversationService(
     ref.watch(chatRepositoryProvider),
     ref.watch(contactResolverProvider),
+  );
+});
+
+final mediaServiceProvider = Provider<MediaService>((ref) {
+  return MediaService(
+    ref.watch(sodiumProvider),
+    ref.watch(identityServiceProvider),
   );
 });
 

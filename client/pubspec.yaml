@@ -51,6 +51,10 @@ dependencies:
   bs58: ^1.0.2
   hive: ^2.2.3
   hive_flutter: ^1.1.0
+  crypto: ^3.0.7
+  flutter_image_compress: ^2.4.0
+  video_compress: ^3.1.4
+  path: ^1.9.1
 
 
 dev_dependencies:
