@@ -24,6 +24,7 @@ void main() async {
   // Pre-initialize services
   await container.read(identityServiceProvider).initIdentity();
   await container.read(contactServiceProvider).init();
+  await container.read(chatRepositoryProvider).init();
 
   runApp(
     UncontrolledProviderScope(
@@ -98,7 +99,23 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
       await relayManager.wakeUpRelay(relay);
       
       debugPrint('GHOST_LOG: Auto-connecting to relay: ${relay.label}');
-      ref.read(webSocketServiceProvider).connect(relay);
+      final ws = ref.read(webSocketServiceProvider);
+      ws.connect(relay);
+      
+      // Setup V2 Inbox Processing
+      ws.onInboxMessages((envelopes) {
+        ref.read(chatRepositoryProvider).processEnvelopes(envelopes);
+      });
+      
+      // Also fetch once authenticated (usually done via a state listener, but for now in SplashScreen)
+      Future.doWhile(() async {
+        await Future.delayed(const Duration(milliseconds: 500));
+        if (ws.isAuthenticated) {
+          ws.fetchInbox(since: ref.read(chatRepositoryProvider).lastSyncTimestamp);
+          return false;
+        }
+        return true;
+      }).timeout(const Duration(seconds: 10), onTimeout: () => {});
     }
 
     if (mounted) {

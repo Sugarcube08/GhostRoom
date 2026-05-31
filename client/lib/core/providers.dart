@@ -7,6 +7,9 @@ import 'network/websocket_service.dart';
 import '../features/spaces/space_service.dart';
 
 import '../features/contacts/contact_service.dart';
+import '../features/chat/dm_service.dart';
+
+import '../features/chat/chat_repository.dart';
 
 final sodiumProvider = Provider<Sodium>((ref) => throw UnimplementedError());
 
@@ -15,8 +18,22 @@ final identityServiceProvider = Provider<IdentityService>((ref) {
   return IdentityService(sodium);
 });
 
+final dmServiceProvider = Provider<DMService>((ref) {
+  final sodium = ref.watch(sodiumProvider);
+  return DMService(sodium);
+});
+
 final contactServiceProvider = Provider<ContactService>((ref) {
   return ContactService();
+});
+
+final chatRepositoryProvider = Provider<ChatRepository>((ref) {
+  return ChatRepository(
+    ref.watch(identityServiceProvider),
+    ref.watch(dmServiceProvider),
+    ref.watch(contactServiceProvider),
+    ref.watch(webSocketServiceProvider),
+  );
 });
 
 // Alias for V1 backward compatibility
@@ -32,7 +49,7 @@ final relayManagerProvider = Provider<RelayManager>((ref) {
 });
 
 final webSocketServiceProvider = Provider<WebSocketService>((ref) {
-  return WebSocketService();
+  return WebSocketService(ref);
 });
 
 final activeRelayProvider = FutureProvider<RelayProfile?>((ref) async {
