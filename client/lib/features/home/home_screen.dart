@@ -11,6 +11,7 @@ import 'package:image_picker/image_picker.dart';
 import 'dart:convert';
 
 import '../contacts/contact_list_screen.dart';
+import '../chat/chat_screens.dart';
 
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
@@ -24,6 +25,15 @@ class HomeScreen extends ConsumerWidget {
       appBar: AppBar(
         title: const Text('GHOST ROOM'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.chat_bubble_outline),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const ChatsScreen()),
+              );
+            },
+          ),
           IconButton(
             icon: const Icon(Icons.people_outline),
             onPressed: () {

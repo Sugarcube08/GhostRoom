@@ -6,6 +6,8 @@ import 'dart:convert';
 import '../../core/providers.dart';
 import '../contacts/contact.dart';
 import '../../core/crypto/identity_service.dart';
+import '../chat/chat_screens.dart';
+import '../chat/conversation_service.dart';
 
 class ContactListScreen extends ConsumerWidget {
   const ContactListScreen({super.key});
@@ -318,6 +320,25 @@ class ContactDetailScreen extends ConsumerWidget {
             const Text('FINGERPRINT', style: TextStyle(color: Colors.white24, fontSize: 10, letterSpacing: 2)),
             const SizedBox(height: 8),
             Text(contact.fingerprint, style: const TextStyle(fontFamily: 'monospace', fontSize: 12, color: Colors.greenAccent)),
+            const SizedBox(height: 48),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: () {
+                  final conv = Conversation(
+                    contact: contact,
+                    contactId: contact.publicId,
+                    alias: contact.alias,
+                    messages: [],
+                  );
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => ConversationScreen(conversation: conv)),
+                  );
+                },
+                child: const Text('START CHAT'),
+              ),
+            ),
             const Spacer(),
             SizedBox(
               width: double.infinity,
