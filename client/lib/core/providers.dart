@@ -1,6 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sodium/sodium.dart';
-import 'crypto/crypto_service.dart';
+import 'crypto/identity_service.dart';
 import 'network/relay_manager.dart';
 import 'network/websocket_service.dart';
 
@@ -8,10 +8,13 @@ import '../features/spaces/space_service.dart';
 
 final sodiumProvider = Provider<Sodium>((ref) => throw UnimplementedError());
 
-final cryptoServiceProvider = Provider<CryptoService>((ref) {
+final identityServiceProvider = Provider<IdentityService>((ref) {
   final sodium = ref.watch(sodiumProvider);
-  return CryptoService(sodium);
+  return IdentityService(sodium);
 });
+
+// Alias for V1 backward compatibility
+final cryptoServiceProvider = identityServiceProvider;
 
 final spaceServiceProvider = Provider<SpaceService>((ref) {
   final sodium = ref.watch(sodiumProvider);
