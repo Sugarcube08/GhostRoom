@@ -1,10 +1,14 @@
 import 'dart:convert';
+import 'dart:io';
 import 'message.dart';
 import 'chat_repository.dart';
 import '../contacts/contact_resolver.dart';
 import '../contacts/contact_service.dart';
 import '../contacts/contact.dart';
 import '../../core/crypto/identity_service.dart';
+import '../../core/network/relay_manager.dart';
+import '../media/media_service.dart';
+import '../media/attachment_envelope.dart';
 
 class Conversation {
   final Contact? contact;
@@ -29,12 +33,16 @@ class ConversationService {
   final ContactResolver _contactResolver;
   final ContactService _contactService;
   final IdentityService _idService;
+  final MediaService _mediaService;
+  final RelayManager _relayManager;
 
   ConversationService(
     this._chatRepository, 
     this._contactResolver,
     this._contactService,
     this._idService,
+    this._mediaService,
+    this._relayManager,
   );
 
   List<Conversation> getConversations() {
@@ -107,7 +115,6 @@ class ConversationService {
       
       await _contactService.saveContact(newContact);
 
-      // Convert request messages to regular messages
       for (final msg in msgs) {
         msg.isRequest = false;
         await msg.save();
@@ -129,6 +136,30 @@ class ConversationService {
 
   Future<void> sendMessage(String recipientId, String text) async {
     await _chatRepository.sendMessage(recipientId: recipientId, text: text);
+  }
+
+  Future<void> sendImage(String recipientId, File file) async {
+    final contact = _contactService.getContact(recipientId);
+    if (contact == null) throw Exception('Contact not found');
+
+    final activeRelay = await _relayManager.getActiveRelay();
+    if (activeRelay == null) throw Exception('No active relay');
+
+    final compressed = await _mediaService.compressImage(file);
+
+    final envelope = await _mediaService.uploadMedia(
+      file: compressed,
+      kind: AttachmentKind.image,
+      relay: activeRelay,
+      recipientXid: base64Decode(contact.xid),
+    );
+
+    await _chatRepository.sendMessage(
+      recipientId: recipientId,
+      text: '[Image]',
+      type: MessageType.image,
+      metadata: envelope.toJson(),
+    );
   }
 
   Future<void> markAsRead(String contactId) async {

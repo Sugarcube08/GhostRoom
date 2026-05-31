@@ -26,7 +26,8 @@ export class MediaController {
     }
 
     try {
-      return await this.mediaService.generateUploadUrl(publicId, body.size, body.mime, body.hash);
+      const result = await this.mediaService.generateUploadUrl(publicId, body.size, body.mime, body.hash);
+      return result;
     } catch (e: any) {
       throw new BadRequestException(e.message);
     }

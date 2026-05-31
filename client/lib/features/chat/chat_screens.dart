@@ -1,9 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
+import 'package:image_picker/image_picker.dart';
+import 'dart:io';
+import 'dart:typed_data';
 import '../../core/providers.dart';
 import 'conversation_service.dart';
 import 'message.dart';
+import '../media/attachment_envelope.dart';
 
 final conversationsProvider = Provider<List<Conversation>>((ref) {
   return ref.watch(conversationServiceProvider).getConversations();
@@ -172,6 +176,7 @@ class ConversationScreen extends ConsumerStatefulWidget {
 class _ConversationScreenState extends ConsumerState<ConversationScreen> {
   final TextEditingController _controller = TextEditingController();
   final ScrollController _scrollController = ScrollController();
+  final ImagePicker _picker = ImagePicker();
 
   @override
   void initState() {
@@ -187,6 +192,20 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
     _controller.clear();
     
     await ref.read(conversationServiceProvider).sendMessage(widget.conversation.contactId, text);
+  }
+
+  void _pickAndSendImage() async {
+    final messenger = ScaffoldMessenger.of(context);
+    final XFile? image = await _picker.pickImage(source: ImageSource.gallery);
+    if (image == null) return;
+    
+    messenger.showSnackBar(const SnackBar(content: Text('Uploading encrypted image...')));
+    
+    try {
+      await ref.read(conversationServiceProvider).sendImage(widget.conversation.contactId, File(image.path));
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text('Upload failed: $e')));
+    }
   }
 
   @override
@@ -283,7 +302,10 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(msg.plaintext),
+            if (msg.type == MessageType.image)
+              AttachmentWidget(message: msg)
+            else
+              Text(msg.plaintext),
             const SizedBox(height: 4),
             Text(
               DateFormat.Hm().format(msg.timestamp),
@@ -304,6 +326,10 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
       ),
       child: Row(
         children: [
+          IconButton(
+            icon: const Icon(Icons.add_a_photo_outlined, color: Colors.white54),
+            onPressed: _pickAndSendImage,
+          ),
           Expanded(
             child: TextField(
               controller: _controller,
@@ -319,6 +345,98 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
             onPressed: _sendMessage,
           ),
         ],
+      ),
+    );
+  }
+}
+
+class AttachmentWidget extends ConsumerStatefulWidget {
+  final Message message;
+  const AttachmentWidget({super.key, required this.message});
+
+  @override
+  ConsumerState<AttachmentWidget> createState() => _AttachmentWidgetState();
+}
+
+class _AttachmentWidgetState extends ConsumerState<AttachmentWidget> {
+  Uint8List? _decryptedData;
+  bool _isDownloading = false;
+
+  void _download() async {
+    if (widget.message.metadata == null) return;
+    setState(() => _isDownloading = true);
+    
+    try {
+      final envelope = AttachmentEnvelope.fromJson(widget.message.metadata!);
+      final relay = await ref.read(activeRelayProvider.future);
+      final idService = ref.read(identityServiceProvider);
+      
+      if (relay == null) throw Exception('No active relay');
+      
+      final data = await ref.read(mediaServiceProvider).downloadMedia(
+        envelope: envelope,
+        relay: relay,
+        myXidKeyPair: idService.currentIdentity!.x25519KeyPair,
+      );
+      
+      if (mounted) {
+        setState(() {
+          _decryptedData = data;
+          _isDownloading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isDownloading = false);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Download failed: $e')));
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_decryptedData != null) {
+      return GestureDetector(
+        onTap: () => _showFullScreen(),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(8),
+          child: Image.memory(_decryptedData!, fit: BoxFit.cover),
+        ),
+      );
+    }
+
+    return Container(
+      width: 200,
+      height: 150,
+      decoration: BoxDecoration(
+        color: Colors.black26,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Center(
+        child: _isDownloading
+            ? const CircularProgressIndicator(strokeWidth: 2)
+            : TextButton.icon(
+                onPressed: _download,
+                icon: const Icon(Icons.download_for_offline_outlined, color: Colors.white24),
+                label: const Text('DOWNLOAD IMAGE', style: TextStyle(color: Colors.white24, fontSize: 10)),
+              ),
+      ),
+    );
+  }
+
+  void _showFullScreen() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => Scaffold(
+          appBar: AppBar(backgroundColor: Colors.black),
+          backgroundColor: Colors.black,
+          body: Center(
+            child: InteractiveViewer(
+              child: Image.memory(_decryptedData!),
+            ),
+          ),
+        ),
       ),
     );
   }

@@ -45,6 +45,10 @@ final conversationServiceProvider = Provider<ConversationService>((ref) {
   return ConversationService(
     ref.watch(chatRepositoryProvider),
     ref.watch(contactResolverProvider),
+    ref.watch(contactServiceProvider),
+    ref.watch(identityServiceProvider),
+    ref.watch(mediaServiceProvider),
+    ref.watch(relayManagerProvider),
   );
 });
 

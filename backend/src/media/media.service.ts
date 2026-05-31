@@ -55,47 +55,37 @@ export class MediaService {
   }
 
   async generateUploadUrl(ownerId: string, size: number, mime: string, hash: string) {
-    // 1. Enforce Quotas
     await this.checkQuotas(ownerId, size);
 
     const mediaId = uuidv4();
-    const expiresAt = Date.now() + 48 * 60 * 60 * 1000; // 48 hours
+    const expiresAt = Date.now() + 48 * 60 * 60 * 1000;
 
-    const command = new PutObjectCommand({
+    // 1. Bulk URL
+    const bulkCommand = new PutObjectCommand({
       Bucket: this.bucketName,
       Key: `media/${mediaId}`,
       ContentLength: size,
       ContentType: mime,
     });
+    const uploadUrl = await getSignedUrl(this.s3Client, bulkCommand, { expiresIn: 3600 });
 
-    const uploadUrl = await getSignedUrl(this.s3Client, command, { expiresIn: 3600 });
+    // 2. Thumb URL
+    const thumbCommand = new PutObjectCommand({
+      Bucket: this.bucketName,
+      Key: `thumbs/${mediaId}`,
+      ContentType: 'image/jpeg',
+    });
+    const thumbUrl = await getSignedUrl(this.s3Client, thumbCommand, { expiresIn: 3600 });
 
-    // 2. Increment Quotas
+    // Store metadata
     const bytesKey = `quota:bytes:${ownerId}`;
     const countKey = `quota:count:${ownerId}`;
-    
-    const pipeline = this.redis.pipeline();
-    pipeline.incrby(bytesKey, size);
-    pipeline.incr(countKey);
-    pipeline.expire(bytesKey, 86400); // 24h
-    pipeline.expire(countKey, 86400);
-    
-    // 3. Store metadata
-    const metadataKey = `media:${mediaId}`;
-    pipeline.hset(metadataKey, {
-      owner: ownerId,
-      size: size.toString(),
-      mime: mime,
-      hash: hash,
-      state: 'UPLOADING',
-      created_at: Date.now().toString(),
-      expires_at: expiresAt.toString(),
-    });
+...
     pipeline.expire(metadataKey, 48 * 60 * 60);
 
     await pipeline.exec();
 
-    return { mediaId, uploadUrl };
+    return { mediaId, uploadUrl, thumbUrl };
   }
 
   async confirmUpload(ownerId: string, mediaId: string) {

@@ -28,6 +28,18 @@ class MediaService {
     return File(result.path);
   }
 
+  Future<Uint8List> generateImageThumbnail(File file) async {
+    final result = await FlutterImageCompress.compressWithFile(
+      file.absolute.path,
+      minWidth: 100,
+      minHeight: 100,
+      quality: 50,
+      format: CompressFormat.jpeg,
+    );
+    if (result == null) throw Exception('Thumbnail generation failed');
+    return result;
+  }
+
   Future<File> compressVideo(File file) async {
     final info = await VideoCompress.compressVideo(
       file.path,
@@ -38,19 +50,14 @@ class MediaService {
     return info.file!;
   }
 
-  Future<Map<String, dynamic>> encryptMedia(Uint8List plaintext) async {
-    // 1. Generate Message Key
-    final messageKey = sodium.crypto.aeadXChaCha20Poly1305IETF.keygen();
-    
-    // 2. Encrypt Payload
+  Future<Map<String, dynamic>> encryptMedia(Uint8List plaintext, SecureKey? existingKey) async {
+    final messageKey = existingKey ?? sodium.crypto.aeadXChaCha20Poly1305IETF.keygen();
     final nonce = sodium.randombytes.buf(sodium.crypto.aeadXChaCha20Poly1305IETF.nonceBytes);
     final ciphertext = sodium.crypto.aeadXChaCha20Poly1305IETF.encrypt(
       message: plaintext,
       nonce: nonce,
       key: messageKey,
     );
-
-    // 3. Compute Hash of plaintext
     final hash = crypto.sha256.convert(plaintext).toString();
 
     return {
@@ -74,10 +81,7 @@ class MediaService {
     );
 
     final actualHash = crypto.sha256.convert(decrypted).toString();
-    if (actualHash != expectedHash) {
-      throw Exception('Integrity check failed: Hash mismatch');
-    }
-
+    if (actualHash != expectedHash) throw Exception('Integrity check failed: Hash mismatch');
     return decrypted;
   }
 
@@ -91,15 +95,12 @@ class MediaService {
     if (identity == null) throw Exception('Identity not initialized');
 
     final bytes = await file.readAsBytes();
-    final encrypted = await encryptMedia(bytes);
+    final encrypted = await encryptMedia(bytes, null);
+    final SecureKey messageKey = encrypted['messageKey'];
 
-    // 1. Request Upload URL
     final response = await http.post(
       Uri.parse('${relay.apiUrl}/media/upload-url'),
-      headers: {
-        'Content-Type': 'application/json',
-        'x-public-id': identity.publicId,
-      },
+      headers: {'Content-Type': 'application/json', 'x-public-id': identity.publicId},
       body: jsonEncode({
         'size': (encrypted['ciphertext'] as Uint8List).length,
         'mime': _getMime(kind),
@@ -107,44 +108,42 @@ class MediaService {
       }),
     );
 
-    if (response.statusCode != 201) {
-      throw Exception('Upload request failed: ${response.body}');
-    }
-
+    if (response.statusCode != 201) throw Exception('Upload request failed: ${response.body}');
     final data = jsonDecode(response.body);
     final String mediaId = data['mediaId'];
     final String uploadUrl = data['uploadUrl'];
+    final String thumbUrl = data['thumbUrl'];
 
-    // 2. PUT to R2
-    final putResponse = await http.put(
-      Uri.parse(uploadUrl),
-      body: encrypted['ciphertext'],
-      headers: {'Content-Type': _getMime(kind)},
-    );
+    await http.put(Uri.parse(uploadUrl), body: encrypted['ciphertext']);
 
-    if (putResponse.statusCode != 200) {
-      throw Exception('R2 Upload failed');
+    String? thumbNonceBase64;
+    if (kind == AttachmentKind.image || kind == AttachmentKind.video) {
+      final thumbBytes = await generateImageThumbnail(file);
+      final encryptedThumb = await encryptMedia(thumbBytes, messageKey);
+      await http.put(Uri.parse(thumbUrl), body: encryptedThumb['ciphertext']);
+      thumbNonceBase64 = base64Encode(encryptedThumb['nonce']);
     }
 
-    // 3. Confirm Upload
     await http.post(
       Uri.parse('${relay.apiUrl}/media/confirm/$mediaId'),
       headers: {'x-public-id': identity.publicId},
     );
 
-    // 4. Wrap Key for recipient
-    final encryptedKey = sodium.crypto.box.seal(
-      message: (encrypted['messageKey'] as SecureKey).extractBytes(),
+    final wrappedKey = sodium.crypto.box.seal(
+      message: messageKey.extractBytes(),
       publicKey: recipientXid,
     );
 
     return AttachmentEnvelope(
       kind: kind,
       mediaId: mediaId,
-      encryptedKey: base64Encode(encryptedKey),
+      encryptedKey: base64Encode(wrappedKey),
       hash: encrypted['hash'],
       name: file.path.split('/').last,
-      meta: kind == AttachmentKind.video ? {'nonce': base64Encode(encrypted['nonce'])} : {'nonce': base64Encode(encrypted['nonce'])},
+      meta: {
+        'nonce': base64Encode(encrypted['nonce']),
+        ...?thumbNonceBase64 != null ? {'thumb_nonce': thumbNonceBase64} : null,
+      },
     );
   }
 
@@ -152,19 +151,20 @@ class MediaService {
     required AttachmentEnvelope envelope,
     required RelayProfile relay,
     required KeyPair myXidKeyPair,
+    bool isThumbnail = false,
   }) async {
-    // 1. Get Download URL
     final response = await http.get(Uri.parse('${relay.apiUrl}/media/download-url/${envelope.mediaId}'));
     if (response.statusCode != 200) throw Exception('Download request failed');
 
     final data = jsonDecode(response.body);
-    final downloadUrl = data['downloadUrl'];
+    String downloadUrl = data['downloadUrl'];
+    if (isThumbnail) {
+      downloadUrl = downloadUrl.replaceFirst('/media/', '/thumbs/');
+    }
 
-    // 2. GET from R2
     final getResponse = await http.get(Uri.parse(downloadUrl));
     if (getResponse.statusCode != 200) throw Exception('R2 Download failed');
 
-    // 3. Unwrap Key
     final messageKeyBytes = sodium.crypto.box.sealOpen(
       cipherText: base64Decode(envelope.encryptedKey),
       publicKey: myXidKeyPair.publicKey,
@@ -172,16 +172,24 @@ class MediaService {
     );
     final messageKey = SecureKey.fromList(sodium, messageKeyBytes);
 
-    // 4. Decrypt & Verify
-    final nonceBase64 = envelope.meta?['nonce'] as String?;
-    if (nonceBase64 == null) throw Exception('Missing nonce in envelope');
+    final String? nonceBase64 = isThumbnail 
+        ? (envelope.meta?['thumb_nonce'] as String?) 
+        : (envelope.meta?['nonce'] as String?);
+    
+    if (nonceBase64 == null) throw Exception('Missing nonce');
 
-    return await decryptMedia(
-      ciphertext: getResponse.bodyBytes,
+    final decrypted = sodium.crypto.aeadXChaCha20Poly1305IETF.decrypt(
+      cipherText: getResponse.bodyBytes,
       nonce: base64Decode(nonceBase64),
-      messageKey: messageKey,
-      expectedHash: envelope.hash,
+      key: messageKey,
     );
+
+    if (!isThumbnail) {
+      final actualHash = crypto.sha256.convert(decrypted).toString();
+      if (actualHash != envelope.hash) throw Exception('Integrity check failed');
+    }
+
+    return decrypted;
   }
 
   String _getMime(AttachmentKind kind) {

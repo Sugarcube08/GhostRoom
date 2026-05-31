@@ -75,6 +75,13 @@ class RelayManager {
     await _storage.write(key: _relaysKey, value: jsonEncode(relays.map((r) => r.toJson()).toList()));
   }
 
+  Future<RelayProfile?> getActiveRelay() async {
+    final activeId = await getActiveRelayId();
+    final relays = await getRelays();
+    if (activeId == null && relays.isNotEmpty) return relays.first;
+    return relays.where((r) => r.id == activeId).firstOrNull ?? (relays.isNotEmpty ? relays.first : null);
+  }
+
   Future<String?> getActiveRelayId() async {
     return await _storage.read(key: _activeRelayIdKey);
   }

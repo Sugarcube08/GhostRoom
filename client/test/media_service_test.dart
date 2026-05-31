@@ -15,7 +15,7 @@ void main() {
     final plaintext = Uint8List.fromList(utf8.encode('This is a secret image data blob'));
     
     // 1. Encrypt
-    final result = await mediaService.encryptMedia(plaintext);
+    final result = await mediaService.encryptMedia(plaintext, null);
     
     expect(result['ciphertext'], isNotNull);
     expect(result['nonce'], isNotNull);
