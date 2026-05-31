@@ -42,6 +42,9 @@ class Message extends HiveObject {
   @HiveField(7)
   final Map<String, dynamic>? metadata; // For media URLs, sizes, etc.
 
+  @HiveField(8)
+  bool isRequest;
+
   Message({
     required this.id,
     required this.senderId,
@@ -51,5 +54,6 @@ class Message extends HiveObject {
     this.isRead = false,
     this.type = MessageType.text,
     this.metadata,
+    this.isRequest = false,
   });
 }

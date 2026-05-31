@@ -25,7 +25,9 @@ class ManualMockContactService implements ContactService {
   @override
   List<Contact> getAllContacts() => contacts;
   @override
-  Contact? getContact(String publicId) => contacts.firstWhere((c) => c.publicId == publicId);
+  Contact? getContact(String publicId) => contacts.where((c) => c.publicId == publicId).firstOrNull;
+  @override
+  bool isBlocked(String publicId) => false;
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

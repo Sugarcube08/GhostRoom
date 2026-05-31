@@ -1,4 +1,5 @@
 import 'package:hive_flutter/hive_flutter.dart';
+import 'package:sodium/sodium_sumo.dart' hide Box;
 import 'dart:typed_data';
 import 'message.dart';
 import 'dm_service.dart';
@@ -65,20 +66,79 @@ class ChatRepository {
         final identity = _idService.currentIdentity;
         if (identity == null) continue;
 
-        // Hybrid Decrypt
-        final plaintext = _dmService.decryptDM(
-          envelope: envelope,
-          myPublicId: identity.publicId,
-          myXidKeyPair: identity.x25519KeyPair,
-          senderEid: _getSenderEid(envelope),
-        );
+        String plaintext;
+        Uint8List senderEid;
+
+        // Try Signature-First (Known Contacts)
+        final knownEid = _getSenderEid(envelope);
+        if (knownEid != null) {
+          plaintext = _dmService.decryptDM(
+            envelope: envelope,
+            myPublicId: identity.publicId,
+            myXidKeyPair: identity.x25519KeyPair,
+            senderEid: knownEid,
+          );
+          senderEid = knownEid;
+        } else {
+          // Fallback: Decrypt-First (Unknown Senders)
+          final messageKeyBytes = _idService.sodium.crypto.box.sealOpen(
+            cipherText: base64Decode(envelope.encryptedKey),
+            publicKey: identity.x25519KeyPair.publicKey,
+            secretKey: identity.x25519KeyPair.secretKey,
+          );
+          final messageKey = SecureKey.fromList(_idService.sodium, messageKeyBytes);
+
+          final plaintextBytes = _idService.sodium.crypto.aeadXChaCha20Poly1305IETF.decrypt(
+            cipherText: base64Decode(envelope.ciphertext),
+            nonce: base64Decode(envelope.nonce),
+            key: messageKey,
+          );
+          
+          plaintext = utf8.decode(plaintextBytes);
+          final payload = jsonDecode(plaintext);
+          final senderEidBase64 = payload['sender_eid'] as String;
+          senderEid = base64Decode(senderEidBase64);
+          
+          // Verify Signature after decryption
+          final signMaterial = utf8.encode(
+            '${envelope.version}${envelope.id}${envelope.timestamp}${identity.publicId}${envelope.encryptedKey}${envelope.nonce}${envelope.ciphertext}'
+          );
+          
+          final isSignatureValid = _idService.sodium.crypto.sign.verifyDetached(
+            message: signMaterial,
+            signature: base64Decode(envelope.signature),
+            publicKey: senderEid,
+          );
+
+          if (!isSignatureValid) {
+            throw Exception('Invalid signature from unknown sender');
+          }
+        }
         
         final payload = jsonDecode(plaintext);
-        final senderEidBase64 = payload['sender_eid'] as String;
-        final senderEid = base64Decode(senderEidBase64);
-        
         final senderId = _idService.derivePublicId(senderEid);
         final actualTimestamp = envelope.timestamp;
+        final type = _mapType(payload['type']);
+
+        // TRUST LAYER ENFORCEMENT
+        final isKnownContact = _contactService.getContact(senderId) != null;
+        final isBlocked = _contactService.isBlocked(senderId);
+
+        if (isBlocked) {
+          _logger.i('Auto-rejected message from blocked sender: $senderId');
+          _wsService.acknowledgeMessage(envelope.id);
+          continue;
+        }
+
+        bool isRequest = false;
+        if (!isKnownContact) {
+          if (type != MessageType.text) {
+            _logger.w('Dropped media attachment from unknown sender: $senderId');
+            _wsService.acknowledgeMessage(envelope.id);
+            continue;
+          }
+          isRequest = true;
+        }
 
         final message = Message(
           id: envelope.id,
@@ -86,8 +146,13 @@ class ChatRepository {
           recipientId: identity.publicId,
           plaintext: payload['text'] ?? '',
           timestamp: DateTime.fromMillisecondsSinceEpoch(actualTimestamp),
-          type: _mapType(payload['type']),
-          metadata: payload['metadata'],
+          type: type,
+          metadata: {
+            ...?payload['metadata'],
+            'sender_eid': base64Encode(senderEid),
+            'sender_xid': payload['sender_xid'],
+          },
+          isRequest: isRequest,
         );
 
         await _msgBox.put(message.id, message);
@@ -100,7 +165,7 @@ class ChatRepository {
     }
   }
 
-  Uint8List _getSenderEid(DMEnvelope envelope) {
+  Uint8List? _getSenderEid(DMEnvelope envelope) {
     for (final contact in _contactService.getAllContacts()) {
       try {
         final eid = base64Decode(contact.eid);
@@ -116,7 +181,7 @@ class ChatRepository {
         }
       } catch (_) {}
     }
-    throw Exception('Unknown sender or invalid signature');
+    return null; // Unknown sender
   }
 
   MessageType _mapType(String? type) {

@@ -6,6 +6,7 @@ import 'contact.dart';
 
 class ContactService {
   static const String _boxName = 'contacts';
+  static const String _blockBoxName = 'blocked_identities';
   static const String _hiveKey = 'hive_encryption_key';
   final FlutterSecureStorage _storage = const FlutterSecureStorage();
   
@@ -28,9 +29,11 @@ class ContactService {
       _boxName,
       encryptionCipher: HiveAesCipher(encryptionKey),
     );
+    await Hive.openBox<String>(_blockBoxName);
   }
 
   Box<Contact> get _box => Hive.box<Contact>(_boxName);
+  Box<String> get _blockBox => Hive.box<String>(_blockBoxName);
 
   List<Contact> getAllContacts() {
     return _box.values.toList();
@@ -42,6 +45,7 @@ class ContactService {
 
   Future<void> saveContact(Contact contact) async {
     await _box.put(contact.publicId, contact);
+    await unblockIdentity(contact.publicId); // Unblock if they were blocked
   }
 
   Future<void> deleteContact(String publicId) async {
@@ -58,5 +62,25 @@ class ContactService {
 
   Future<void> clearAll() async {
     await _box.clear();
+    await _blockBox.clear();
+  }
+
+  // Block List Management
+  bool isBlocked(String publicId) {
+    return _blockBox.containsKey(publicId);
+  }
+
+  Future<void> blockIdentity(String publicId) async {
+    await _blockBox.put(publicId, publicId);
+    await deleteContact(publicId); // Ensure not in contacts if blocked
+  }
+
+  Future<void> unblockIdentity(String publicId) async {
+    await _blockBox.delete(publicId);
+  }
+
+  List<String> getBlockedIdentities() {
+    return _blockBox.values.toList();
   }
 }
+
