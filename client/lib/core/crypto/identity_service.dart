@@ -1,7 +1,48 @@
+import 'dart:convert';
 import 'package:sodium/sodium_sumo.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:bip39/bip39.dart' as bip39;
 import 'package:bs58/bs58.dart';
+import '../network/relay_manager.dart';
+
+class IdentityPackage {
+  final int version;
+  final String eid;
+  final String xid;
+  final List<String> relays;
+  final String? signature;
+
+  IdentityPackage({
+    required this.version,
+    required this.eid,
+    required this.xid,
+    required this.relays,
+    this.signature,
+  });
+
+  Map<String, dynamic> toJson() => {
+    'v': version,
+    'eid': eid,
+    'xid': xid,
+    'r': relays,
+    if (signature != null) 's': signature,
+  };
+
+  factory IdentityPackage.fromJson(Map<String, dynamic> json) => IdentityPackage(
+    version: json['v'] ?? 1,
+    eid: json['eid'],
+    xid: json['xid'],
+    relays: List<String>.from(json['r'] ?? []),
+    signature: json['s'],
+  );
+
+  String toEncodedString() => base64UrlEncode(utf8.encode(jsonEncode(toJson())));
+
+  factory IdentityPackage.fromEncodedString(String encoded) {
+    final decoded = utf8.decode(base64Url.decode(encoded));
+    return IdentityPackage.fromJson(jsonDecode(decoded));
+  }
+}
 
 class Identity {
   final String mnemonic;
@@ -116,5 +157,47 @@ class IdentityService {
 
   Future<String?> getDeviceId() async {
     return _currentIdentity?.deviceId ?? await _storage.read(key: _deviceIdKey);
+  }
+
+  Future<IdentityPackage> createPackage(List<RelayProfile> preferredRelays) async {
+    if (_currentIdentity == null) throw Exception('Identity not initialized');
+
+    final Map<String, dynamic> pkgData = {
+      'v': 1,
+      'eid': base64Encode(_currentIdentity!.ed25519KeyPair.publicKey),
+      'xid': base64Encode(_currentIdentity!.x25519KeyPair.publicKey),
+      'r': preferredRelays.map((r) => r.websocketUrl).toList(),
+    };
+
+    // Sign the package
+    final signature = sodium.crypto.sign.detached(
+      message: utf8.encode(jsonEncode(pkgData)),
+      secretKey: _currentIdentity!.ed25519KeyPair.secretKey,
+    );
+
+    return IdentityPackage(
+      version: 1,
+      eid: pkgData['eid'] as String,
+      xid: pkgData['xid'] as String,
+      relays: List<String>.from(pkgData['r']),
+      signature: base64Encode(signature),
+    );
+  }
+
+  bool verifyPackage(IdentityPackage package) {
+    if (package.signature == null) return false;
+    
+    final Map<String, dynamic> pkgData = {
+      'v': package.version,
+      'eid': package.eid,
+      'xid': package.xid,
+      'r': package.relays,
+    };
+
+    return sodium.crypto.sign.verifyDetached(
+      message: utf8.encode(jsonEncode(pkgData)),
+      signature: base64Decode(package.signature!),
+      publicKey: base64Decode(package.eid),
+    );
   }
 }

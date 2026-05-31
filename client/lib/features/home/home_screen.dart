@@ -10,6 +10,8 @@ import 'package:sodium/sodium.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:convert';
 
+import '../contacts/contact_list_screen.dart';
+
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
 
@@ -22,6 +24,15 @@ class HomeScreen extends ConsumerWidget {
       appBar: AppBar(
         title: const Text('GHOST ROOM'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.people_outline),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const ContactListScreen()),
+              );
+            },
+          ),
           IconButton(
             icon: const Icon(Icons.settings_outlined),
             onPressed: () {
