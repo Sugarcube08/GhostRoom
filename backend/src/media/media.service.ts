@@ -1,9 +1,12 @@
 import { Injectable, Inject, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository, LessThan } from 'typeorm';
 import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import Redis from 'ioredis';
 import { v4 as uuidv4 } from 'uuid';
+import { MediaEntity } from './entities/media.entity';
 
 @Injectable()
 export class MediaService {
@@ -17,6 +20,8 @@ export class MediaService {
   constructor(
     private readonly configService: ConfigService,
     @Inject('REDIS_CLIENT') private readonly redis: Redis,
+    @InjectRepository(MediaEntity)
+    private readonly mediaRepo: Repository<MediaEntity>,
   ) {
     const accountId = this.configService.get<string>('R2_ACCOUNT_ID');
     const accessKeyId = this.configService.get<string>('R2_ACCESS_KEY_ID');
@@ -58,7 +63,7 @@ export class MediaService {
     await this.checkQuotas(ownerId, size);
 
     const mediaId = uuidv4();
-    const expiresAt = Date.now() + 48 * 60 * 60 * 1000;
+    const expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000); // 48 hours
 
     // 1. Bulk URL
     const bulkCommand = new PutObjectCommand({
@@ -77,33 +82,52 @@ export class MediaService {
     });
     const thumbUrl = await getSignedUrl(this.s3Client, thumbCommand, { expiresIn: 3600 });
 
-    // Store metadata
+    // 3. Store metadata in Postgres
+    try {
+      const mediaEntity = this.mediaRepo.create({
+        id: mediaId,
+        owner_id: ownerId,
+        size_bytes: size.toString(),
+        mime_type: mime,
+        content_hash: hash,
+        state: 'UPLOADING',
+        expires_at: expiresAt,
+      });
+      await this.mediaRepo.save(mediaEntity);
+    } catch (e: any) {
+      this.logger.error(`Failed to save media metadata to Postgres: ${e?.message}`);
+      throw e;
+    }
+
+    // Increment Quotas in Redis
     const bytesKey = `quota:bytes:${ownerId}`;
     const countKey = `quota:count:${ownerId}`;
-...
-    pipeline.expire(metadataKey, 48 * 60 * 60);
-
+    
+    const pipeline = this.redis.pipeline();
+    pipeline.incrby(bytesKey, size);
+    pipeline.incr(countKey);
+    pipeline.expire(bytesKey, 86400); // 24h
+    pipeline.expire(countKey, 86400);
     await pipeline.exec();
 
     return { mediaId, uploadUrl, thumbUrl };
   }
 
   async confirmUpload(ownerId: string, mediaId: string) {
-    const key = `media:${mediaId}`;
-    const metadata = await this.redis.hgetall(key);
+    const metadata = await this.mediaRepo.findOne({ where: { id: mediaId } });
     
-    if (!metadata || metadata.owner !== ownerId) {
+    if (!metadata || metadata.owner_id !== ownerId) {
       throw new Error('Forbidden: Not the media owner');
     }
 
-    await this.redis.hset(key, 'state', 'UPLOADED');
+    metadata.state = 'UPLOADED';
+    await this.mediaRepo.save(metadata);
   }
 
   async referenceMedia(ownerId: string, mediaId: string) {
-    const key = `media:${mediaId}`;
-    const metadata = await this.redis.hgetall(key);
+    const metadata = await this.mediaRepo.findOne({ where: { id: mediaId } });
     
-    if (!metadata || metadata.owner !== ownerId) {
+    if (!metadata || metadata.owner_id !== ownerId) {
       throw new Error('Forbidden: Not the media owner');
     }
 
@@ -111,12 +135,13 @@ export class MediaService {
       throw new Error('Bad Request: Media must be UPLOADED before REFERENCED');
     }
 
-    await this.redis.hset(key, 'state', 'REFERENCED');
+    metadata.state = 'REFERENCED';
+    await this.mediaRepo.save(metadata);
   }
 
   async generateDownloadUrl(mediaId: string) {
-    const metadata = await this.redis.hgetall(`media:${mediaId}`);
-    if (!metadata || Object.keys(metadata).length === 0) {
+    const metadata = await this.mediaRepo.findOne({ where: { id: mediaId } });
+    if (!metadata || (metadata.expires_at && metadata.expires_at.getTime() < Date.now())) {
       throw new Error('Media not found or expired');
     }
 
@@ -142,31 +167,38 @@ export class MediaService {
     } catch (e: any) {
       this.logger.error(`Failed to delete media ${mediaId} from R2: ${e?.message || e}`);
     }
-    await this.redis.del(`media:${mediaId}`);
+    
+    await this.mediaRepo.delete(mediaId);
   }
 
   async cleanup() {
     this.logger.log('Starting media cleanup worker...');
-    const keys = await this.redis.keys('media:*');
-    const now = Date.now();
+    const now = new Date();
 
-    for (const key of keys) {
-      const metadata = await this.redis.hgetall(key);
-      const expiresAt = parseInt(metadata.expires_at || '0');
-      const state = metadata.state;
-      const createdAt = parseInt(metadata.created_at || '0');
-      const mediaId = key.split(':')[1];
+    // 1. Find expired media
+    const expiredMedia = await this.mediaRepo.find({
+      where: {
+        expires_at: LessThan(now),
+      },
+    });
 
-      if (expiresAt < now) {
-        this.logger.log(`Pruning expired media: ${mediaId}`);
-        await this.deleteMedia(mediaId);
-        continue;
-      }
+    for (const media of expiredMedia) {
+      this.logger.log(`Pruning expired media: ${media.id}`);
+      await this.deleteMedia(media.id);
+    }
 
-      if (state === 'UPLOADING' && (now - createdAt) > 2 * 60 * 60 * 1000) {
-        this.logger.log(`Pruning abandoned upload: ${mediaId}`);
-        await this.deleteMedia(mediaId);
-      }
+    // 2. Find abandoned uploads (UPLOADING for > 2 hours)
+    const twoHoursAgo = new Date(now.getTime() - 2 * 60 * 60 * 1000);
+    const abandonedMedia = await this.mediaRepo.find({
+      where: {
+        state: 'UPLOADING',
+        created_at: LessThan(twoHoursAgo),
+      },
+    });
+
+    for (const media of abandonedMedia) {
+      this.logger.log(`Pruning abandoned upload: ${media.id}`);
+      await this.deleteMedia(media.id);
     }
   }
 }

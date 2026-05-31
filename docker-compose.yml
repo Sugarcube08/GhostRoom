@@ -12,9 +12,15 @@ services:
     environment:
       - NODE_ENV=development
       - REDIS_URL=redis://redis:6379
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=ghostroom
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
     command: npm run start:dev
     depends_on:
       - redis
+      - postgres
     networks:
       - ghostroom_net
 
@@ -26,6 +32,23 @@ services:
     networks:
       - ghostroom_net
 
+  postgres:
+    image: postgres:15-alpine
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_DB=ghostroom
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - ghostroom_net
+
 networks:
   ghostroom_net:
     driver: bridge
+
+volumes:
+  postgres_data:
+

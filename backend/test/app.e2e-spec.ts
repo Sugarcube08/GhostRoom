@@ -4,6 +4,11 @@ import { AppModule } from '../src/app.module';
 import { io, Socket } from 'socket.io-client';
 import { describe, expect, it, beforeAll, afterAll, beforeEach, afterEach, jest } from '@jest/globals';
 
+import { getRepositoryToken } from '@nestjs/typeorm';
+import { MessageEntity } from '../src/inbox/entities/message.entity';
+import { DeliveryEntity } from '../src/inbox/entities/delivery.entity';
+import { MediaEntity } from '../src/media/entities/media.entity';
+
 describe('RelayGateway (Dual-Mode E2E)', () => {
   let app: INestApplication;
   let clientV1: Socket;
@@ -40,6 +45,15 @@ describe('RelayGateway (Dual-Mode E2E)', () => {
       subscribe: jest.fn(),
     };
 
+    const mockRepo = {
+      create: (jest.fn() as any).mockImplementation((e: any) => e),
+      save: (jest.fn() as any).mockResolvedValue({}),
+      find: (jest.fn() as any).mockResolvedValue([]),
+      findOne: (jest.fn() as any).mockResolvedValue(null),
+      delete: (jest.fn() as any).mockResolvedValue({}),
+      update: (jest.fn() as any).mockResolvedValue({}),
+    };
+
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
     })
@@ -47,6 +61,12 @@ describe('RelayGateway (Dual-Mode E2E)', () => {
     .useValue(mockRedis)
     .overrideProvider('REDIS_SUBSCRIBER')
     .useValue(mockRedis)
+    .overrideProvider(getRepositoryToken(MessageEntity))
+    .useValue(mockRepo)
+    .overrideProvider(getRepositoryToken(DeliveryEntity))
+    .useValue(mockRepo)
+    .overrideProvider(getRepositoryToken(MediaEntity))
+    .useValue(mockRepo)
     .compile();
 
     app = moduleFixture.createNestApplication();

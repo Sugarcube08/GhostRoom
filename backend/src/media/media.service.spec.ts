@@ -2,6 +2,8 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { MediaService } from './media.service';
 import { ConfigService } from '@nestjs/config';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import { getRepositoryToken } from '@nestjs/typeorm';
+import { MediaEntity } from './entities/media.entity';
 import { describe, expect, it, jest, beforeEach } from '@jest/globals';
 
 jest.mock('@aws-sdk/s3-request-presigner');
@@ -10,14 +12,25 @@ jest.mock('@aws-sdk/client-s3');
 describe('MediaService', () => {
   let service: MediaService;
   let mockRedis: any;
+  let mockMediaRepo: any;
 
   beforeEach(async () => {
     mockRedis = {
-      hset: jest.fn(),
-      expire: jest.fn(),
-      hgetall: jest.fn(),
-      del: jest.fn(),
-      exists: jest.fn(),
+      pipeline: jest.fn().mockReturnValue({
+        incrby: jest.fn().mockReturnThis(),
+        incr: jest.fn().mockReturnThis(),
+        expire: jest.fn().mockReturnThis(),
+        exec: (jest.fn() as any).mockResolvedValue([]),
+      }),
+      get: (jest.fn() as any).mockResolvedValue(null),
+    };
+
+    mockMediaRepo = {
+      create: jest.fn().mockImplementation((entity) => entity),
+      save: (jest.fn() as any).mockResolvedValue({}),
+      findOne: (jest.fn() as any).mockResolvedValue({ owner_id: 'alice', state: 'UPLOADING' }),
+      delete: (jest.fn() as any).mockResolvedValue({}),
+      find: (jest.fn() as any).mockResolvedValue([]),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -36,6 +49,10 @@ describe('MediaService', () => {
           provide: 'REDIS_CLIENT',
           useValue: mockRedis,
         },
+        {
+          provide: getRepositoryToken(MediaEntity),
+          useValue: mockMediaRepo,
+        },
       ],
     }).compile();
 
@@ -47,20 +64,20 @@ describe('MediaService', () => {
   });
 
   describe('generateUploadUrl', () => {
-    it('should return a signed URL and store metadata', async () => {
+    it('should return a signed URL and store metadata in Postgres', async () => {
       (getSignedUrl as any).mockResolvedValue('http://signed-put-url');
       
-      const result = await service.generateUploadUrl('alice', 1024, 'image/jpeg');
+      const result = await service.generateUploadUrl('alice', 1024, 'image/jpeg', 'some-hash');
       
       expect(result.mediaId).toBeDefined();
       expect(result.uploadUrl).toBe('http://signed-put-url');
-      expect(mockRedis.hset).toHaveBeenCalledWith(
-        expect.stringContaining('media:'),
+      expect(mockMediaRepo.create).toHaveBeenCalledWith(
         expect.objectContaining({
-          owner: 'alice',
+          owner_id: 'alice',
           state: 'UPLOADING',
         }),
       );
+      expect(mockMediaRepo.save).toHaveBeenCalled();
     });
   });
 });

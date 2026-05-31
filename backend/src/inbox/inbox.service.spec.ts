@@ -1,10 +1,15 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { InboxService } from './inbox.service';
+import { getRepositoryToken } from '@nestjs/typeorm';
+import { MessageEntity } from './entities/message.entity';
+import { DeliveryEntity } from './entities/delivery.entity';
 import { describe, expect, it, jest, beforeEach } from '@jest/globals';
 
 describe('InboxService', () => {
   let service: InboxService;
   let mockRedis: any;
+  let mockMessageRepo: any;
+  let mockDeliveryRepo: any;
 
   beforeEach(async () => {
     mockRedis = {
@@ -17,12 +22,25 @@ describe('InboxService', () => {
         del: jest.fn().mockReturnThis(),
         exec: (jest.fn() as any).mockResolvedValue([]),
       }),
-      zrangebyscore: jest.fn(),
-      mget: jest.fn(),
-      zrem: jest.fn(),
-      setex: jest.fn(),
-      get: jest.fn(),
-      del: jest.fn(),
+      zrangebyscore: (jest.fn() as any).mockResolvedValue([]),
+      mget: (jest.fn() as any).mockResolvedValue([]),
+      zrem: (jest.fn() as any).mockResolvedValue(0),
+      setex: (jest.fn() as any).mockResolvedValue('OK'),
+      get: (jest.fn() as any).mockResolvedValue(null),
+      del: (jest.fn() as any).mockResolvedValue(1),
+    };
+
+    mockMessageRepo = {
+      create: jest.fn().mockImplementation((entity) => entity),
+      save: (jest.fn() as any).mockResolvedValue({}),
+      find: (jest.fn() as any).mockResolvedValue([]),
+      delete: (jest.fn() as any).mockResolvedValue({}),
+    };
+
+    mockDeliveryRepo = {
+      create: jest.fn().mockImplementation((entity) => entity),
+      save: (jest.fn() as any).mockResolvedValue({}),
+      update: (jest.fn() as any).mockResolvedValue({}),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -31,6 +49,14 @@ describe('InboxService', () => {
         {
           provide: 'REDIS_CLIENT',
           useValue: mockRedis,
+        },
+        {
+          provide: getRepositoryToken(MessageEntity),
+          useValue: mockMessageRepo,
+        },
+        {
+          provide: getRepositoryToken(DeliveryEntity),
+          useValue: mockDeliveryRepo,
         },
       ],
     }).compile();
@@ -43,55 +69,36 @@ describe('InboxService', () => {
   });
 
   describe('queueMessage', () => {
-    it('should store message and add to inbox zset', async () => {
+    it('should store message in Postgres and Redis', async () => {
       const publicId = 'test-id';
-      const payload = { n: 'nonce', c: 'ciphertext' };
+      const payload = { id: 'msg-id', n: 'nonce', c: 'ciphertext' };
       
       const envelope = await service.queueMessage(publicId, payload);
       
       expect(envelope).toBeDefined();
-      expect(envelope.v).toBe(2);
+      expect(mockMessageRepo.create).toHaveBeenCalled();
+      expect(mockMessageRepo.save).toHaveBeenCalled();
+      expect(mockDeliveryRepo.save).toHaveBeenCalled();
       expect(mockRedis.pipeline).toHaveBeenCalled();
-      const pipeline = mockRedis.pipeline();
-      expect(pipeline.setex).toHaveBeenCalledWith(
-        expect.stringContaining('msg:'),
-        expect.any(Number),
-        expect.stringContaining('ciphertext'),
-      );
-      expect(pipeline.zadd).toHaveBeenCalledWith(
-        `inbox:${publicId}`,
-        expect.any(Number),
-        envelope.id,
-      );
     });
   });
 
   describe('fetchMessages', () => {
-    it('should return empty array if no messages', async () => {
-      mockRedis.zrangebyscore.mockResolvedValue([]);
+    it('should return messages from Postgres', async () => {
+      mockMessageRepo.find = (jest.fn() as any).mockResolvedValue([{ envelope: { id: 'msg-id', c: 'ciphertext' } }]);
+      
       const messages = await service.fetchMessages('test-id');
-      expect(messages).toEqual([]);
-    });
-
-    it('should fetch messages from store and cleanup missing ones', async () => {
-      const publicId = 'test-id';
-      mockRedis.zrangebyscore.mockResolvedValue(['id1', 'id2']);
-      mockRedis.mget.mockResolvedValue([
-        JSON.stringify({ id: 'id1', c: 'msg1' }),
-        null, // Missing/expired
-      ]);
-
-      const messages = await service.fetchMessages(publicId);
-
       expect(messages).toHaveLength(1);
-      expect(messages[0].id).toBe('id1');
-      expect(mockRedis.zrem).toHaveBeenCalledWith(`inbox:${publicId}`, 'id2');
+      expect(messages[0].id).toBe('msg-id');
     });
   });
 
   describe('acknowledgeMessage', () => {
-    it('should remove from zset and delete message store', async () => {
+    it('should remove from Postgres and Redis', async () => {
       await service.acknowledgeMessage('test-id', 'msg-id');
+      
+      expect(mockMessageRepo.delete).toHaveBeenCalledWith({ id: 'msg-id', recipient_id: 'test-id' });
+      expect(mockDeliveryRepo.update).toHaveBeenCalledWith({ message_id: 'msg-id' }, { status: 'ACKNOWLEDGED' });
       const pipeline = mockRedis.pipeline();
       expect(pipeline.zrem).toHaveBeenCalledWith('inbox:test-id', 'msg-id');
       expect(pipeline.del).toHaveBeenCalledWith('msg:msg-id');
