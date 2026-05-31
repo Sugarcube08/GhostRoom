@@ -8,6 +8,7 @@ import {
 import { Server, Socket } from "socket.io";
 import { RoomsService } from "../rooms/rooms.service";
 import { InboxService } from "../inbox/inbox.service";
+import { MediaService } from "../media/media.service";
 import { CryptoUtils } from "../inbox/crypto-utils.service";
 import { Inject, Logger } from "@nestjs/common";
 import Redis from "ioredis";
@@ -27,6 +28,7 @@ export class RelayGateway implements OnGatewayConnection, OnGatewayDisconnect {
   constructor(
     private readonly roomsService: RoomsService,
     private readonly inboxService: InboxService,
+    private readonly mediaService: MediaService,
     private readonly cryptoUtils: CryptoUtils,
     @Inject("REDIS_SUBSCRIBER") private readonly redisSub: Redis,
   ) {
@@ -100,6 +102,15 @@ export class RelayGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
     await this.inboxService.acknowledgeMessage(publicId, payload.message_id);
     this.logger.log(`Message ${payload.message_id} acknowledged by ${publicId}`);
+  }
+
+  @SubscribeMessage("media.viewed")
+  async handleMediaViewed(client: Socket, payload: { media_id: string }) {
+    const publicId = client.data.publicId;
+    if (!publicId) return;
+
+    await this.mediaService.deleteMedia(payload.media_id);
+    this.logger.log(`Media ${payload.media_id} deleted after view by ${publicId}`);
   }
 
   @SubscribeMessage("space.join")
