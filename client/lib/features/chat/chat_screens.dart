@@ -2,8 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:video_player/video_player.dart';
+import 'package:chewie/chewie.dart';
 import 'dart:io';
 import 'dart:typed_data';
+import 'package:path_provider/path_provider.dart';
 import '../../core/providers.dart';
 import 'conversation_service.dart';
 import 'message.dart';
@@ -194,18 +197,48 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
     await ref.read(conversationServiceProvider).sendMessage(widget.conversation.contactId, text);
   }
 
-  void _pickAndSendImage() async {
+  void _pickMedia() async {
     final messenger = ScaffoldMessenger.of(context);
-    final XFile? image = await _picker.pickImage(source: ImageSource.gallery);
-    if (image == null) return;
     
-    messenger.showSnackBar(const SnackBar(content: Text('Uploading encrypted image...')));
-    
-    try {
-      await ref.read(conversationServiceProvider).sendImage(widget.conversation.contactId, File(image.path));
-    } catch (e) {
-      messenger.showSnackBar(SnackBar(content: Text('Upload failed: $e')));
-    }
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.black,
+      builder: (context) => Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ListTile(
+            leading: const Icon(Icons.image_outlined),
+            title: const Text('IMAGE'),
+            onTap: () async {
+              Navigator.pop(context);
+              final XFile? image = await _picker.pickImage(source: ImageSource.gallery);
+              if (image == null) return;
+              messenger.showSnackBar(const SnackBar(content: Text('Uploading encrypted image...')));
+              try {
+                await ref.read(conversationServiceProvider).sendImage(widget.conversation.contactId, File(image.path));
+              } catch (e) {
+                messenger.showSnackBar(SnackBar(content: Text('Upload failed: $e')));
+              }
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.video_library_outlined),
+            title: const Text('VIDEO'),
+            onTap: () async {
+              Navigator.pop(context);
+              final XFile? video = await _picker.pickVideo(source: ImageSource.gallery);
+              if (video == null) return;
+              messenger.showSnackBar(const SnackBar(content: Text('Compressing & Uploading video...')));
+              try {
+                await ref.read(conversationServiceProvider).sendVideo(widget.conversation.contactId, File(video.path));
+              } catch (e) {
+                messenger.showSnackBar(SnackBar(content: Text('Upload failed: $e')));
+              }
+            },
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -302,7 +335,7 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            if (msg.type == MessageType.image)
+            if (msg.type == MessageType.image || msg.type == MessageType.video)
               AttachmentWidget(message: msg)
             else
               Text(msg.plaintext),
@@ -327,8 +360,8 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
       child: Row(
         children: [
           IconButton(
-            icon: const Icon(Icons.add_a_photo_outlined, color: Colors.white54),
-            onPressed: _pickAndSendImage,
+            icon: const Icon(Icons.attach_file_outlined, color: Colors.white54),
+            onPressed: _pickMedia,
           ),
           Expanded(
             child: TextField(
@@ -360,7 +393,32 @@ class AttachmentWidget extends ConsumerStatefulWidget {
 
 class _AttachmentWidgetState extends ConsumerState<AttachmentWidget> {
   Uint8List? _decryptedData;
+  Uint8List? _thumbData;
   bool _isDownloading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadThumb();
+  }
+
+  void _loadThumb() async {
+    if (widget.message.metadata == null) return;
+    try {
+      final envelope = AttachmentEnvelope.fromJson(widget.message.metadata!);
+      final relay = await ref.read(activeRelayProvider.future);
+      final idService = ref.read(identityServiceProvider);
+      if (relay == null) return;
+
+      final data = await ref.read(mediaServiceProvider).downloadMedia(
+        envelope: envelope,
+        relay: relay,
+        myXidKeyPair: idService.currentIdentity!.x25519KeyPair,
+        isThumbnail: true,
+      );
+      if (mounted) setState(() => _thumbData = data);
+    } catch (_) {}
+  }
 
   void _download() async {
     if (widget.message.metadata == null) return;
@@ -396,6 +454,9 @@ class _AttachmentWidgetState extends ConsumerState<AttachmentWidget> {
   @override
   Widget build(BuildContext context) {
     if (_decryptedData != null) {
+      if (widget.message.type == MessageType.video) {
+        return _VideoPreview(data: _decryptedData!);
+      }
       return GestureDetector(
         onTap: () => _showFullScreen(),
         child: ClipRRect(
@@ -411,15 +472,38 @@ class _AttachmentWidgetState extends ConsumerState<AttachmentWidget> {
       decoration: BoxDecoration(
         color: Colors.black26,
         borderRadius: BorderRadius.circular(8),
+        image: _thumbData != null ? DecorationImage(
+          image: MemoryImage(_thumbData!),
+          fit: BoxFit.cover,
+          opacity: 0.3,
+        ) : null,
       ),
-      child: Center(
-        child: _isDownloading
-            ? const CircularProgressIndicator(strokeWidth: 2)
-            : TextButton.icon(
-                onPressed: _download,
-                icon: const Icon(Icons.download_for_offline_outlined, color: Colors.white24),
-                label: const Text('DOWNLOAD IMAGE', style: TextStyle(color: Colors.white24, fontSize: 10)),
-              ),
+      child: Stack(
+        children: [
+          Center(
+            child: _isDownloading
+                ? const CircularProgressIndicator(strokeWidth: 2)
+                : TextButton.icon(
+                    onPressed: _download,
+                    icon: Icon(
+                      widget.message.type == MessageType.video 
+                        ? Icons.play_circle_outline 
+                        : Icons.download_for_offline_outlined, 
+                      color: Colors.white70
+                    ),
+                    label: Text(
+                      widget.message.type == MessageType.video ? 'PLAY VIDEO' : 'DOWNLOAD IMAGE', 
+                      style: const TextStyle(color: Colors.white70, fontSize: 10)
+                    ),
+                  ),
+          ),
+          if (widget.message.type == MessageType.video)
+            const Positioned(
+              bottom: 8,
+              right: 8,
+              child: Icon(Icons.videocam_outlined, size: 16, color: Colors.white24),
+            ),
+        ],
       ),
     );
   }
@@ -438,6 +522,60 @@ class _AttachmentWidgetState extends ConsumerState<AttachmentWidget> {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _VideoPreview extends StatefulWidget {
+  final Uint8List data;
+  const _VideoPreview({required this.data});
+
+  @override
+  State<_VideoPreview> createState() => _VideoPreviewState();
+}
+
+class _VideoPreviewState extends State<_VideoPreview> {
+  late VideoPlayerController _controller;
+  ChewieController? _chewieController;
+  File? _tempFile;
+
+  @override
+  void initState() {
+    super.initState();
+    _initPlayer();
+  }
+
+  void _initPlayer() async {
+    final tempDir = await getTemporaryDirectory();
+    _tempFile = File('${tempDir.path}/${DateTime.now().microsecondsSinceEpoch}.mp4');
+    await _tempFile!.writeAsBytes(widget.data);
+
+    _controller = VideoPlayerController.file(_tempFile!);
+    await _controller.initialize();
+
+    _chewieController = ChewieController(
+      videoPlayerController: _controller,
+      autoPlay: true,
+      looping: false,
+      aspectRatio: _controller.value.aspectRatio,
+    );
+    if (mounted) setState(() {});
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    _chewieController?.dispose();
+    _tempFile?.delete();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_chewieController == null) return const SizedBox(height: 200, child: Center(child: CircularProgressIndicator()));
+    return Container(
+      constraints: const BoxConstraints(maxHeight: 400),
+      child: Chewie(controller: _chewieController!),
     );
   }
 }

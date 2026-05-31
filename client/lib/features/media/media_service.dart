@@ -6,6 +6,7 @@ import 'package:crypto/crypto.dart' as crypto;
 import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:video_compress/video_compress.dart';
 import 'package:http/http.dart' as http;
+import 'package:path/path.dart' as p;
 import '../../core/network/relay_manager.dart';
 import '../../core/crypto/identity_service.dart';
 import 'attachment_envelope.dart';
@@ -17,7 +18,7 @@ class MediaService {
   MediaService(this.sodium, this._idService);
 
   Future<File> compressImage(File file) async {
-    final targetPath = '${file.path}_compressed.jpg';
+    final targetPath = p.join(p.dirname(file.path), 'compressed_${p.basename(file.path)}');
     final result = await FlutterImageCompress.compressAndGetFile(
       file.absolute.path,
       targetPath,
@@ -41,13 +42,31 @@ class MediaService {
   }
 
   Future<File> compressVideo(File file) async {
+    // video_compress handles 720p / H264 via qualities.
     final info = await VideoCompress.compressVideo(
       file.path,
-      quality: VideoQuality.MediumQuality,
+      quality: VideoQuality.Res1280x720Quality,
       deleteOrigin: false,
+      includeAudio: true,
     );
     if (info == null || info.file == null) throw Exception('Video compression failed');
     return info.file!;
+  }
+
+  Future<Uint8List> generateVideoThumbnail(File file) async {
+    final result = await VideoCompress.getByteThumbnail(file.path, quality: 50);
+    if (result == null) throw Exception('Video thumbnail failed');
+    return result;
+  }
+
+  Future<Map<String, dynamic>> getVideoMetadata(File file) async {
+    final info = await VideoCompress.getMediaInfo(file.path);
+    return {
+      'duration': info.duration, // ms
+      'w': info.width,
+      'h': info.height,
+      'fps': 30, // Default assumption if not provided
+    };
   }
 
   Future<Map<String, dynamic>> encryptMedia(Uint8List plaintext, SecureKey? existingKey) async {
@@ -98,6 +117,16 @@ class MediaService {
     final encrypted = await encryptMedia(bytes, null);
     final SecureKey messageKey = encrypted['messageKey'];
 
+    // Metadata extraction
+    Map<String, dynamic>? meta = {
+      'nonce': base64Encode(encrypted['nonce']),
+    };
+    if (kind == AttachmentKind.video) {
+      final videoMeta = await getVideoMetadata(file);
+      meta.addAll(videoMeta);
+    }
+
+    // 1. Request Upload URLs
     final response = await http.post(
       Uri.parse('${relay.apiUrl}/media/upload-url'),
       headers: {'Content-Type': 'application/json', 'x-public-id': identity.publicId},
@@ -114,21 +143,29 @@ class MediaService {
     final String uploadUrl = data['uploadUrl'];
     final String thumbUrl = data['thumbUrl'];
 
+    // 2. PUT Bulk File
     await http.put(Uri.parse(uploadUrl), body: encrypted['ciphertext']);
 
+    // 3. Handle Thumbnail
     String? thumbNonceBase64;
     if (kind == AttachmentKind.image || kind == AttachmentKind.video) {
-      final thumbBytes = await generateImageThumbnail(file);
+      final thumbBytes = kind == AttachmentKind.image 
+        ? await generateImageThumbnail(file)
+        : await generateVideoThumbnail(file);
+        
       final encryptedThumb = await encryptMedia(thumbBytes, messageKey);
       await http.put(Uri.parse(thumbUrl), body: encryptedThumb['ciphertext']);
       thumbNonceBase64 = base64Encode(encryptedThumb['nonce']);
+      meta['thumb_nonce'] = thumbNonceBase64;
     }
 
+    // 4. Confirm Upload
     await http.post(
       Uri.parse('${relay.apiUrl}/media/confirm/$mediaId'),
       headers: {'x-public-id': identity.publicId},
     );
 
+    // 5. Wrap Key
     final wrappedKey = sodium.crypto.box.seal(
       message: messageKey.extractBytes(),
       publicKey: recipientXid,
@@ -139,11 +176,8 @@ class MediaService {
       mediaId: mediaId,
       encryptedKey: base64Encode(wrappedKey),
       hash: encrypted['hash'],
-      name: file.path.split('/').last,
-      meta: {
-        'nonce': base64Encode(encrypted['nonce']),
-        ...?thumbNonceBase64 != null ? {'thumb_nonce': thumbNonceBase64} : null,
-      },
+      name: p.basename(file.path),
+      meta: meta,
     );
   }
 

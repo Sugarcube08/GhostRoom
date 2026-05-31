@@ -162,6 +162,33 @@ class ConversationService {
     );
   }
 
+  Future<void> sendVideo(String recipientId, File file) async {
+    final contact = _contactService.getContact(recipientId);
+    if (contact == null) throw Exception('Contact not found');
+
+    final activeRelay = await _relayManager.getActiveRelay();
+    if (activeRelay == null) throw Exception('No active relay');
+
+    // 1. Compress
+    final compressed = await _mediaService.compressVideo(file);
+
+    // 2. Upload
+    final envelope = await _mediaService.uploadMedia(
+      file: compressed,
+      kind: AttachmentKind.video,
+      relay: activeRelay,
+      recipientXid: base64Decode(contact.xid),
+    );
+
+    // 3. Send Message
+    await _chatRepository.sendMessage(
+      recipientId: recipientId,
+      text: '[Video]',
+      type: MessageType.video,
+      metadata: envelope.toJson(),
+    );
+  }
+
   Future<void> markAsRead(String contactId) async {
     final messages = _chatRepository.getMessagesForContact(contactId);
     for (final msg in messages) {

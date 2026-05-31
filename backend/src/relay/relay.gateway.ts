@@ -9,6 +9,7 @@ import { Server, Socket } from "socket.io";
 import { RoomsService } from "../rooms/rooms.service";
 import { InboxService } from "../inbox/inbox.service";
 import { MediaService } from "../media/media.service";
+import { AuditService } from "./audit.service";
 import { CryptoUtils } from "../inbox/crypto-utils.service";
 import { Inject, Logger } from "@nestjs/common";
 import Redis from "ioredis";
@@ -29,6 +30,7 @@ export class RelayGateway implements OnGatewayConnection, OnGatewayDisconnect {
     private readonly roomsService: RoomsService,
     private readonly inboxService: InboxService,
     private readonly mediaService: MediaService,
+    private readonly auditService: AuditService,
     private readonly cryptoUtils: CryptoUtils,
     @Inject("REDIS_SUBSCRIBER") private readonly redisSub: Redis,
   ) {
@@ -42,11 +44,13 @@ export class RelayGateway implements OnGatewayConnection, OnGatewayDisconnect {
     const nonce = randomBytes(32).toString('hex');
     await this.inboxService.storeChallenge(client.id, nonce);
     client.emit("identity.challenge", { nonce });
+    await this.auditService.log('client_connected', { socket_id: client.id });
   }
 
   async handleDisconnect(client: Socket) {
     this.logger.log(`Client disconnected: ${client.id}`);
     await this.inboxService.deleteChallenge(client.id);
+    await this.auditService.log('client_disconnected', { socket_id: client.id, public_id: client.data.publicId });
   }
 
   @SubscribeMessage("identity.prove")
@@ -60,25 +64,23 @@ export class RelayGateway implements OnGatewayConnection, OnGatewayDisconnect {
       return;
     }
 
-    // 1. Verify Public ID derivation
     const derivedId = this.cryptoUtils.derivePublicId(payload.public_key);
     if (derivedId !== payload.public_id) {
       client.emit("error", { message: "Invalid Public ID for provided key" });
       return;
     }
 
-    // 2. Verify Signature
     const isValid = this.cryptoUtils.verifySignature(nonce, payload.signature, payload.public_key);
     if (!isValid) {
       client.emit("error", { message: "Cryptographic proof failed" });
       return;
     }
 
-    // 3. Bind Identity
     client.data.publicId = payload.public_id;
     await client.join(`inbox:${payload.public_id}`);
     
     this.logger.log(`Client ${client.id} verified as ${payload.public_id}`);
+    await this.auditService.log('identity_verified', { public_id: payload.public_id, socket_id: client.id });
     client.emit("identity.verified", { public_id: payload.public_id });
     await this.inboxService.deleteChallenge(client.id);
   }
@@ -93,6 +95,7 @@ export class RelayGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
     const messages = await this.inboxService.fetchMessages(publicId, payload.since || 0);
     client.emit("inbox.messages", { messages });
+    await this.auditService.log('inbox_fetched', { public_id: publicId, count: messages.length });
   }
 
   @SubscribeMessage("message.ack")
@@ -102,6 +105,7 @@ export class RelayGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
     await this.inboxService.acknowledgeMessage(publicId, payload.message_id);
     this.logger.log(`Message ${payload.message_id} acknowledged by ${publicId}`);
+    await this.auditService.log('message_acked', { message_id: payload.message_id, recipient: publicId });
   }
 
   @SubscribeMessage("media.viewed")
@@ -111,6 +115,7 @@ export class RelayGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
     await this.mediaService.deleteMedia(payload.media_id);
     this.logger.log(`Media ${payload.media_id} deleted after view by ${publicId}`);
+    await this.auditService.log('media_viewed', { media_id: payload.media_id, viewer: publicId });
   }
 
   @SubscribeMessage("space.join")
@@ -137,6 +142,7 @@ export class RelayGateway implements OnGatewayConnection, OnGatewayDisconnect {
         messages: historyToDeliver,
       });
     }
+    await this.auditService.log('space_joined', { room_id: payload.roomId });
   }
 
   @SubscribeMessage("message.send")
@@ -149,12 +155,12 @@ export class RelayGateway implements OnGatewayConnection, OnGatewayDisconnect {
       expiry?: number;
       senderId?: string;
       v?: number;
+      retention?: string;
     },
   ) {
     const version = payload.v || 1;
 
     if (version === 2) {
-      // V2 Identity-based routing
       this.logger.log(`V2 message to ${payload.target_id} from ${client.id}`);
       
       try {
@@ -162,15 +168,17 @@ export class RelayGateway implements OnGatewayConnection, OnGatewayDisconnect {
           id: (payload as any).id,
           n: payload.nonce || '',
           c: payload.ciphertext,
+          k: (payload as any).k || (payload as any).encryptedKey,
+          s: (payload as any).s || (payload as any).signature,
+          retention: payload.retention,
         });
 
-        // Live delivery
         this.server.to(`inbox:${payload.target_id}`).emit("message.receive", envelope);
+        await this.auditService.log('message_sent', { target: payload.target_id, version: 2, retention: payload.retention });
       } catch (e: any) {
         this.logger.error(`Failed to queue V2 message: ${e?.message || e}`);
       }
     } else {
-      // V1 Space-based routing
       const roomId = payload.target_id;
       this.logger.log(`V1 message to room ${roomId} from client ${client.id}`);
       
@@ -182,6 +190,7 @@ export class RelayGateway implements OnGatewayConnection, OnGatewayDisconnect {
           payload,
           payload.expiry || 300,
         );
+        await this.auditService.log('message_sent', { target: roomId, version: 1 });
       } catch (e: any) {
         this.logger.error(`Failed to store V1 message for room ${roomId}: ${e?.message || e}`);
       }

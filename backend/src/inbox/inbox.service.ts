@@ -53,6 +53,7 @@ export class InboxService {
     } else if (retentionMode === 'VIEW_ONCE') {
       expiresAt = new Date(timestamp + 24 * 60 * 60 * 1000); // 24h fallback
     }
+    // PERSISTENT mode now has null expiresAt (unlimited)
 
     try {
       const msgEntity = this.messageRepo.create({
@@ -71,6 +72,8 @@ export class InboxService {
         status: 'PENDING',
       });
       await this.deliveryRepo.save(deliveryEntity);
+      
+      this.logger.log(`Audit: Message ${messageId} queued for ${publicId} (Mode: ${retentionMode})`);
     } catch (e: any) {
       this.logger.error(`Failed to save message to Postgres: ${e?.message}`);
       throw e;

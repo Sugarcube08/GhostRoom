@@ -7,6 +7,7 @@ import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import Redis from 'ioredis';
 import { v4 as uuidv4 } from 'uuid';
 import { MediaEntity } from './entities/media.entity';
+import { AuditService } from '../relay/audit.service';
 
 @Injectable()
 export class MediaService {
@@ -22,6 +23,7 @@ export class MediaService {
     @Inject('REDIS_CLIENT') private readonly redis: Redis,
     @InjectRepository(MediaEntity)
     private readonly mediaRepo: Repository<MediaEntity>,
+    private readonly auditService: AuditService,
   ) {
     const accountId = this.configService.get<string>('R2_ACCOUNT_ID');
     const accessKeyId = this.configService.get<string>('R2_ACCESS_KEY_ID');
@@ -94,6 +96,7 @@ export class MediaService {
         expires_at: expiresAt,
       });
       await this.mediaRepo.save(mediaEntity);
+      await this.auditService.log('media_upload_requested', { owner: ownerId, size });
     } catch (e: any) {
       this.logger.error(`Failed to save media metadata to Postgres: ${e?.message}`);
       throw e;
@@ -122,6 +125,7 @@ export class MediaService {
 
     metadata.state = 'UPLOADED';
     await this.mediaRepo.save(metadata);
+    await this.auditService.log('media_upload_confirmed', { media_id: mediaId, owner: ownerId });
   }
 
   async referenceMedia(ownerId: string, mediaId: string) {
@@ -137,6 +141,7 @@ export class MediaService {
 
     metadata.state = 'REFERENCED';
     await this.mediaRepo.save(metadata);
+    await this.auditService.log('media_referenced', { media_id: mediaId, owner: ownerId });
   }
 
   async generateDownloadUrl(mediaId: string) {
@@ -185,6 +190,7 @@ export class MediaService {
     for (const media of expiredMedia) {
       this.logger.log(`Pruning expired media: ${media.id}`);
       await this.deleteMedia(media.id);
+      await this.auditService.log('media_pruned', { media_id: media.id, reason: 'expired' });
     }
 
     // 2. Find abandoned uploads (UPLOADING for > 2 hours)
@@ -199,6 +205,7 @@ export class MediaService {
     for (const media of abandonedMedia) {
       this.logger.log(`Pruning abandoned upload: ${media.id}`);
       await this.deleteMedia(media.id);
+      await this.auditService.log('media_pruned', { media_id: media.id, reason: 'abandoned' });
     }
   }
 }

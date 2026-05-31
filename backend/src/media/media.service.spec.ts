@@ -4,6 +4,7 @@ import { ConfigService } from '@nestjs/config';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { MediaEntity } from './entities/media.entity';
+import { AuditService } from '../relay/audit.service';
 import { describe, expect, it, jest, beforeEach } from '@jest/globals';
 
 jest.mock('@aws-sdk/s3-request-presigner');
@@ -13,6 +14,7 @@ describe('MediaService', () => {
   let service: MediaService;
   let mockRedis: any;
   let mockMediaRepo: any;
+  let mockAuditService: any;
 
   beforeEach(async () => {
     mockRedis = {
@@ -31,6 +33,10 @@ describe('MediaService', () => {
       findOne: (jest.fn() as any).mockResolvedValue({ owner_id: 'alice', state: 'UPLOADING' }),
       delete: (jest.fn() as any).mockResolvedValue({}),
       find: (jest.fn() as any).mockResolvedValue([]),
+    };
+
+    mockAuditService = {
+      log: (jest.fn() as any).mockResolvedValue(undefined),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -52,6 +58,10 @@ describe('MediaService', () => {
         {
           provide: getRepositoryToken(MediaEntity),
           useValue: mockMediaRepo,
+        },
+        {
+          provide: AuditService,
+          useValue: mockAuditService,
         },
       ],
     }).compile();
@@ -77,7 +87,7 @@ describe('MediaService', () => {
           state: 'UPLOADING',
         }),
       );
-      expect(mockMediaRepo.save).toHaveBeenCalled();
+      expect(mockAuditService.log).toHaveBeenCalledWith('media_upload_requested', expect.any(Object));
     });
   });
 });
