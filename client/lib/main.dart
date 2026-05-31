@@ -4,7 +4,8 @@ import 'package:sodium/sodium_sumo.dart';
 import 'core/theme/ghost_theme.dart';
 import 'core/providers.dart';
 import 'core/widgets/privacy_overlay.dart';
-import 'features/home/home_screen.dart';
+import 'core/widgets/navigation_shell.dart';
+import 'features/home/onboarding_screen.dart';
 
 import 'package:hive_flutter/hive_flutter.dart';
 
@@ -119,10 +120,20 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
     }
 
     if (mounted) {
-      debugPrint('GHOST_LOG: Navigating to HomeScreen');
+      final idService = ref.read(identityServiceProvider);
+      if (!idService.hasIdentity) {
+        debugPrint('GHOST_LOG: No identity found. Navigating to OnboardingScreen');
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (_) => const OnboardingScreen()),
+        );
+        return;
+      }
+
+      debugPrint('GHOST_LOG: Navigating to NavigationShell');
       Navigator.pushReplacement(
         context,
-        MaterialPageRoute(builder: (_) => const HomeScreen()),
+        MaterialPageRoute(builder: (_) => const NavigationShell()),
       );
     }
   }

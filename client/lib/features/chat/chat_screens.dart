@@ -26,92 +26,109 @@ class ChatsScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final conversations = ref.watch(conversationsProvider);
-    final requests = ref.watch(requestsProvider);
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('CHATS'),
+        title: const Text('MESSAGES'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.person_add_alt_1_outlined),
+            onPressed: () => _showAddContactOptions(context, ref),
+          ),
+        ],
       ),
-      body: Column(
-        children: [
-          if (requests.isNotEmpty)
-            ListTile(
-              tileColor: Colors.redAccent.withAlpha(25),
-              leading: const Icon(Icons.mail_lock, color: Colors.redAccent),
-              title: const Text('Message Requests'),
-              trailing: CircleAvatar(
-                radius: 12,
-                backgroundColor: Colors.redAccent,
-                child: Text(
-                  requests.length.toString(),
-                  style: const TextStyle(fontSize: 10, color: Colors.white, fontWeight: FontWeight.bold),
-                ),
-              ),
-              onTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => const RequestsScreen()),
+      body: conversations.isEmpty
+          ? _buildEmptyState()
+          : ListView.builder(
+              itemCount: conversations.length,
+              itemBuilder: (context, index) {
+                final conv = conversations[index];
+                return ListTile(
+                  leading: CircleAvatar(
+                    backgroundColor: Colors.white10,
+                    child: Text(conv.alias.isNotEmpty ? conv.alias[0].toUpperCase() : '?'),
+                  ),
+                  title: Text(conv.alias),
+                  subtitle: Text(
+                    conv.lastMessage?.plaintext ?? 'No messages',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: conv.unreadCount > 0 ? Colors.white70 : Colors.white24,
+                      fontWeight: conv.unreadCount > 0 ? FontWeight.bold : FontWeight.normal,
+                    ),
+                  ),
+                  trailing: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      if (conv.lastMessage != null)
+                        Text(
+                          DateFormat.Hm().format(conv.lastMessage!.timestamp),
+                          style: const TextStyle(fontSize: 10, color: Colors.white24),
+                        ),
+                      if (conv.unreadCount > 0)
+                        Container(
+                          margin: const EdgeInsets.only(top: 4),
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: Colors.redAccent,
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Text(
+                            conv.unreadCount.toString(),
+                            style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                    ],
+                  ),
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => ConversationScreen(conversation: conv),
+                      ),
+                    );
+                  },
                 );
               },
             ),
-          Expanded(
-            child: conversations.isEmpty
-                ? _buildEmptyState()
-                : ListView.builder(
-                    itemCount: conversations.length,
-                    itemBuilder: (context, index) {
-                      final conv = conversations[index];
-                      return ListTile(
-                        leading: CircleAvatar(
-                          backgroundColor: Colors.white10,
-                          child: Text(conv.alias.isNotEmpty ? conv.alias[0].toUpperCase() : '?'),
-                        ),
-                        title: Text(conv.alias),
-                        subtitle: Text(
-                          conv.lastMessage?.plaintext ?? 'No messages',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            color: conv.unreadCount > 0 ? Colors.white70 : Colors.white24,
-                            fontWeight: conv.unreadCount > 0 ? FontWeight.bold : FontWeight.normal,
-                          ),
-                        ),
-                        trailing: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          crossAxisAlignment: CrossAxisAlignment.end,
-                          children: [
-                            if (conv.lastMessage != null)
-                              Text(
-                                DateFormat.Hm().format(conv.lastMessage!.timestamp),
-                                style: const TextStyle(fontSize: 10, color: Colors.white24),
-                              ),
-                            if (conv.unreadCount > 0)
-                              Container(
-                                margin: const EdgeInsets.only(top: 4),
-                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                decoration: BoxDecoration(
-                                  color: Colors.redAccent,
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                                child: Text(
-                                  conv.unreadCount.toString(),
-                                  style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold),
-                                ),
-                              ),
-                          ],
-                        ),
-                        onTap: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => ConversationScreen(conversation: conv),
-                            ),
-                          );
-                        },
-                      );
-                    },
-                  ),
+    );
+  }
+
+  void _showAddContactOptions(BuildContext context, WidgetRef ref) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF121212),
+      builder: (context) => Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const SizedBox(height: 16),
+          ListTile(
+            leading: const Icon(Icons.qr_code_scanner),
+            title: const Text('SCAN QR CODE'),
+            onTap: () {
+              Navigator.pop(context);
+              // TODO: Implement QR scan for identity package
+            },
           ),
+          ListTile(
+            leading: const Icon(Icons.paste),
+            title: const Text('PASTE IDENTITY PACKAGE'),
+            onTap: () {
+              Navigator.pop(context);
+              // TODO: Implement manual package import
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.input),
+            title: const Text('ENTER PUBLIC ID'),
+            onTap: () {
+              Navigator.pop(context);
+              // TODO: Implement manual ID entry
+            },
+          ),
+          const SizedBox(height: 16),
         ],
       ),
     );
@@ -119,7 +136,15 @@ class ChatsScreen extends ConsumerWidget {
 
   Widget _buildEmptyState() {
     return const Center(
-      child: Text('No active conversations', style: TextStyle(color: Colors.white24)),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.chat_bubble_outline, size: 64, color: Colors.white10),
+          SizedBox(height: 16),
+          Text('No messages yet', style: TextStyle(color: Colors.white24)),
+          Text('Add a contact to start messaging', style: TextStyle(color: Colors.white10, fontSize: 12)),
+        ],
+      ),
     );
   }
 }
@@ -136,7 +161,16 @@ class RequestsScreen extends ConsumerWidget {
         title: const Text('REQUESTS'),
       ),
       body: requests.isEmpty
-          ? const Center(child: Text('No message requests', style: TextStyle(color: Colors.white24)))
+          ? const Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.mail_lock_outlined, size: 64, color: Colors.white10),
+                  SizedBox(height: 16),
+                  Text('No pending requests', style: TextStyle(color: Colors.white24)),
+                ],
+              ),
+            )
           : ListView.builder(
               itemCount: requests.length,
               itemBuilder: (context, index) {

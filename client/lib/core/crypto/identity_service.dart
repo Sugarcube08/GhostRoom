@@ -76,23 +76,17 @@ class IdentityService {
 
   Identity? get currentIdentity => _currentIdentity;
 
+  bool get hasIdentity => _currentIdentity != null;
+
   Future<void> initIdentity() async {
     final seedPhrase = await _storage.read(key: _seedKey);
     if (seedPhrase != null) {
       await restoreIdentity(seedPhrase);
-    } else {
-      final oldDeviceId = await _storage.read(key: _deviceIdKey);
-      if (oldDeviceId != null) {
-        await _generateNewIdentity(preservedDeviceId: oldDeviceId);
-      } else {
-        await _generateNewIdentity();
-      }
     }
   }
 
-  Future<Identity> _generateNewIdentity({String? preservedDeviceId}) async {
-    final mnemonic = bip39.generateMnemonic(strength: 256); // 24 words
-    return await restoreIdentity(mnemonic, preservedDeviceId: preservedDeviceId);
+  String generateNewMnemonic() {
+    return bip39.generateMnemonic(strength: 256);
   }
 
   String derivePublicId(Uint8List ed25519PubKey) {
