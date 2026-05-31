@@ -29,7 +29,7 @@ void main() async {
       await container.read(contactServiceProvider).init();
       await container.read(chatRepositoryProvider).init();
     } catch (e) {
-      debugPrint('GHOST_LOG: Service initialization error: $e');
+      debugPrint('GHOST_FATAL: Service initialization error: $e');
     }
 
     runApp(
@@ -39,7 +39,7 @@ void main() async {
       ),
     );
   }, (error, stack) {
-    debugPrint('GHOST_FATAL: $error');
+    debugPrint('GHOST_CRASH: $error');
     debugPrint(stack.toString());
   });
 }
@@ -98,20 +98,23 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
       debugPrint('GHOST_LOG: SplashScreen checking identity...');
       final idService = ref.read(identityServiceProvider);
       
-      // We give initIdentity another chance if it didn't run in main
+      // Secondary check for persistence
       if (!idService.hasIdentity) {
         await idService.initIdentity();
       }
 
       if (!idService.hasIdentity) {
-        debugPrint('GHOST_LOG: No identity. Onboarding required.');
+        debugPrint('GHOST_LOG: Identity not found. Navigating to Onboarding.');
         if (mounted) {
-          Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const OnboardingScreen()));
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (_) => const OnboardingScreen()),
+          );
         }
         return;
       }
 
-      // Auto-connect to relay
+      // Auto-connect to relay if available
       final relay = await ref.read(activeRelayProvider.future);
       if (relay != null) {
         ref.read(relayManagerProvider).wakeUpRelay(relay);
@@ -123,14 +126,20 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
         });
       }
 
-      debugPrint('GHOST_LOG: Identity found. Entering Vault.');
+      debugPrint('GHOST_LOG: Identity verified. Entering app.');
       if (mounted) {
-        Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const NavigationShell()));
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (_) => const NavigationShell()),
+        );
       }
     } catch (e) {
-      debugPrint('GHOST_LOG: SplashScreen error: $e');
+      debugPrint('GHOST_ERROR: SplashScreen init failed: $e');
       if (mounted) {
-        Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const OnboardingScreen()));
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (_) => const OnboardingScreen()),
+        );
       }
     }
   }
@@ -143,9 +152,9 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Image.asset('assets/images/banner.png', height: 180, fit: BoxFit.contain),
-            const SizedBox(height: 48),
-            const CircularProgressIndicator(color: Colors.white24, strokeWidth: 1),
+            Image.asset('assets/images/banner.png', height: 120, fit: BoxFit.contain),
+            const SizedBox(height: 64),
+            const CircularProgressIndicator(color: Colors.white10, strokeWidth: 1),
           ],
         ),
       ),
