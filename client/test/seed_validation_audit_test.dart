@@ -7,7 +7,6 @@ import 'dart:typed_data';
 void main() {
   test('Launch Audit: Seed Phrase Validation Robustness', () async {
     final sodium = await SodiumSumoInit.init();
-    final idService = IdentityService(sodium);
 
     Identity deriveIdentity(String mnemonic) {
       if (!bip39.validateMnemonic(mnemonic)) throw Exception('Invalid');
@@ -31,11 +30,11 @@ void main() {
     expect(() => deriveIdentity(short), throwsException);
 
     // 3. Wrong checksum
-    final wrongChecksum = words.sublist(0, 23).join(' ') + ' abandon'; 
+    final wrongChecksum = '${words.sublist(0, 23).join(' ')} abandon'; 
     expect(() => deriveIdentity(wrongChecksum), throwsException);
 
     // 4. Invalid words
-    final invalidWords = words.sublist(0, 23).join(' ') + ' xyz123';
+    final invalidWords = '${words.sublist(0, 23).join(' ')} xyz123';
     expect(() => deriveIdentity(invalidWords), throwsException);
   });
 }
