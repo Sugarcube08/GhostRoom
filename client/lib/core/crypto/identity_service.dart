@@ -209,6 +209,17 @@ class IdentityService {
     );
   }
 
+  String signChallenge(String nonce) {
+    if (_currentIdentity == null) throw Exception('Identity not initialized');
+    
+    final signature = sodium.crypto.sign.detached(
+      message: utf8.encode(nonce),
+      secretKey: _currentIdentity!.ed25519KeyPair.secretKey,
+    );
+    
+    return base64Encode(signature);
+  }
+
   Future<String?> exportIdentity() async {
     return await _storage.read(key: _seedKey);
   }

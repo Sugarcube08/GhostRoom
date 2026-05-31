@@ -4,6 +4,7 @@ import { RedisModule } from "./redis/redis.module";
 import { RoomsModule } from "./rooms/rooms.module";
 import { RelayModule } from "./relay/relay.module";
 import { InboxModule } from "./inbox/inbox.module";
+import { MediaModule } from "./media/media.module";
 import { AppController } from "./app.controller";
 
 import { ThrottlerModule } from "@nestjs/throttler";
@@ -23,6 +24,7 @@ import { ThrottlerModule } from "@nestjs/throttler";
     RoomsModule,
     RelayModule,
     InboxModule,
+    MediaModule,
   ],
   controllers: [AppController],
 })

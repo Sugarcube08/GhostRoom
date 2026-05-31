@@ -80,3 +80,4 @@ This document outlines the corrected implementation plan for V2 identity-based i
 *   **V1**: Anonymous UUID-based LISTs. Destructive `LRANGE+DEL` on join.
 *   **V2**: Authenticated PublicID-based ZSETs. Cursor-based fetch + Explicit ID-based ACK.
 *   The `RelayGateway` will switch logic entirely based on the `v` (version) field in incoming payloads.
+
