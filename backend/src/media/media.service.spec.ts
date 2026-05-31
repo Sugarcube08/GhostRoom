@@ -4,7 +4,7 @@ import { ConfigService } from '@nestjs/config';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { MediaEntity } from './entities/media.entity';
-import { AuditService } from '../relay/audit.service';
+import { AuditService } from '../audit/audit.service';
 import { describe, expect, it, jest, beforeEach } from '@jest/globals';
 
 jest.mock('@aws-sdk/s3-request-presigner');

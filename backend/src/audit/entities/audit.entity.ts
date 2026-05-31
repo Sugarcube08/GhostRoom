@@ -1,7 +1,7 @@
 import { Entity, Column, PrimaryGeneratedColumn, CreateDateColumn } from 'typeorm';
 
 @Entity('relay_audit')
-export class RelayAuditEntity {
+export class AuditEntity {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 

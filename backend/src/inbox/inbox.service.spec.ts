@@ -1,5 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { InboxService } from './inbox.service';
+import { ConfigService } from '@nestjs/config';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { MessageEntity } from './entities/message.entity';
 import { DeliveryEntity } from './entities/delivery.entity';
@@ -48,6 +49,12 @@ describe('InboxService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         InboxService,
+        {
+          provide: ConfigService,
+          useValue: {
+            get: jest.fn().mockReturnValue(null),
+          },
+        },
         {
           provide: 'REDIS_CLIENT',
           useValue: mockRedis,

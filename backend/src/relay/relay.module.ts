@@ -1,11 +1,9 @@
 import { Module } from "@nestjs/common";
-import { TypeOrmModule } from "@nestjs/typeorm";
 import { RelayGateway } from "./relay.gateway";
 import { RoomsModule } from "../rooms/rooms.module";
 import { InboxModule } from "../inbox/inbox.module";
 import { MediaModule } from "../media/media.module";
-import { RelayAuditEntity } from "./entities/relay-audit.entity";
-import { AuditService } from "./audit.service";
+import { AuditModule } from "../audit/audit.module";
 import { MetricsService } from "./metrics.service";
 import { HealthController } from "./health.controller";
 
@@ -14,10 +12,10 @@ import { HealthController } from "./health.controller";
     RoomsModule, 
     InboxModule, 
     MediaModule,
-    TypeOrmModule.forFeature([RelayAuditEntity])
+    AuditModule,
   ],
   controllers: [HealthController],
-  providers: [RelayGateway, AuditService, MetricsService],
-  exports: [AuditService, MetricsService],
+  providers: [RelayGateway, MetricsService],
+  exports: [MetricsService],
 })
 export class RelayModule {}

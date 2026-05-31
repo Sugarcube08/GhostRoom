@@ -9,7 +9,7 @@ import { Server, Socket } from "socket.io";
 import { RoomsService } from "../rooms/rooms.service";
 import { InboxService } from "../inbox/inbox.service";
 import { MediaService } from "../media/media.service";
-import { AuditService } from "./audit.service";
+import { AuditService } from "../audit/audit.service";
 import { MetricsService } from "./metrics.service";
 import { CryptoUtils } from "../inbox/crypto-utils.service";
 import { Inject, Logger } from "@nestjs/common";

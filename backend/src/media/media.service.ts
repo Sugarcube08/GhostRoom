@@ -7,7 +7,7 @@ import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import Redis from 'ioredis';
 import { v4 as uuidv4 } from 'uuid';
 import { MediaEntity } from './entities/media.entity';
-import { AuditService } from '../relay/audit.service';
+import { AuditService } from '../audit/audit.service';
 
 @Injectable()
 export class MediaService {
