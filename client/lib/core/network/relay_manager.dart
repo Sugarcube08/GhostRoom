@@ -59,9 +59,24 @@ class RelayManager {
 
   Future<List<RelayProfile>> getRelays() async {
     final data = await _storage.read(key: _relaysKey);
-    if (data == null) return [];
-    final List<dynamic> decoded = jsonDecode(data);
-    return decoded.map((e) => RelayProfile.fromJson(e)).toList();
+    List<RelayProfile> relays = [];
+    if (data != null) {
+      final List<dynamic> decoded = jsonDecode(data);
+      relays = decoded.map((e) => RelayProfile.fromJson(e)).toList();
+    }
+
+    // Add default relay if not present
+    if (relays.isEmpty) {
+      final defaultRelay = RelayProfile(
+        id: 'render-default',
+        label: 'GhostRoom Global (Render)',
+        websocketUrl: 'https://ghostroom-vdd6.onrender.com',
+        apiUrl: 'https://ghostroom-vdd6.onrender.com',
+      );
+      relays.add(defaultRelay);
+    }
+    
+    return relays;
   }
 
   Future<void> saveRelay(RelayProfile profile) async {

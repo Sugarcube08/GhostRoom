@@ -28,6 +28,7 @@ export class MediaService {
     const accountId = this.configService.get<string>('R2_ACCOUNT_ID');
     const accessKeyId = this.configService.get<string>('R2_ACCESS_KEY_ID');
     const secretAccessKey = this.configService.get<string>('R2_SECRET_ACCESS_KEY');
+    const endpoint = this.configService.get<string>('R2_ENDPOINT');
     this.bucketName = this.configService.get<string>('R2_BUCKET_NAME') || 'ghostroom-media';
 
     this.BYTES_LIMIT = parseInt(this.configService.get<string>('MEDIA_DAILY_BYTES_LIMIT') || '104857600');
@@ -35,7 +36,8 @@ export class MediaService {
 
     this.s3Client = new S3Client({
       region: 'auto',
-      endpoint: `https://${accountId}.r2.cloudflarestorage.com`,
+      endpoint: endpoint || `https://${accountId}.r2.cloudflarestorage.com`,
+      forcePathStyle: !!endpoint, // Mandatory for MinIO
       credentials: {
         accessKeyId: accessKeyId || '',
         secretAccessKey: secretAccessKey || '',
