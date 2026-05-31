@@ -2,6 +2,7 @@ import { Injectable, Inject, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, MoreThan, IsNull, LessThan } from 'typeorm';
 import { Cron, CronExpression } from '@nestjs/schedule';
+import { ConfigService } from '@nestjs/config';
 import Redis from 'ioredis';
 import { v4 as uuidv4 } from 'uuid';
 import { MessageEntity } from './entities/message.entity';
@@ -112,7 +113,7 @@ export class InboxService {
     const pipeline = this.redis.pipeline();
     pipeline.setex(msgKey, this.INBOX_TTL, JSON.stringify(envelope));
     pipeline.zadd(inboxKey, timestamp, messageId);
-    pipeline.zremrangebyrank(inboxKey, 0, -(this.MAX_QUEUE_DEPTH + 1));
+    pipeline.zremrangebyrank(inboxKey, 0, -(this.INBOX_MAX_MESSAGES + 1));
     pipeline.expire(inboxKey, this.INBOX_TTL);
     await pipeline.exec();
 
