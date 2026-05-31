@@ -5,7 +5,7 @@
 .packages
 .pub/
 build/
-
+dist/
 # Generated
 *.g.dart
 *.freezed.dart
