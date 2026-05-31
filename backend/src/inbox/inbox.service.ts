@@ -1,6 +1,6 @@
 import { Injectable, Inject, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, MoreThan } from 'typeorm';
+import { Repository, MoreThan, IsNull } from 'typeorm';
 import Redis from 'ioredis';
 import { v4 as uuidv4 } from 'uuid';
 import { MessageEntity } from './entities/message.entity';
@@ -14,12 +14,13 @@ export interface MessageEnvelope {
   k?: string; // key (base64)
   s?: string; // signature (base64)
   v: number; // version
+  retention?: string;
 }
 
 @Injectable()
 export class InboxService {
   private readonly logger = new Logger(InboxService.name);
-  private readonly INBOX_TTL = 14 * 24 * 60 * 60; // 14 days in seconds for cache
+  private readonly INBOX_TTL = 14 * 24 * 60 * 60; // 14 days for cache
   private readonly MAX_QUEUE_DEPTH = 100;
 
   constructor(
@@ -33,6 +34,7 @@ export class InboxService {
   async queueMessage(publicId: string, payload: any): Promise<MessageEnvelope> {
     const messageId = payload.id || uuidv4();
     const timestamp = Date.now();
+    const retentionMode = payload.retention || 'PERSISTENT';
     
     const envelope: MessageEnvelope = {
       id: messageId,
@@ -42,15 +44,24 @@ export class InboxService {
       k: payload.k || payload.encryptedKey,
       s: payload.s || payload.signature,
       v: payload.v || 2,
+      retention: retentionMode,
     };
 
-    // 1. Save to PostgreSQL (Durable Source of Truth)
+    let expiresAt: Date | null = null;
+    if (retentionMode === 'EPHEMERAL') {
+      expiresAt = new Date(timestamp + 30 * 24 * 60 * 60 * 1000); // 30 days
+    } else if (retentionMode === 'VIEW_ONCE') {
+      expiresAt = new Date(timestamp + 24 * 60 * 60 * 1000); // 24h fallback
+    }
+
     try {
       const msgEntity = this.messageRepo.create({
         id: messageId,
         recipient_id: publicId,
         envelope: envelope,
+        retention_mode: retentionMode,
         created_at: new Date(timestamp),
+        expires_at: expiresAt,
       });
       await this.messageRepo.save(msgEntity);
 
@@ -65,7 +76,7 @@ export class InboxService {
       throw e;
     }
 
-    // 2. Cache in Redis (Ephemeral)
+    // Cache in Redis
     const inboxKey = `inbox:${publicId}`;
     const msgKey = `msg:${messageId}`;
 
@@ -80,13 +91,18 @@ export class InboxService {
   }
 
   async fetchMessages(publicId: string, since: number = 0): Promise<MessageEnvelope[]> {
-    // Attempt to fetch from Postgres as the reliable source of truth
     try {
       const messages = await this.messageRepo.find({
-        where: {
-          recipient_id: publicId,
-          created_at: MoreThan(new Date(since)),
-        },
+        where: [
+          {
+            recipient_id: publicId,
+            delivered_at: IsNull(), // Fetch unread
+          },
+          {
+            recipient_id: publicId,
+            created_at: MoreThan(new Date(since)), // Or fetch since timestamp for sync
+          }
+        ],
         order: {
           created_at: 'ASC',
         },
@@ -96,46 +112,36 @@ export class InboxService {
         return messages.map(m => m.envelope as MessageEnvelope);
       }
     } catch (e: any) {
-      this.logger.error(`Postgres fetch failed, falling back to Redis: ${e?.message}`);
+      this.logger.error(`Postgres fetch failed: ${e?.message}`);
     }
 
-    // Fallback to Redis cache if Postgres fails or returns empty but we suspect Redis has it
-    // Actually, if Postgres is empty, Redis should be empty too. But let's keep Redis fetch as a fallback.
-    const inboxKey = `inbox:${publicId}`;
-    const messageIds = await this.redis.zrangebyscore(inboxKey, since + 1, '+inf');
-    if (messageIds.length === 0) return [];
-
-    const msgKeys = messageIds.map(id => `msg:${id}`);
-    const results = await this.redis.mget(...msgKeys);
-
-    const envelopes: MessageEnvelope[] = [];
-    const missingIds: string[] = [];
-
-    results.forEach((data, index) => {
-      if (data) {
-        envelopes.push(JSON.parse(data));
-      } else {
-        missingIds.push(messageIds[index]);
-      }
-    });
-
-    if (missingIds.length > 0) {
-      await this.redis.zrem(inboxKey, ...missingIds);
-    }
-
-    return envelopes;
+    return [];
   }
 
   async acknowledgeMessage(publicId: string, messageId: string): Promise<void> {
-    // 1. Remove from Postgres
     try {
-      await this.messageRepo.delete({ id: messageId, recipient_id: publicId });
+      const message = await this.messageRepo.findOne({ where: { id: messageId } });
+      if (!message) return;
+
+      if (message.retention_mode === 'VIEW_ONCE') {
+        // Immediate deletion
+        await this.messageRepo.delete(messageId);
+      } else {
+        // Mark as delivered
+        message.delivered_at = new Date();
+        if (message.retention_mode === 'EPHEMERAL') {
+          // Update expiry to 30 days from now if not already set or shorter
+          message.expires_at = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+        }
+        await this.messageRepo.save(message);
+      }
+
       await this.deliveryRepo.update({ message_id: messageId }, { status: 'ACKNOWLEDGED' });
     } catch (e: any) {
-      this.logger.error(`Failed to delete message from Postgres: ${e?.message}`);
+      this.logger.error(`Failed to ACK message in Postgres: ${e?.message}`);
     }
 
-    // 2. Remove from Redis
+    // Remove from Redis cache
     const inboxKey = `inbox:${publicId}`;
     const msgKey = `msg:${messageId}`;
 

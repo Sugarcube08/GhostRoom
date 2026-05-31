@@ -62,15 +62,31 @@ Redis is demoted to a high-performance ephemeral layer.
 
 ---
 
-## 4. RETENTION POLICIES
+## 4. RETENTION MODES
 
-While Postgres enables multi-year storage, an upper bound should be enforced to prevent infinite database growth for inactive accounts.
-*   **Durable Messages**: Retained until ACK'd by client or 1 year has passed (configurable).
-*   **Unreferenced Media**: Purged after 48 hours.
+GhostRoom V2 supports per-message retention policies:
+
+*   **VIEW_ONCE**: 
+    *   **Behavior**: Message is deleted immediately from PostgreSQL and Redis after the client sends `message.ack` or `media.viewed`.
+    *   **Fallback**: Automatic deletion after 24 hours if never viewed.
+*   **EPHEMERAL**:
+    *   **Behavior**: Message is marked as delivered in Postgres upon ACK. 
+    *   **Pruning**: Deleted from Postgres 30 days after creation.
+*   **PERSISTENT**:
+    *   **Behavior**: Message is kept indefinitely (Source of Record).
+    *   **Cleanup**: Only deleted if a global 1-year upper bound is reached.
 
 ---
 
-## 5. RECOVERY FLOWS
+## 5. BACKUP & DISASTER RECOVERY
+
+*   **PostgreSQL Backups**: Nightly snapshots of the database.
+*   **R2 Persistence**: Objects are stored with 99.9% durability.
+*   **Disaster Recovery**: In the event of a full Redis flush, the relay can rehydrate all active user caches by querying Postgres for unacknowledged messages.
+
+---
+
+## 6. RECOVERY FLOWS
 
 *   **Relay Restart**: Redis is wiped. Upon client connection, `inbox.fetch` queries Postgres and rehydrates the Redis `inbox:{id}` ZSET for active users.
 *   **Multi-Device Restore**: A user restoring their seed phrase on a new device will fetch all unacknowledged messages directly from PostgreSQL.

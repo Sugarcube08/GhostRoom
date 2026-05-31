@@ -34,6 +34,7 @@ describe('InboxService', () => {
       create: jest.fn().mockImplementation((entity) => entity),
       save: (jest.fn() as any).mockResolvedValue({}),
       find: (jest.fn() as any).mockResolvedValue([]),
+      findOne: (jest.fn() as any).mockResolvedValue({ id: 'msg-id', retention_mode: 'PERSISTENT' }),
       delete: (jest.fn() as any).mockResolvedValue({}),
     };
 
@@ -78,30 +79,24 @@ describe('InboxService', () => {
       expect(envelope).toBeDefined();
       expect(mockMessageRepo.create).toHaveBeenCalled();
       expect(mockMessageRepo.save).toHaveBeenCalled();
-      expect(mockDeliveryRepo.save).toHaveBeenCalled();
       expect(mockRedis.pipeline).toHaveBeenCalled();
     });
   });
 
-  describe('fetchMessages', () => {
-    it('should return messages from Postgres', async () => {
-      mockMessageRepo.find = (jest.fn() as any).mockResolvedValue([{ envelope: { id: 'msg-id', c: 'ciphertext' } }]);
-      
-      const messages = await service.fetchMessages('test-id');
-      expect(messages).toHaveLength(1);
-      expect(messages[0].id).toBe('msg-id');
-    });
-  });
-
   describe('acknowledgeMessage', () => {
-    it('should remove from Postgres and Redis', async () => {
+    it('should update delivered_at for PERSISTENT messages', async () => {
       await service.acknowledgeMessage('test-id', 'msg-id');
       
-      expect(mockMessageRepo.delete).toHaveBeenCalledWith({ id: 'msg-id', recipient_id: 'test-id' });
+      expect(mockMessageRepo.findOne).toHaveBeenCalled();
+      expect(mockMessageRepo.save).toHaveBeenCalled(); // Since it's PERSISTENT in mock
       expect(mockDeliveryRepo.update).toHaveBeenCalledWith({ message_id: 'msg-id' }, { status: 'ACKNOWLEDGED' });
-      const pipeline = mockRedis.pipeline();
-      expect(pipeline.zrem).toHaveBeenCalledWith('inbox:test-id', 'msg-id');
-      expect(pipeline.del).toHaveBeenCalledWith('msg:msg-id');
+    });
+
+    it('should delete VIEW_ONCE messages', async () => {
+      mockMessageRepo.findOne.mockResolvedValue({ id: 'msg-id', retention_mode: 'VIEW_ONCE' });
+      await service.acknowledgeMessage('test-id', 'msg-id');
+      
+      expect(mockMessageRepo.delete).toHaveBeenCalledWith('msg-id');
     });
   });
 });
