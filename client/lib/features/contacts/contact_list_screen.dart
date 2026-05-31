@@ -2,11 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
-import 'package:bs58/bs58.dart';
 import 'dart:convert';
 import '../../core/providers.dart';
 import '../contacts/contact.dart';
-import '../contacts/contact_service.dart';
 import '../../core/crypto/identity_service.dart';
 
 class ContactListScreen extends ConsumerWidget {
@@ -126,21 +124,23 @@ class ContactListScreen extends ConsumerWidget {
 
   void _importPackage(BuildContext context, WidgetRef ref, String data) async {
     try {
+      final idService = ref.read(identityServiceProvider);
       final pkg = IdentityPackage.fromEncodedString(data);
-      final isValid = ref.read(identityServiceProvider).verifyPackage(pkg);
+      final isValid = idService.verifyPackage(pkg);
       if (!isValid) throw Exception('Invalid package signature');
 
-      final publicId = base58.encode(ref.read(sodiumProvider).crypto.genericHash(
-        message: base64Decode(pkg.eid),
-        outLen: 20,
-      ));
+      final eidBytes = base64Decode(pkg.eid);
+      final xidBytes = base64Decode(pkg.xid);
+      
+      final publicId = idService.derivePublicId(eidBytes);
+      final fingerprint = idService.calculateFingerprint(eidBytes, xidBytes);
 
       final contact = Contact(
         publicId: publicId,
         alias: 'New Contact',
         eid: pkg.eid,
         xid: pkg.xid,
-        fingerprint: pkg.eid.substring(0, 8),
+        fingerprint: fingerprint,
         createdAt: DateTime.now(),
         preferredRelay: pkg.relays.isNotEmpty ? pkg.relays.first : null,
       );
@@ -167,7 +167,8 @@ class MyIdentityScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final identity = ref.watch(identityServiceProvider).currentIdentity;
+    final idService = ref.watch(identityServiceProvider);
+    final identity = idService.currentIdentity;
     if (identity == null) return const Scaffold(body: Center(child: Text('Loading...')));
 
     return Scaffold(
@@ -178,7 +179,7 @@ class MyIdentityScreen extends ConsumerWidget {
           child: Column(
             children: [
               FutureBuilder<IdentityPackage>(
-                future: ref.read(identityServiceProvider).createPackage([]),
+                future: idService.createPackage([]),
                 builder: (context, snapshot) {
                   if (!snapshot.hasData) return const CircularProgressIndicator();
                   final pkgString = snapshot.data!.toEncodedString();
@@ -202,6 +203,10 @@ class MyIdentityScreen extends ConsumerWidget {
                       const Text('YOUR PUBLIC ID', style: TextStyle(color: Colors.white24, fontSize: 10, letterSpacing: 2)),
                       const SizedBox(height: 8),
                       SelectableText(identity.publicId, textAlign: TextAlign.center),
+                      const SizedBox(height: 32),
+                      const Text('YOUR FINGERPRINT', style: TextStyle(color: Colors.white24, fontSize: 10, letterSpacing: 2)),
+                      const SizedBox(height: 8),
+                      Text(identity.fingerprint, style: const TextStyle(fontFamily: 'monospace', fontSize: 12, color: Colors.greenAccent)),
                     ],
                   );
                 },
@@ -247,21 +252,23 @@ class QRScannerScreen extends ConsumerWidget {
 
   void _processScannedData(BuildContext context, WidgetRef ref, String data) async {
     try {
+      final idService = ref.read(identityServiceProvider);
       final pkg = IdentityPackage.fromEncodedString(data);
-      final isValid = ref.read(identityServiceProvider).verifyPackage(pkg);
+      final isValid = idService.verifyPackage(pkg);
       if (!isValid) throw Exception('Invalid package signature');
 
-      final publicId = base58.encode(ref.read(sodiumProvider).crypto.genericHash(
-        message: base64Decode(pkg.eid),
-        outLen: 20,
-      ));
+      final eidBytes = base64Decode(pkg.eid);
+      final xidBytes = base64Decode(pkg.xid);
+      
+      final publicId = idService.derivePublicId(eidBytes);
+      final fingerprint = idService.calculateFingerprint(eidBytes, xidBytes);
 
       final contact = Contact(
         publicId: publicId,
         alias: 'Scanned Contact',
         eid: pkg.eid,
         xid: pkg.xid,
-        fingerprint: pkg.eid.substring(0, 8),
+        fingerprint: fingerprint,
         createdAt: DateTime.now(),
         preferredRelay: pkg.relays.isNotEmpty ? pkg.relays.first : null,
       );
@@ -286,23 +293,31 @@ class ContactDetailScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return Scaffold(
-      appBar: AppBar(title: const Text('CONTACT DETAILS')),
+      appBar: AppBar(
+        title: const Text('CONTACT DETAILS'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.edit_outlined),
+            onPressed: () => _showRenameDialog(context, ref),
+          ),
+        ],
+      ),
       body: Padding(
         padding: const EdgeInsets.all(32.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('ALIAS', style: TextStyle(color: Colors.white24, fontSize: 10, letterSpacing: 2)),
+            const Text('ALIAS', style: TextStyle(color: Colors.white24, fontSize: 10, letterSpacing: 2)),
             const SizedBox(height: 8),
             Text(contact.alias, style: const TextStyle(fontSize: 24)),
             const SizedBox(height: 32),
-            Text('PUBLIC ID', style: TextStyle(color: Colors.white24, fontSize: 10, letterSpacing: 2)),
+            const Text('PUBLIC ID', style: TextStyle(color: Colors.white24, fontSize: 10, letterSpacing: 2)),
             const SizedBox(height: 8),
             SelectableText(contact.publicId),
             const SizedBox(height: 32),
-            Text('FINGERPRINT', style: TextStyle(color: Colors.white24, fontSize: 10, letterSpacing: 2)),
+            const Text('FINGERPRINT', style: TextStyle(color: Colors.white24, fontSize: 10, letterSpacing: 2)),
             const SizedBox(height: 8),
-            Text(contact.fingerprint, style: const TextStyle(fontFamily: 'monospace', color: Colors.greenAccent)),
+            Text(contact.fingerprint, style: const TextStyle(fontFamily: 'monospace', fontSize: 12, color: Colors.greenAccent)),
             const Spacer(),
             SizedBox(
               width: double.infinity,
@@ -314,6 +329,33 @@ class ContactDetailScreen extends ConsumerWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  void _showRenameDialog(BuildContext context, WidgetRef ref) {
+    final controller = TextEditingController(text: contact.alias);
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('RENAME CONTACT'),
+        content: TextField(
+          controller: controller,
+          decoration: const InputDecoration(hintText: 'Enter new alias...'),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('CANCEL')),
+          TextButton(
+            onPressed: () async {
+              await ref.read(contactServiceProvider).updateAlias(contact.publicId, controller.text);
+              if (context.mounted) {
+                Navigator.pop(context);
+                Navigator.pop(context); // Go back to list to refresh
+              }
+            },
+            child: const Text('RENAME'),
+          ),
+        ],
       ),
     );
   }

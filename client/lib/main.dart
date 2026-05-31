@@ -6,16 +6,28 @@ import 'core/providers.dart';
 import 'core/widgets/privacy_overlay.dart';
 import 'features/home/home_screen.dart';
 
+import 'package:hive_flutter/hive_flutter.dart';
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   
+  await Hive.initFlutter();
+  
   final sodium = await SodiumInit.init();
+  
+  final container = ProviderContainer(
+    overrides: [
+      sodiumProvider.overrideWithValue(sodium),
+    ],
+  );
+
+  // Pre-initialize services
+  await container.read(identityServiceProvider).initIdentity();
+  await container.read(contactServiceProvider).init();
 
   runApp(
-    ProviderScope(
-      overrides: [
-        sodiumProvider.overrideWithValue(sodium),
-      ],
+    UncontrolledProviderScope(
+      container: container,
       child: const GhostRoomApp(),
     ),
   );
@@ -77,23 +89,6 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
 
   Future<void> _init() async {
     debugPrint('GHOST_LOG: SplashScreen initializing...');
-    try {
-      final relayManager = ref.read(relayManagerProvider);
-      await relayManager.clearRecentRooms();
-      debugPrint('GHOST_LOG: Recent rooms cleared from storage.');
-      ref.invalidate(recentRoomsProvider);
-      // Give a tiny moment for the invalidation to propagate
-      await Future.delayed(const Duration(milliseconds: 100));
-    } catch (e) {
-      debugPrint('GHOST_LOG: Error clearing recent rooms: $e');
-    }
-
-    // Initialize identity
-    debugPrint('GHOST_LOG: Initializing identity...');
-    await ref.read(cryptoServiceProvider).initIdentity();
-    debugPrint('GHOST_LOG: Identity initialized.');
-
-    await Future.delayed(const Duration(seconds: 1));
     
     // Auto-connect to active relay if available
     final relay = await ref.read(activeRelayProvider.future);

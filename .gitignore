@@ -1,44 +1,68 @@
-# System files
+# Flutter
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub/
+build/
+
+# Generated
+*.g.dart
+*.freezed.dart
+*.mocks.dart
+
+# Hive
+*.hive
+*.lock
+
+# Android
+**/android/.gradle/
+**/android/app/debug/
+**/android/app/profile/
+**/android/app/release/
+
+# iOS
+**/ios/Pods/
+**/ios/.symlinks/
+**/ios/Flutter/Flutter.framework
+**/ios/Flutter/App.framework
+
+# IDE
+.idea/
+.vscode/
+
+# macOS
 .DS_Store
-Thumbs.db
+
+# Temporary
+tmp/
+temp/
+temp_*/
+*.tmp
+temp_sodium/
+
+# Secrets
+.env
+.env.*
+*.pem
+*.key
+*.p12
+*.jks
+
+# Identity Backups
+*.ghostroomid
+
+# Local Databases
+*.db
+*.sqlite
+*.sqlite3
+
+# Logs
 *.log
 
-# Backend
-backend/node_modules/
-backend/dist/
-backend/*.log
-backend/.env
+# Test Outputs
+coverage/
 
-# Client
-client/.dart_tool/
-client/.flutter-plugins
-client/.flutter-plugins-dependencies
-client/.packages
-client/.pub-cache/
-client/.pub/
-client/build/
-client/*.log
-client/.idea/
-client/.vscode/
-client/*.iml
-
-# Android specific
-client/android/**/generated/
-client/android/app/debug/
-client/android/app/profile/
-client/android/app/release/
-
-# iOS specific
-client/ios/Flutter/Generated.xcconfig
-client/ios/Flutter/flutter_export_environment.sh
-client/ios/Flutter/App.framework
-client/ios/Flutter/App.podspec
-
-# Other
-node_modules/
 dist/
-build/
-.env
-
 appimagetool
-*.AppImage
+appimagetool*
