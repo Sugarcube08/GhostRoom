@@ -1,97 +1,60 @@
-# GhostRoom UX Redesign (Phase UX-1)
+# GhostRoom UX Redesign (Phase UX-3)
 
-Version: 2.1 (Proposed)
+Version: 2.1 (Premium)
 
-Status: Design Phase
+Status: Implementation Phase
 
-## 1. VISION
-Transform GhostRoom from a technical prototype into a premium, user-friendly communication system where **Identity-based Direct Messaging** is the primary experience and **Anonymous Temporary Rooms** are a complementary secondary feature.
-
----
-
-## 2. INFORMATION ARCHITECTURE overhaul
-
-### Root Navigation (Bottom Bar)
-1. **Messages**: Home screen. Shows active 1-to-1 conversations.
-2. **Requests**: Isolated inbox for unknown senders.
-3. **Anonymous**: V1 temporary rooms (Create/Join).
-4. **Settings**: Identity management and app configuration.
-
-### Onboarding Flow (First Launch)
-1. **Welcome**: Value proposition (Private, no accounts).
-2. **Identity Creation**: Animation/status of key generation.
-3. **Recovery Education**: The importance of the 24-word seed.
-4. **Seed Reveal**: Displaying the 24 words securely.
-5. **Mandatory Verification**: User must confirm random words from their seed.
-6. **Mandatory Backup**: User must export their encrypted `.ghostroombackup` file.
-7. **Success**: Public ID reveal and entry to app.
+## 1. PRODUCT REPOSITIONING
+GhostRoom is a **Private Messaging Platform** first, and a **Temporary Space Relay** second. The UX must reflect this hierarchy to inspire trust and clarity.
 
 ---
 
-## 3. VISUAL LANGUAGE
+## 2. REVISED NAVIGATION ARCHITECTURE (Bottom Bar)
 
-### Private Messages (Premium Dark)
-* Background: `#0A0A0A` (Pure black/Deep grey).
-* Accents: Subtle gradients, high-quality typography.
-* Feeling: Secure, permanent, established.
-
-### Anonymous Rooms (Minimalist)
-* Background: `#121212` (Slightly lighter).
-* Accents: Monochromatic, utilitarian.
-* Feeling: Temporary, disposable, lightweight.
+1.  **Messages**: Primary Home. Active chats and unread counts.
+2.  **Contacts**: The social graph. Add contacts, view QR, manage blocks.
+3.  **Spaces**: Secondary feature. V1 temporary rooms and future broadcast modes.
+4.  **Vault**: Formerly Settings. Identity management, keys, backups, and security.
 
 ---
 
-## 4. SCREEN INVENTORY
+## 3. IDENTITY VAULT (Redesign)
+The "Vault" should feel like a secure container for the user's digital soul.
 
-### Onboarding
-* `OnboardingWelcomeScreen`
-* `OnboardingIdentityGenerationScreen`
-* `OnboardingSecurityWarningScreen`
-* `OnboardingSeedRevealScreen`
-* `OnboardingSeedVerificationScreen`
-* `OnboardingInitialBackupScreen`
-
-### Main App
-* `RootNavigationContainer` (The BottomNavigationBar shell)
-* `MessagesListScreen` (Refactored `ChatsScreen`)
-* `RequestsListScreen` (Refactored `RequestsScreen`)
-* `AnonymousRoomsScreen` (Refactored `HomeScreen`)
-* `IdentityControlCenter` (Refactored `SettingsScreen`)
+*   **Header**: High-contrast Public ID and sharing QR.
+*   **Safety Status**: Permanent indicator for "Backup Created" vs "Backup Missing".
+*   **My QR Card**: Premium full-screen card for physical scanning.
+*   **Security Groups**:
+    *   `Keys & Recovery`: Seed phrase, export identity.
+    *   `Backup & Migration`: Encrypted archive management.
+    *   `Relay Network`: Server configuration.
+    *   `Privacy`: Biometrics (future), wipe data.
 
 ---
 
-## 5. USER FLOWS
+## 4. PREMIUM ONBOARDING FLOW
 
-### Adding a Contact
-1. User taps `+` on Messages screen.
-2. Options: `Scan QR`, `Paste Identity Package`, `Enter Public ID`.
-3. If valid, contact is saved and chat opens.
-
-### Accepting a Request
-1. User notified of new request in `Requests` tab.
-2. User opens request, can read text but not see media.
-3. Options: `Accept` (moves to Messages), `Reject` (deleted), `Block` (blacklisted).
+1.  **Values**: "No phone. No email. Total privacy."
+2.  **Sovereignty**: "Your keys. Your data."
+3.  **Generation**: Cryptographic setup with status.
+4.  **Security Education**: The danger of losing the seed phrase.
+5.  **Seed Display**: Secure reveal of 24 words.
+6.  **Verification**: Confirm random words.
+7.  **Initial Backup**: Save the `.ghostroombackup` file.
+8.  **Recovery Test**: Mandatory simulation of identity restoration.
 
 ---
 
-## 6. IMPLEMENTATION PLAN
+## 5. CHAT & COMPOSER UPGRADES
 
-### Step 1: Navigation Shell
-* Implement `NavigationShell` using `BottomNavigationBar`.
-* Move `HomeScreen` (V1) to the "Anonymous" tab.
-* Move `ChatsScreen` (V2) to the "Messages" tab.
+*   **Conversation Header**: Collapsed Alias/ID. Expands to show Fingerprint and current default retention mode.
+*   **Per-Message Retention**: Integrated selector in the composer (Persistent/Ephemeral/View Once).
+*   **Media Picker**: Explicit "View Once" photo/video modes.
+*   **Requests**: Swipe actions (Accept/Delete/Block) for instant management.
 
-### Step 2: Onboarding Implementation
-* Create the multi-step PageView for onboarding.
-* Update `IdentityService` to support a "deferred" creation (user sees the generation happening).
-* Implement the word-verification logic.
+---
 
-### Step 3: Identity Control Center
-* Refactor `SettingsScreen` to put the Public ID and QR code front-and-center.
-* Group actions logically (Identity, Backup, Privacy).
+## 6. VISUAL DISTINCTON
 
-### Step 4: Visual Polish
-* Refine message bubbles.
-* Add animations for transitions between tabs.
-* Implement consistent button and input styles.
+*   **Persistent Layers (Messages/Vault)**: Deepest black (`#080808`), white text, subtle amber/gold accents (Premium).
+*   **Disposable Layers (Spaces)**: Lighter dark (`#121212`), monochromatic grey text, minimalist icons.
