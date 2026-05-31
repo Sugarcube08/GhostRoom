@@ -1,5 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:sodium/sodium.dart';
+import 'package:sodium/sodium_sumo.dart';
 import 'crypto/identity_service.dart';
 import 'network/relay_manager.dart';
 import 'network/websocket_service.dart';
@@ -13,7 +13,7 @@ import '../features/chat/conversation_service.dart';
 import '../features/media/media_service.dart';
 import 'backup/backup_service.dart';
 
-final sodiumProvider = Provider<Sodium>((ref) => throw UnimplementedError());
+final sodiumProvider = Provider<SodiumSumo>((ref) => throw UnimplementedError());
 
 final identityServiceProvider = Provider<IdentityService>((ref) {
   final sodium = ref.watch(sodiumProvider);

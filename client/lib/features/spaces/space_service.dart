@@ -1,6 +1,6 @@
 import 'dart:convert';
 import 'dart:typed_data';
-import 'package:sodium/sodium.dart';
+import 'package:sodium/sodium_sumo.dart';
 import 'package:http/http.dart' as http;
 import '../../core/network/relay_manager.dart';
 
@@ -17,7 +17,7 @@ class SpaceConfig {
 }
 
 class SpaceService {
-  final Sodium sodium;
+  final SodiumSumo sodium;
 
   SpaceService(this.sodium);
 

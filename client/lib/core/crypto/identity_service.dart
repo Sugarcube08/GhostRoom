@@ -64,7 +64,7 @@ class Identity {
 }
 
 class IdentityService {
-  final Sodium sodium;
+  final SodiumSumo sodium;
   final FlutterSecureStorage _storage = const FlutterSecureStorage();
 
   static const String _seedKey = 'identity_seed_phrase';
@@ -133,9 +133,8 @@ class IdentityService {
     
     final ed25519KeyPair = sodium.crypto.sign.seedKeyPair(ed25519Seed);
     
-    final sumo = sodium as SodiumSumo;
-    final x25519Pk = sumo.crypto.sign.pkToCurve25519(ed25519KeyPair.publicKey);
-    final x25519Sk = sumo.crypto.sign.skToCurve25519(ed25519KeyPair.secretKey);
+    final x25519Pk = sodium.crypto.sign.pkToCurve25519(ed25519KeyPair.publicKey);
+    final x25519Sk = sodium.crypto.sign.skToCurve25519(ed25519KeyPair.secretKey);
     final x25519KeyPair = KeyPair(publicKey: x25519Pk, secretKey: x25519Sk);
 
     final publicId = derivePublicId(ed25519KeyPair.publicKey);

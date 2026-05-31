@@ -10,7 +10,7 @@ import '../../features/contacts/contact.dart';
 import '../network/relay_manager.dart';
 
 class BackupService {
-  final Sodium sodium;
+  final SodiumSumo sodium;
   final IdentityService _idService;
   final ContactService _contactService;
   final RelayManager _relayManager;
@@ -43,17 +43,15 @@ class BackupService {
     };
 
     final plaintext = utf8.encode(jsonEncode(payload));
-    final sumo = sodium as SodiumSumo;
-    final cryptoSumo = sumo.crypto as CryptoSumo;
 
     // 2. Key Derivation (Argon2id)
-    final salt = sodium.randombytes.buf(cryptoSumo.pwhash.saltBytes);
-    final key = cryptoSumo.pwhash(
+    final salt = sodium.randombytes.buf(sodium.crypto.pwhash.saltBytes);
+    final key = sodium.crypto.pwhash(
       outLen: 32,
       password: Int8List.fromList(utf8.encode(password)),
       salt: salt,
-      opsLimit: cryptoSumo.pwhash.opsLimitInteractive,
-      memLimit: cryptoSumo.pwhash.memLimitInteractive,
+      opsLimit: sodium.crypto.pwhash.opsLimitInteractive,
+      memLimit: sodium.crypto.pwhash.memLimitInteractive,
       alg: CryptoPwhashAlgorithm.argon2id13,
     );
 
@@ -80,10 +78,7 @@ class BackupService {
   }
 
   Future<void> importBackup(Uint8List archive, String password) async {
-    final sumo = sodium as SodiumSumo;
-    final cryptoSumo = sumo.crypto as CryptoSumo;
-    
-    final saltBytes = cryptoSumo.pwhash.saltBytes;
+    final saltBytes = sodium.crypto.pwhash.saltBytes;
     final nonceBytes = sodium.crypto.aeadXChaCha20Poly1305IETF.nonceBytes;
 
     if (archive.length < saltBytes + nonceBytes) {
@@ -95,12 +90,12 @@ class BackupService {
     final ciphertext = archive.sublist(saltBytes + nonceBytes);
 
     // 1. Key Derivation
-    final key = cryptoSumo.pwhash(
+    final key = sodium.crypto.pwhash(
       outLen: 32,
       password: Int8List.fromList(utf8.encode(password)),
       salt: salt,
-      opsLimit: cryptoSumo.pwhash.opsLimitInteractive,
-      memLimit: cryptoSumo.pwhash.memLimitInteractive,
+      opsLimit: sodium.crypto.pwhash.opsLimitInteractive,
+      memLimit: sodium.crypto.pwhash.memLimitInteractive,
       alg: CryptoPwhashAlgorithm.argon2id13,
     );
 

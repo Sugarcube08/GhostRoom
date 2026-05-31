@@ -45,7 +45,7 @@ class DMEnvelope {
 }
 
 class DMService {
-  final Sodium sodium;
+  final SodiumSumo sodium;
   final _uuid = const Uuid();
 
   DMService(this.sodium);

@@ -12,7 +12,7 @@ import '../../core/crypto/identity_service.dart';
 import 'attachment_envelope.dart';
 
 class MediaService {
-  final Sodium sodium;
+  final SodiumSumo sodium;
   final IdentityService _idService;
 
   MediaService(this.sodium, this._idService);

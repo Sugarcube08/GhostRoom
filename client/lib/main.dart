@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:sodium/sodium.dart';
+import 'package:sodium/sodium_sumo.dart';
 import 'core/theme/ghost_theme.dart';
 import 'core/providers.dart';
 import 'core/widgets/privacy_overlay.dart';
@@ -13,7 +13,7 @@ void main() async {
   
   await Hive.initFlutter();
   
-  final sodium = await SodiumInit.init();
+  final sodium = await SodiumSumoInit.init();
   
   final container = ProviderContainer(
     overrides: [
