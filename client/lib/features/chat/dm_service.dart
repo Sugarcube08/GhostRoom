@@ -10,6 +10,7 @@ class DMEnvelope {
   final String nonce;
   final String ciphertext;
   final String signature;
+  final int timestamp;
   final int version;
 
   DMEnvelope({
@@ -18,6 +19,7 @@ class DMEnvelope {
     required this.nonce,
     required this.ciphertext,
     required this.signature,
+    required this.timestamp,
     this.version = 2,
   });
 
@@ -27,6 +29,7 @@ class DMEnvelope {
     'n': nonce,
     'c': ciphertext,
     's': signature,
+    't': timestamp,
     'v': version,
   };
 
@@ -36,6 +39,7 @@ class DMEnvelope {
     nonce: json['n'],
     ciphertext: json['c'],
     signature: json['s'],
+    timestamp: json['t'] ?? DateTime.now().millisecondsSinceEpoch,
     version: json['v'] ?? 2,
   );
 }
@@ -48,6 +52,7 @@ class DMService {
 
   Future<DMEnvelope> encryptDM({
     required String plaintext,
+    required String recipientPublicId,
     required Uint8List recipientXid,
     required Identity senderIdentity,
   }) async {
@@ -68,15 +73,19 @@ class DMService {
       publicKey: recipientXid,
     );
 
-    // 4. Generate ID (UUID v7)
+    // 4. Generate ID (UUID v7) and Timestamp
     final messageId = _uuid.v7();
+    final timestamp = DateTime.now().millisecondsSinceEpoch;
 
-    // 5. Sign (id + k + n + c)
+    // 5. Sign (v + id + t + recipient_id + k + n + c)
     final kBase64 = base64Encode(encryptedKey);
     final nBase64 = base64Encode(nonce);
     final cBase64 = base64Encode(ciphertext);
     
-    final signMaterial = utf8.encode(messageId + kBase64 + nBase64 + cBase64);
+    final signMaterial = utf8.encode(
+      '2$messageId$timestamp$recipientPublicId$kBase64$nBase64$cBase64'
+    );
+    
     final signature = sodium.crypto.sign.detached(
       message: signMaterial,
       secretKey: senderIdentity.ed25519KeyPair.secretKey,
@@ -88,16 +97,28 @@ class DMService {
       nonce: nBase64,
       ciphertext: cBase64,
       signature: base64Encode(signature),
+      timestamp: timestamp,
+      version: 2,
     );
   }
 
   String decryptDM({
     required DMEnvelope envelope,
+    required String myPublicId,
     required KeyPair myXidKeyPair,
     required Uint8List senderEid,
   }) {
-    // 1. Verify Signature
-    final signMaterial = utf8.encode(envelope.id + envelope.encryptedKey + envelope.nonce + envelope.ciphertext);
+    // 1. Verify Signature (v + id + t + my_id + k + n + c)
+    final signMaterial = utf8.encode(
+      envelope.version.toString() + 
+      envelope.id + 
+      envelope.timestamp.toString() + 
+      myPublicId + 
+      envelope.encryptedKey + 
+      envelope.nonce + 
+      envelope.ciphertext
+    );
+    
     final isSignatureValid = sodium.crypto.sign.verifyDetached(
       message: signMaterial,
       signature: base64Decode(envelope.signature),

@@ -5,11 +5,11 @@ import 'network/relay_manager.dart';
 import 'network/websocket_service.dart';
 
 import '../features/spaces/space_service.dart';
-
 import '../features/contacts/contact_service.dart';
+import '../features/contacts/contact_resolver.dart';
 import '../features/chat/dm_service.dart';
-
 import '../features/chat/chat_repository.dart';
+import '../features/chat/conversation_service.dart';
 
 final sodiumProvider = Provider<Sodium>((ref) => throw UnimplementedError());
 
@@ -27,12 +27,23 @@ final contactServiceProvider = Provider<ContactService>((ref) {
   return ContactService();
 });
 
+final contactResolverProvider = Provider<ContactResolver>((ref) {
+  return ContactResolver(ref.watch(contactServiceProvider));
+});
+
 final chatRepositoryProvider = Provider<ChatRepository>((ref) {
   return ChatRepository(
     ref.watch(identityServiceProvider),
     ref.watch(dmServiceProvider),
     ref.watch(contactServiceProvider),
     ref.watch(webSocketServiceProvider),
+  );
+});
+
+final conversationServiceProvider = Provider<ConversationService>((ref) {
+  return ConversationService(
+    ref.watch(chatRepositoryProvider),
+    ref.watch(contactResolverProvider),
   );
 });
 
