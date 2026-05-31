@@ -69,6 +69,7 @@ class IdentityService {
 
   static const String _seedKey = 'identity_seed_phrase';
   static const String _deviceIdKey = 'device_id';
+  static const String _drillKey = 'last_drill_t';
 
   Identity? _currentIdentity;
 
@@ -77,6 +78,17 @@ class IdentityService {
   Identity? get currentIdentity => _currentIdentity;
 
   bool get hasIdentity => _currentIdentity != null;
+
+  Future<bool> isDrillRequired() async {
+    final lastDrill = await _storage.read(key: _drillKey);
+    if (lastDrill == null) return true;
+    final lastTime = DateTime.fromMillisecondsSinceEpoch(int.parse(lastDrill));
+    return DateTime.now().difference(lastTime).inDays > 90; // Every 90 days
+  }
+
+  Future<void> recordDrillSuccess() async {
+    await _storage.write(key: _drillKey, value: DateTime.now().millisecondsSinceEpoch.toString());
+  }
 
   Future<void> initIdentity() async {
     final seedPhrase = await _storage.read(key: _seedKey);

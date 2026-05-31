@@ -70,5 +70,7 @@
 	<string>GhostRoom needs access to your photo library to save invite QR codes.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>GhostRoom needs access to your photo library to save invite QR codes.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>GhostRoom needs access to your camera to scan identity QR codes.</string>
 </dict>
 </plist>

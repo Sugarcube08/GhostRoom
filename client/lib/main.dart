@@ -6,33 +6,42 @@ import 'core/providers.dart';
 import 'core/widgets/privacy_overlay.dart';
 import 'core/widgets/navigation_shell.dart';
 import 'features/home/onboarding_screen.dart';
-
 import 'package:hive_flutter/hive_flutter.dart';
+import 'dart:async';
 
 void main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-  
-  await Hive.initFlutter();
-  
-  final sodium = await SodiumSumoInit.init();
-  
-  final container = ProviderContainer(
-    overrides: [
-      sodiumProvider.overrideWithValue(sodium),
-    ],
-  );
+  runZonedGuarded(() async {
+    WidgetsFlutterBinding.ensureInitialized();
+    
+    await Hive.initFlutter();
+    
+    final sodium = await SodiumSumoInit.init();
+    
+    final container = ProviderContainer(
+      overrides: [
+        sodiumProvider.overrideWithValue(sodium),
+      ],
+    );
 
-  // Pre-initialize services
-  await container.read(identityServiceProvider).initIdentity();
-  await container.read(contactServiceProvider).init();
-  await container.read(chatRepositoryProvider).init();
+    // Pre-initialize services with error handling
+    try {
+      await container.read(identityServiceProvider).initIdentity();
+      await container.read(contactServiceProvider).init();
+      await container.read(chatRepositoryProvider).init();
+    } catch (e) {
+      debugPrint('GHOST_LOG: Service initialization error: $e');
+    }
 
-  runApp(
-    UncontrolledProviderScope(
-      container: container,
-      child: const GhostRoomApp(),
-    ),
-  );
+    runApp(
+      UncontrolledProviderScope(
+        container: container,
+        child: const GhostRoomApp(),
+      ),
+    );
+  }, (error, stack) {
+    debugPrint('GHOST_FATAL: $error');
+    debugPrint(stack.toString());
+  });
 }
 
 class GhostRoomApp extends ConsumerStatefulWidget {
@@ -53,11 +62,6 @@ class _GhostRoomAppState extends ConsumerState<GhostRoomApp> with WidgetsBinding
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
-  }
-
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    // No-op - we keep recent rooms for persistence
   }
 
   @override
@@ -90,72 +94,58 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
   }
 
   Future<void> _init() async {
-    debugPrint('GHOST_LOG: SplashScreen initializing...');
-    
-    // Auto-connect to active relay if available
-    final relay = await ref.read(activeRelayProvider.future);
-    final relayManager = ref.read(relayManagerProvider);
-    if (relay != null) {
-      // Wake up the relay before connecting
-      await relayManager.wakeUpRelay(relay);
-      
-      debugPrint('GHOST_LOG: Auto-connecting to relay: ${relay.label}');
-      final ws = ref.read(webSocketServiceProvider);
-      ws.connect(relay);
-      
-      // Setup V2 Inbox Processing
-      ws.onInboxMessages((envelopes) {
-        ref.read(chatRepositoryProvider).processEnvelopes(envelopes);
-      });
-      
-      // Also fetch once authenticated (usually done via a state listener, but for now in SplashScreen)
-      Future.doWhile(() async {
-        await Future.delayed(const Duration(milliseconds: 500));
-        if (ws.isAuthenticated) {
-          ws.fetchInbox(since: ref.read(chatRepositoryProvider).lastSyncTimestamp);
-          return false;
-        }
-        return true;
-      }).timeout(const Duration(seconds: 10), onTimeout: () => {});
-    }
-
-    if (mounted) {
+    try {
+      debugPrint('GHOST_LOG: SplashScreen checking identity...');
       final idService = ref.read(identityServiceProvider);
+      
+      // We give initIdentity another chance if it didn't run in main
       if (!idService.hasIdentity) {
-        debugPrint('GHOST_LOG: No identity found. Navigating to OnboardingScreen');
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (_) => const OnboardingScreen()),
-        );
+        await idService.initIdentity();
+      }
+
+      if (!idService.hasIdentity) {
+        debugPrint('GHOST_LOG: No identity. Onboarding required.');
+        if (mounted) {
+          Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const OnboardingScreen()));
+        }
         return;
       }
 
-      debugPrint('GHOST_LOG: Navigating to NavigationShell');
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (_) => const NavigationShell()),
-      );
+      // Auto-connect to relay
+      final relay = await ref.read(activeRelayProvider.future);
+      if (relay != null) {
+        ref.read(relayManagerProvider).wakeUpRelay(relay);
+        final ws = ref.read(webSocketServiceProvider);
+        ws.connect(relay);
+        
+        ws.onInboxMessages((envelopes) {
+          ref.read(chatRepositoryProvider).processEnvelopes(envelopes);
+        });
+      }
+
+      debugPrint('GHOST_LOG: Identity found. Entering Vault.');
+      if (mounted) {
+        Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const NavigationShell()));
+      }
+    } catch (e) {
+      debugPrint('GHOST_LOG: SplashScreen error: $e');
+      if (mounted) {
+        Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const OnboardingScreen()));
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0A0A0A), // Deep dark background
+      backgroundColor: const Color(0xFF0A0A0A),
       body: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Image.asset(
-              'assets/images/banner.png',
-              height: 180,
-              fit: BoxFit.contain,
-            ),
+            Image.asset('assets/images/banner.png', height: 180, fit: BoxFit.contain),
             const SizedBox(height: 48),
-            const CircularProgressIndicator(
-              color: Colors.white24, 
-              strokeWidth: 1,
-            ),
+            const CircularProgressIndicator(color: Colors.white24, strokeWidth: 1),
           ],
         ),
       ),

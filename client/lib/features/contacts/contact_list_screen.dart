@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'dart:convert';
 import '../../core/providers.dart';
 import '../contacts/contact.dart';
@@ -9,11 +10,16 @@ import '../../core/crypto/identity_service.dart';
 import '../chat/chat_screens.dart';
 import '../chat/conversation_service.dart';
 
-class ContactListScreen extends ConsumerWidget {
+class ContactListScreen extends ConsumerStatefulWidget {
   const ContactListScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<ContactListScreen> createState() => _ContactListScreenState();
+}
+
+class _ContactListScreenState extends ConsumerState<ContactListScreen> {
+  @override
+  Widget build(BuildContext context) {
     final contacts = ref.watch(contactServiceProvider).getAllContacts();
 
     return Scaffold(
@@ -25,13 +31,13 @@ class ContactListScreen extends ConsumerWidget {
         actions: [
           IconButton(
             icon: const Icon(Icons.qr_code_scanner),
-            onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const QRScannerScreen())),
+            onPressed: () => _openScanner(context),
           ),
         ],
       ),
       body: Column(
         children: [
-          _buildMyPassportCard(context, ref),
+          _buildMyPassportCard(context),
           const Padding(
             padding: EdgeInsets.fromLTRB(16, 32, 16, 8),
             child: Row(
@@ -45,7 +51,7 @@ class ContactListScreen extends ConsumerWidget {
           ),
           Expanded(
             child: contacts.isEmpty
-                ? _buildEmptyState(context, ref)
+                ? _buildEmptyState(context)
                 : ListView.builder(
                     itemCount: contacts.length,
                     itemBuilder: (context, index) {
@@ -64,7 +70,7 @@ class ContactListScreen extends ConsumerWidget {
                           style: const TextStyle(fontSize: 10, color: Colors.white10),
                         ),
                         trailing: const Icon(Icons.chevron_right, size: 16, color: Colors.white10),
-                        onTap: () => _showContactDetails(context, ref, contact),
+                        onTap: () => _showContactDetails(context, contact),
                       );
                     },
                   ),
@@ -74,18 +80,37 @@ class ContactListScreen extends ConsumerWidget {
       floatingActionButton: FloatingActionButton(
         backgroundColor: Colors.white,
         foregroundColor: Colors.black,
-        onPressed: () => _showAddOptions(context, ref),
+        onPressed: () => _showAddOptions(context),
         child: const Icon(Icons.person_add_alt_1),
       ),
     );
   }
 
-  Widget _buildMyPassportCard(BuildContext context, WidgetRef ref) {
+  void _openScanner(BuildContext context) async {
+    final status = await Permission.camera.request();
+    if (status.isGranted) {
+      if (!mounted) return;
+      final result = await Navigator.push<String>(context, MaterialPageRoute(builder: (_) => const QRScannerScreen()));
+      if (result != null && mounted) {
+        _processScannedData(context, result);
+      }
+    } else {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Camera permission is required to scan QR codes.'))
+      );
+    }
+  }
+
+  Widget _buildMyPassportCard(BuildContext context) {
     final identity = ref.watch(identityServiceProvider).currentIdentity;
     if (identity == null) return const SizedBox.shrink();
 
     return GestureDetector(
-      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const MyPassportScreen())),
+      onTap: () {
+        if (!mounted) return;
+        Navigator.push(context, MaterialPageRoute(builder: (_) => const MyPassportScreen()));
+      },
       child: Container(
         margin: const EdgeInsets.all(16),
         padding: const EdgeInsets.all(20),
@@ -135,7 +160,7 @@ class ContactListScreen extends ConsumerWidget {
     );
   }
 
-  Widget _buildEmptyState(BuildContext context, WidgetRef ref) {
+  Widget _buildEmptyState(BuildContext context) {
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -160,7 +185,7 @@ class ContactListScreen extends ConsumerWidget {
     );
   }
 
-  void _showAddOptions(BuildContext context, WidgetRef ref) {
+  void _showAddOptions(BuildContext context) {
     showModalBottomSheet(
       context: context,
       backgroundColor: const Color(0xFF121212),
@@ -170,10 +195,10 @@ class ContactListScreen extends ConsumerWidget {
           const SizedBox(height: 16),
           ListTile(
             leading: const Icon(Icons.qr_code_scanner),
-            title: const Text('SCAN QR CODE'),
+            title: const Text('SCAN PASSPORT'),
             onTap: () {
               Navigator.pop(context);
-              Navigator.push(context, MaterialPageRoute(builder: (_) => const QRScannerScreen()));
+              _openScanner(context);
             },
           ),
           ListTile(
@@ -181,7 +206,7 @@ class ContactListScreen extends ConsumerWidget {
             title: const Text('PASTE IDENTITY PACKAGE'),
             onTap: () {
               Navigator.pop(context);
-              _showManualImport(context, ref);
+              _showManualImport(context);
             },
           ),
           ListTile(
@@ -189,6 +214,7 @@ class ContactListScreen extends ConsumerWidget {
             title: const Text('ENTER PUBLIC ID MANUALLY'),
             onTap: () {
               Navigator.pop(context);
+              _showManualIdEntry(context);
             },
           ),
           const SizedBox(height: 16),
@@ -197,11 +223,56 @@ class ContactListScreen extends ConsumerWidget {
     );
   }
 
-  void _showManualImport(BuildContext context, WidgetRef ref) {
+  void _showManualIdEntry(BuildContext context) {
+     final controller = TextEditingController();
+     showDialog(
+       context: context,
+       builder: (dialogContext) => AlertDialog(
+         title: const Text('MANUAL ENTRY'),
+         content: Column(
+           mainAxisSize: MainAxisSize.min,
+           children: [
+             const Text('Note: You can only send text messages to a manual ID until they share their full identity package.', style: TextStyle(fontSize: 10, color: Colors.white54)),
+             const SizedBox(height: 16),
+             TextField(
+               controller: controller,
+               decoration: const InputDecoration(hintText: 'Enter Public ID...'),
+             ),
+           ],
+         ),
+         actions: [
+           TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('CANCEL')),
+           TextButton(
+             onPressed: () async {
+               final id = controller.text.trim();
+               if (id.isEmpty) return;
+               
+               final contact = Contact(
+                 publicId: id,
+                 alias: 'Manual Contact',
+                 eid: '', // Placeholder
+                 xid: '', // Placeholder
+                 fingerprint: 'Unverified',
+                 createdAt: DateTime.now(),
+               );
+               await ref.read(contactServiceProvider).saveContact(contact);
+               if (mounted) {
+                 Navigator.pop(dialogContext);
+                 ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Contact Added')));
+               }
+             }, 
+             child: const Text('ADD')
+            ),
+         ],
+       ),
+     );
+  }
+
+  void _showManualImport(BuildContext context) {
     final controller = TextEditingController();
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         backgroundColor: const Color(0xFF121212),
         title: const Text('IMPORT PACKAGE'),
         content: TextField(
@@ -211,10 +282,10 @@ class ContactListScreen extends ConsumerWidget {
           style: const TextStyle(fontSize: 12, fontFamily: 'monospace'),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('CANCEL')),
+          TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('CANCEL')),
           TextButton(
             onPressed: () {
-              _importPackage(context, ref, controller.text);
+              _processScannedData(context, controller.text);
             },
             child: const Text('IMPORT'),
           ),
@@ -223,7 +294,7 @@ class ContactListScreen extends ConsumerWidget {
     );
   }
 
-  void _importPackage(BuildContext context, WidgetRef ref, String data) async {
+  void _processScannedData(BuildContext context, String data) async {
     try {
       final idService = ref.read(identityServiceProvider);
       final pkg = IdentityPackage.fromEncodedString(data);
@@ -247,18 +318,19 @@ class ContactListScreen extends ConsumerWidget {
       );
 
       await ref.read(contactServiceProvider).saveContact(contact);
-      if (context.mounted) {
-        Navigator.pop(context);
+      if (mounted) {
+        if (Navigator.canPop(context)) Navigator.pop(context);
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Contact Added')));
       }
     } catch (e) {
-      if (context.mounted) {
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
       }
     }
   }
 
-  void _showContactDetails(BuildContext context, WidgetRef ref, Contact contact) {
+  void _showContactDetails(BuildContext context, Contact contact) {
+    if (!mounted) return;
     Navigator.push(context, MaterialPageRoute(builder: (_) => ContactDetailScreen(contact: contact)));
   }
 }
@@ -347,60 +419,39 @@ class MyPassportScreen extends ConsumerWidget {
   }
 }
 
-class QRScannerScreen extends ConsumerWidget {
+class QRScannerScreen extends StatefulWidget {
   const QRScannerScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  State<QRScannerScreen> createState() => _QRScannerScreenState();
+}
+
+class _QRScannerScreenState extends State<QRScannerScreen> {
+  final MobileScannerController controller = MobileScannerController();
+
+  @override
+  void dispose() {
+    controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('SCAN PASSPORT')),
       body: MobileScanner(
+        controller: controller,
         onDetect: (capture) {
           final List<Barcode> barcodes = capture.barcodes;
           for (final barcode in barcodes) {
             if (barcode.rawValue != null) {
-              _processScannedData(context, ref, barcode.rawValue!);
+              Navigator.pop(context, barcode.rawValue);
               break;
             }
           }
         },
       ),
     );
-  }
-
-  void _processScannedData(BuildContext context, WidgetRef ref, String data) async {
-    try {
-      final idService = ref.read(identityServiceProvider);
-      final pkg = IdentityPackage.fromEncodedString(data);
-      final isValid = idService.verifyPackage(pkg);
-      if (!isValid) throw Exception('Invalid package signature');
-
-      final eidBytes = base64Decode(pkg.eid);
-      final xidBytes = base64Decode(pkg.xid);
-      
-      final publicId = idService.derivePublicId(eidBytes);
-      final fingerprint = idService.calculateFingerprint(eidBytes, xidBytes);
-
-      final contact = Contact(
-        publicId: publicId,
-        alias: 'Scanned Contact',
-        eid: pkg.eid,
-        xid: pkg.xid,
-        fingerprint: fingerprint,
-        createdAt: DateTime.now(),
-        preferredRelay: pkg.relays.isNotEmpty ? pkg.relays.first : null,
-      );
-
-      await ref.read(contactServiceProvider).saveContact(contact);
-      if (context.mounted) {
-        Navigator.pop(context);
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Contact Added')));
-      }
-    } catch (e) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
-      }
-    }
   }
 }
 

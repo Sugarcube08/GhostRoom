@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:file_picker/file_picker.dart';
 import '../../core/providers.dart';
 import '../../core/widgets/navigation_shell.dart';
+import 'dart:io';
 
 class OnboardingScreen extends ConsumerStatefulWidget {
   const OnboardingScreen({super.key});
@@ -71,7 +73,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
     final controller = TextEditingController();
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         title: const Text('ENCRYPT BACKUP'),
         content: TextField(
           controller: controller,
@@ -79,16 +81,15 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
           obscureText: true,
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('CANCEL')),
+          TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('CANCEL')),
           TextButton(
             onPressed: () async {
               if (controller.text.isEmpty) return;
               try {
                 await ref.read(identityServiceProvider).restoreIdentity(_mnemonic!);
                 await ref.read(backupServiceProvider).exportBackup(controller.text);
-                setState(() => _backupSaved = true);
+                if (mounted) setState(() => _backupSaved = true);
                 
-                // Prepare Drill indices (different from verification)
                 _drillIndices.clear();
                 while (_drillIndices.length < 3) {
                   final idx = (DateTime.now().microsecondsSinceEpoch % 24);
@@ -98,10 +99,10 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                 }
                 _drillIndices.sort();
 
-                if (context.mounted) Navigator.pop(context);
+                if (dialogContext.mounted) Navigator.pop(dialogContext);
               } catch (e) {
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Backup failed: $e')));
+                if (dialogContext.mounted) {
+                  ScaffoldMessenger.of(dialogContext).showSnackBar(SnackBar(content: Text('Backup failed: $e')));
                 }
               }
             },
@@ -136,6 +137,103 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
     
     if (mounted) {
       Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const NavigationShell()));
+    }
+  }
+
+  void _restoreFromSeed() {
+    final controller = TextEditingController();
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF121212),
+      builder: (sheetContext) => Padding(
+        padding: EdgeInsets.only(bottom: MediaQuery.of(sheetContext).viewInsets.bottom, left: 24, right: 24, top: 32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Text('RESTORE FROM SEED', style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 2)),
+            const SizedBox(height: 16),
+            TextField(
+              controller: controller,
+              maxLines: 4,
+              decoration: const InputDecoration(
+                hintText: 'Enter your 24-word seed phrase...',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 24),
+            ElevatedButton(
+              onPressed: () async {
+                final nav = Navigator.of(context);
+                final scaffoldMessenger = ScaffoldMessenger.of(context);
+                try {
+                  await ref.read(identityServiceProvider).restoreIdentity(controller.text.trim());
+                  if (mounted) {
+                    nav.pop();
+                    nav.pushReplacement(MaterialPageRoute(builder: (_) => const NavigationShell()));
+                  }
+                } catch (e) {
+                  scaffoldMessenger.showSnackBar(SnackBar(content: Text('Restore failed: $e')));
+                }
+              },
+              child: const Text('RESTORE'),
+            ),
+            const SizedBox(height: 48),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _restoreFromBackup() async {
+    final scaffoldMessenger = ScaffoldMessenger.of(context);
+    final nav = Navigator.of(context);
+    
+    try {
+      final result = await FilePicker.pickFiles(
+        type: FileType.any,
+      );
+
+      if (result == null || result.files.single.path == null) return;
+
+      final fileBytes = await File(result.files.single.path!).readAsBytes();
+      
+      if (!mounted) return;
+
+      final passController = TextEditingController();
+      showDialog(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('BACKUP PASSWORD'),
+          content: TextField(
+            controller: passController,
+            obscureText: true,
+            decoration: const InputDecoration(hintText: 'Enter your backup password'),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('CANCEL')),
+            TextButton(
+              onPressed: () async {
+                try {
+                  await ref.read(backupServiceProvider).importBackup(fileBytes, passController.text);
+                  if (mounted) {
+                    Navigator.pop(dialogContext);
+                    nav.pushReplacement(MaterialPageRoute(builder: (_) => const NavigationShell()));
+                  }
+                } catch (e) {
+                  ScaffoldMessenger.of(dialogContext).showSnackBar(SnackBar(content: Text('Decryption failed: $e')));
+                }
+              },
+              child: const Text('IMPORT'),
+            ),
+          ],
+        ),
+      );
+    } catch (e) {
+      if (mounted) {
+        scaffoldMessenger.showSnackBar(SnackBar(content: Text('Error: $e')));
+      }
     }
   }
 
@@ -190,6 +288,15 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
               foregroundColor: Colors.black,
             ),
             child: const Text('GET STARTED'),
+          ),
+          const SizedBox(height: 16),
+          TextButton(
+            onPressed: _restoreFromSeed,
+            child: const Text('RESTORE FROM SEED', style: TextStyle(color: Colors.white24, letterSpacing: 1, fontSize: 11)),
+          ),
+          TextButton(
+            onPressed: _restoreFromBackup,
+            child: const Text('RESTORE FROM BACKUP', style: TextStyle(color: Colors.white24, letterSpacing: 1, fontSize: 11)),
           ),
           const SizedBox(height: 24),
         ],

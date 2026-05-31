@@ -4,11 +4,16 @@ import 'package:qr_flutter/qr_flutter.dart';
 import '../../core/providers.dart';
 import 'relay_settings_screen.dart';
 
-class IdentityVaultScreen extends ConsumerWidget {
+class IdentityVaultScreen extends ConsumerStatefulWidget {
   const IdentityVaultScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<IdentityVaultScreen> createState() => _IdentityVaultScreenState();
+}
+
+class _IdentityVaultScreenState extends ConsumerState<IdentityVaultScreen> {
+  @override
+  Widget build(BuildContext context) {
     final identity = ref.watch(identityServiceProvider).currentIdentity;
 
     return Scaffold(
@@ -45,7 +50,7 @@ class IdentityVaultScreen extends ConsumerWidget {
                 icon: Icons.health_and_safety_outlined,
                 title: 'Recovery Drill',
                 subtitle: 'Test if you can still recover',
-                onTap: () => _startRecoveryDrill(context, ref),
+                onTap: () => _startRecoveryDrill(context),
               ),
             ],
           ),
@@ -89,7 +94,7 @@ class IdentityVaultScreen extends ConsumerWidget {
           const SizedBox(height: 48),
           const Center(
             child: Text(
-              'GHOSTROOM V2.1 PREMIUM\nID: ENCRYPTED. DURABLE. SOVEREIGN.',
+              'GHOSTROOM V2.1.1 PREMIUM\nSTABILITY SPRINT ACTIVE',
               textAlign: TextAlign.center,
               style: TextStyle(color: Colors.white10, fontSize: 10, letterSpacing: 2),
             ),
@@ -133,48 +138,53 @@ class IdentityVaultScreen extends ConsumerWidget {
   }
 
   Widget _buildSecurityScore(BuildContext context, WidgetRef ref) {
-    // Basic logic for health score (placeholder)
-    const int score = 67; // Seed + Backup, but no drill
+    return FutureBuilder<bool>(
+      future: ref.read(identityServiceProvider).isDrillRequired(),
+      builder: (context, snapshot) {
+        final drillDone = snapshot.data == false;
+        final int score = drillDone ? 100 : 67;
 
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16),
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.white.withAlpha(5),
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Column(
-        children: [
-          Row(
+        return Container(
+          margin: const EdgeInsets.symmetric(horizontal: 16),
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: Colors.white.withAlpha(5),
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Column(
             children: [
-              const Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('IDENTITY SECURITY', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.white24, letterSpacing: 1)),
-                    SizedBox(height: 4),
-                    Text('Good Protection', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                  ],
-                ),
+              Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text('IDENTITY SECURITY', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.white24, letterSpacing: 1)),
+                        const SizedBox(height: 4),
+                        Text(drillDone ? 'Maximum Protection' : 'Good Protection', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                      ],
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(color: (drillDone ? Colors.green : Colors.amber).withAlpha(30), borderRadius: BorderRadius.circular(12)),
+                    child: Text('$score%', style: TextStyle(color: drillDone ? Colors.green : Colors.amber, fontWeight: FontWeight.bold)),
+                  ),
+                ],
               ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                decoration: BoxDecoration(color: Colors.amber.withAlpha(30), borderRadius: BorderRadius.circular(12)),
-                child: const Text('$score%', style: TextStyle(color: Colors.amber, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 20),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceAround,
+                children: [
+                  const _ScoreFactor(label: 'Seed', icon: Icons.check_circle, color: Colors.green),
+                  const _ScoreFactor(label: 'Backup', icon: Icons.check_circle, color: Colors.green),
+                  _ScoreFactor(label: 'Drill', icon: drillDone ? Icons.check_circle : Icons.pending_outlined, color: drillDone ? Colors.green : Colors.white24),
+                ],
               ),
             ],
           ),
-          const SizedBox(height: 20),
-          const Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: [
-              _ScoreFactor(label: 'Seed', icon: Icons.check_circle, color: Colors.green),
-              _ScoreFactor(label: 'Backup', icon: Icons.check_circle, color: Colors.green),
-              _ScoreFactor(label: 'Drill', icon: Icons.pending_outlined, color: Colors.white24),
-            ],
-          ),
-        ],
-      ),
+        );
+      }
     );
   }
 
@@ -216,9 +226,70 @@ class IdentityVaultScreen extends ConsumerWidget {
     );
   }
 
-  void _startRecoveryDrill(BuildContext context, WidgetRef ref) {
-     // TODO: Implement interactive drill
-     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Recovery Drill coming in next beta update.')));
+  void _startRecoveryDrill(BuildContext context) {
+     final idService = ref.read(identityServiceProvider);
+     final mnemonic = idService.currentIdentity?.mnemonic;
+     if (mnemonic == null) return;
+
+     final words = mnemonic.split(' ');
+     final List<int> drillIndices = [];
+     while (drillIndices.length < 3) {
+        final idx = (DateTime.now().microsecondsSinceEpoch % 24);
+        if (!drillIndices.contains(idx)) drillIndices.add(idx);
+     }
+     drillIndices.sort();
+
+     final Map<int, String> answers = {};
+
+     showDialog(
+       context: context,
+       builder: (context) => StatefulBuilder(
+         builder: (context, setDialogState) => AlertDialog(
+           backgroundColor: const Color(0xFF121212),
+           title: const Text('RECOVERY DRILL'),
+           content: Column(
+             mainAxisSize: MainAxisSize.min,
+             children: [
+               const Text('Enter the following words from your seed phrase to verify you still have access.', style: TextStyle(fontSize: 12, color: Colors.white54)),
+               const SizedBox(height: 24),
+               ...drillIndices.map((idx) => Padding(
+                 padding: const EdgeInsets.only(bottom: 16),
+                 child: TextField(
+                   onChanged: (val) => answers[idx] = val,
+                   decoration: InputDecoration(labelText: 'Word #${idx + 1}'),
+                   style: const TextStyle(fontFamily: 'monospace'),
+                 ),
+               )),
+             ],
+           ),
+           actions: [
+             TextButton(onPressed: () => Navigator.pop(context), child: const Text('CANCEL')),
+             ElevatedButton(
+               onPressed: () async {
+                 bool allCorrect = true;
+                 for (final idx in drillIndices) {
+                   if (answers[idx]?.trim().toLowerCase() != words[idx]) {
+                     allCorrect = false;
+                     break;
+                   }
+                 }
+                 if (allCorrect) {
+                   await idService.recordDrillSuccess();
+                   if (context.mounted) {
+                     Navigator.pop(context);
+                     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Drill successful! Security score updated.')));
+                     setState(() {}); 
+                   }
+                 } else {
+                   ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Verification failed.')));
+                 }
+               }, 
+               child: const Text('VERIFY')
+             ),
+           ],
+         ),
+       ),
+     );
   }
 
   void _showDiagnostics(BuildContext context, WidgetRef ref) {
@@ -234,11 +305,9 @@ class IdentityVaultScreen extends ConsumerWidget {
           children: [
             const Text('SYSTEM DIAGNOSTICS', style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 2)),
             const SizedBox(height: 32),
-            _DiagRow(label: 'Identity Status', value: 'Active', color: Colors.green),
-            _DiagRow(label: 'Relay Connectivity', value: 'Connected', color: Colors.green),
-            _DiagRow(label: 'PostgreSQL Store', value: 'Operational', color: Colors.green),
-            _DiagRow(label: 'Redis Cache', value: 'Operational', color: Colors.green),
-            _DiagRow(label: 'Blob Storage (R2)', value: 'Ready', color: Colors.green),
+            _DiagRow(label: 'Identity Status', value: ref.read(identityServiceProvider).hasIdentity ? 'Active' : 'Missing', color: Colors.green),
+            _DiagRow(label: 'WebSocket Connection', value: ref.read(webSocketServiceProvider).isConnected ? 'Connected' : 'Disconnected', color: Colors.blueAccent),
+            _DiagRow(label: 'Auth Status', value: ref.read(webSocketServiceProvider).isAuthenticated ? 'Authenticated' : 'Pending', color: Colors.amber),
             const SizedBox(height: 32),
             Center(
               child: TextButton(
@@ -266,13 +335,6 @@ class IdentityVaultScreen extends ConsumerWidget {
             onTap: () {
               Navigator.pop(context);
               _showBackupDialog(context, ref);
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.file_download_outlined),
-            title: const Text('RESTORE FROM BACKUP'),
-            onTap: () {
-              Navigator.pop(context);
             },
           ),
           const SizedBox(height: 16),
