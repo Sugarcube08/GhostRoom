@@ -1,5 +1,5 @@
-import { Injectable } from '@nestjs/common';
-import * as promClient from 'prom-client';
+import { Injectable } from "@nestjs/common";
+import * as promClient from "prom-client";
 
 @Injectable()
 export class MetricsService {
@@ -16,29 +16,29 @@ export class MetricsService {
     promClient.collectDefaultMetrics({ register: this.registry });
 
     this.messagesSent = new promClient.Counter({
-      name: 'ghostroom_messages_sent_total',
-      help: 'Total number of messages sent',
-      labelNames: ['version'],
+      name: "ghostroom_messages_sent_total",
+      help: "Total number of messages sent",
+      labelNames: ["version"],
     });
 
     this.messagesAcked = new promClient.Counter({
-      name: 'ghostroom_messages_ack_total',
-      help: 'Total number of messages acknowledged',
+      name: "ghostroom_messages_ack_total",
+      help: "Total number of messages acknowledged",
     });
 
     this.uploadsTotal = new promClient.Counter({
-      name: 'ghostroom_uploads_total',
-      help: 'Total number of media uploads requested',
+      name: "ghostroom_uploads_total",
+      help: "Total number of media uploads requested",
     });
 
     this.downloadsTotal = new promClient.Counter({
-      name: 'ghostroom_downloads_total',
-      help: 'Total number of media downloads requested',
+      name: "ghostroom_downloads_total",
+      help: "Total number of media downloads requested",
     });
 
     this.rateLimitHits = new promClient.Counter({
-      name: 'ghostroom_rate_limit_hits_total',
-      help: 'Total number of rate limit rejections',
+      name: "ghostroom_rate_limit_hits_total",
+      help: "Total number of rate limit rejections",
     });
 
     this.registry.registerMetric(this.messagesSent);

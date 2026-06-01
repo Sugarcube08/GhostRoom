@@ -1,16 +1,16 @@
-import { Test, TestingModule } from '@nestjs/testing';
-import { MediaService } from './media.service';
-import { ConfigService } from '@nestjs/config';
-import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
-import { getRepositoryToken } from '@nestjs/typeorm';
-import { MediaEntity } from './entities/media.entity';
-import { AuditService } from '../audit/audit.service';
-import { describe, expect, it, jest, beforeEach } from '@jest/globals';
+import { Test, TestingModule } from "@nestjs/testing";
+import { MediaService } from "./media.service";
+import { ConfigService } from "@nestjs/config";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+import { getRepositoryToken } from "@nestjs/typeorm";
+import { MediaEntity } from "./entities/media.entity";
+import { AuditService } from "../audit/audit.service";
+import { describe, expect, it, jest, beforeEach } from "@jest/globals";
 
-jest.mock('@aws-sdk/s3-request-presigner');
-jest.mock('@aws-sdk/client-s3');
+jest.mock("@aws-sdk/s3-request-presigner");
+jest.mock("@aws-sdk/client-s3");
 
-describe('MediaService', () => {
+describe("MediaService", () => {
   let service: MediaService;
   let mockRedis: any;
   let mockMediaRepo: any;
@@ -30,7 +30,10 @@ describe('MediaService', () => {
     mockMediaRepo = {
       create: jest.fn().mockImplementation((entity) => entity),
       save: (jest.fn() as any).mockResolvedValue({}),
-      findOne: (jest.fn() as any).mockResolvedValue({ owner_id: 'alice', state: 'UPLOADING' }),
+      findOne: (jest.fn() as any).mockResolvedValue({
+        owner_id: "alice",
+        state: "UPLOADING",
+      }),
       delete: (jest.fn() as any).mockResolvedValue({}),
       find: (jest.fn() as any).mockResolvedValue([]),
     };
@@ -46,13 +49,13 @@ describe('MediaService', () => {
           provide: ConfigService,
           useValue: {
             get: jest.fn().mockImplementation((key) => {
-              if (key === 'R2_ACCOUNT_ID') return 'test-account';
+              if (key === "R2_ACCOUNT_ID") return "test-account";
               return null;
             }),
           },
         },
         {
-          provide: 'REDIS_CLIENT',
+          provide: "REDIS_CLIENT",
           useValue: mockRedis,
         },
         {
@@ -69,25 +72,51 @@ describe('MediaService', () => {
     service = module.get<MediaService>(MediaService);
   });
 
-  it('should be defined', () => {
+  it("should be defined", () => {
     expect(service).toBeDefined();
   });
 
-  describe('generateUploadUrl', () => {
-    it('should return a signed URL and store metadata in Postgres', async () => {
-      (getSignedUrl as any).mockResolvedValue('http://signed-put-url');
-      
-      const result = await service.generateUploadUrl('alice', 1024, 'image/jpeg', 'some-hash');
-      
+  describe("generateUploadUrl", () => {
+    it("should return a signed URL and store metadata in Postgres", async () => {
+      (getSignedUrl as any).mockResolvedValue("http://signed-put-url");
+
+      const result = await service.generateUploadUrl(
+        "alice",
+        1024,
+        "image/jpeg",
+        "some-hash",
+      );
+
       expect(result.mediaId).toBeDefined();
-      expect(result.uploadUrl).toBe('http://signed-put-url');
+      expect(result.uploadUrl).toBe("http://signed-put-url");
       expect(mockMediaRepo.create).toHaveBeenCalledWith(
         expect.objectContaining({
-          owner_id: 'alice',
-          state: 'UPLOADING',
+          owner_id: "alice",
+          state: "UPLOADING",
         }),
       );
-      expect(mockAuditService.log).toHaveBeenCalledWith('media_upload_requested', expect.any(Object));
+      expect(mockAuditService.log).toHaveBeenCalledWith(
+        "media_upload_requested",
+        expect.any(Object),
+      );
+    });
+
+    it("should rewrite URL host when dynamicPublicEndpoint is provided", async () => {
+      (getSignedUrl as any).mockResolvedValue(
+        "http://minio:9000/ghostroom-media/media/123?Signature=abc",
+      );
+
+      const result = await service.generateUploadUrl(
+        "alice",
+        1024,
+        "image/jpeg",
+        "some-hash",
+        "http://192.168.1.100:9000",
+      );
+
+      expect(result.uploadUrl).toBe(
+        "http://192.168.1.100:9000/ghostroom-media/media/123?Signature=abc",
+      );
     });
   });
 });

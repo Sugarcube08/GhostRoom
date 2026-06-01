@@ -74,21 +74,23 @@ class _RelaySettingsScreenState extends ConsumerState<RelaySettingsScreen> {
       context: context,
       builder: (dialogContext) => AlertDialog(
         title: const Text('Add Relay'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(controller: labelController, decoration: const InputDecoration(hintText: 'Nickname')),
-            const SizedBox(height: 8),
-            TextField(
-              controller: wsController, 
-              decoration: const InputDecoration(
-                hintText: 'Relay URL (http://192.168.1.x:3000)',
-                helperText: 'Use your machine IP for local dev',
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(controller: labelController, decoration: const InputDecoration(hintText: 'Nickname')),
+              const SizedBox(height: 8),
+              TextField(
+                controller: wsController, 
+                decoration: const InputDecoration(
+                  hintText: 'Relay URL (http://192.168.1.x:3000)',
+                  helperText: 'Use your machine IP for local dev',
+                ),
               ),
-            ),
-            const SizedBox(height: 8),
-            TextField(controller: apiController, decoration: const InputDecoration(hintText: 'API URL (https://...)')),
-          ],
+              const SizedBox(height: 8),
+              TextField(controller: apiController, decoration: const InputDecoration(hintText: 'API URL (https://...)')),
+            ],
+          ),
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Cancel')),

@@ -1,12 +1,12 @@
-import { Test, TestingModule } from '@nestjs/testing';
-import { InboxService } from './inbox.service';
-import { ConfigService } from '@nestjs/config';
-import { getRepositoryToken } from '@nestjs/typeorm';
-import { MessageEntity } from './entities/message.entity';
-import { DeliveryEntity } from './entities/delivery.entity';
-import { describe, expect, it, jest, beforeEach } from '@jest/globals';
+import { Test, TestingModule } from "@nestjs/testing";
+import { InboxService } from "./inbox.service";
+import { ConfigService } from "@nestjs/config";
+import { getRepositoryToken } from "@nestjs/typeorm";
+import { MessageEntity } from "./entities/message.entity";
+import { DeliveryEntity } from "./entities/delivery.entity";
+import { describe, expect, it, jest, beforeEach } from "@jest/globals";
 
-describe('InboxService', () => {
+describe("InboxService", () => {
   let service: InboxService;
   let mockRedis: any;
   let mockMessageRepo: any;
@@ -26,7 +26,7 @@ describe('InboxService', () => {
       zrangebyscore: (jest.fn() as any).mockResolvedValue([]),
       mget: (jest.fn() as any).mockResolvedValue([]),
       zrem: (jest.fn() as any).mockResolvedValue(0),
-      setex: (jest.fn() as any).mockResolvedValue('OK'),
+      setex: (jest.fn() as any).mockResolvedValue("OK"),
       get: (jest.fn() as any).mockResolvedValue(null),
       del: (jest.fn() as any).mockResolvedValue(1),
     };
@@ -35,7 +35,10 @@ describe('InboxService', () => {
       create: jest.fn().mockImplementation((entity) => entity),
       save: (jest.fn() as any).mockResolvedValue({}),
       find: (jest.fn() as any).mockResolvedValue([]),
-      findOne: (jest.fn() as any).mockResolvedValue({ id: 'msg-id', retention_mode: 'PERSISTENT' }),
+      findOne: (jest.fn() as any).mockResolvedValue({
+        id: "msg-id",
+        retention_mode: "PERSISTENT",
+      }),
       delete: (jest.fn() as any).mockResolvedValue({}),
     };
 
@@ -56,7 +59,7 @@ describe('InboxService', () => {
           },
         },
         {
-          provide: 'REDIS_CLIENT',
+          provide: "REDIS_CLIENT",
           useValue: mockRedis,
         },
         {
@@ -73,17 +76,17 @@ describe('InboxService', () => {
     service = module.get<InboxService>(InboxService);
   });
 
-  it('should be defined', () => {
+  it("should be defined", () => {
     expect(service).toBeDefined();
   });
 
-  describe('queueMessage', () => {
-    it('should store message in Postgres and Redis', async () => {
-      const publicId = 'test-id';
-      const payload = { id: 'msg-id', n: 'nonce', c: 'ciphertext' };
-      
+  describe("queueMessage", () => {
+    it("should store message in Postgres and Redis", async () => {
+      const publicId = "test-id";
+      const payload = { id: "msg-id", n: "nonce", c: "ciphertext" };
+
       const envelope = await service.queueMessage(publicId, payload);
-      
+
       expect(envelope).toBeDefined();
       expect(mockMessageRepo.create).toHaveBeenCalled();
       expect(mockMessageRepo.save).toHaveBeenCalled();
@@ -91,20 +94,26 @@ describe('InboxService', () => {
     });
   });
 
-  describe('acknowledgeMessage', () => {
-    it('should update delivered_at for PERSISTENT messages', async () => {
-      await service.acknowledgeMessage('test-id', 'msg-id');
-      
+  describe("acknowledgeMessage", () => {
+    it("should update delivered_at for PERSISTENT messages", async () => {
+      await service.acknowledgeMessage("test-id", "msg-id");
+
       expect(mockMessageRepo.findOne).toHaveBeenCalled();
       expect(mockMessageRepo.save).toHaveBeenCalled(); // Since it's PERSISTENT in mock
-      expect(mockDeliveryRepo.update).toHaveBeenCalledWith({ message_id: 'msg-id' }, { status: 'ACKNOWLEDGED' });
+      expect(mockDeliveryRepo.update).toHaveBeenCalledWith(
+        { message_id: "msg-id" },
+        { status: "ACKNOWLEDGED" },
+      );
     });
 
-    it('should delete VIEW_ONCE messages', async () => {
-      mockMessageRepo.findOne.mockResolvedValue({ id: 'msg-id', retention_mode: 'VIEW_ONCE' });
-      await service.acknowledgeMessage('test-id', 'msg-id');
-      
-      expect(mockMessageRepo.delete).toHaveBeenCalledWith('msg-id');
+    it("should delete VIEW_ONCE messages", async () => {
+      mockMessageRepo.findOne.mockResolvedValue({
+        id: "msg-id",
+        retention_mode: "VIEW_ONCE",
+      });
+      await service.acknowledgeMessage("test-id", "msg-id");
+
+      expect(mockMessageRepo.delete).toHaveBeenCalledWith("msg-id");
     });
   });
 });

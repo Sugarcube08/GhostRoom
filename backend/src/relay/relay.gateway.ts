@@ -42,25 +42,32 @@ export class RelayGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @Inject("REDIS_SUBSCRIBER") private readonly redisSub: Redis,
     @Inject("REDIS_CLIENT") private readonly redis: Redis,
   ) {
-    this.RATE_LIMIT_HOUR = parseInt(this.configService.get<string>('RATE_LIMIT_HOUR') || '50');
-    this.RATE_LIMIT_DAY = parseInt(this.configService.get<string>('RATE_LIMIT_DAY') || '500');
+    this.RATE_LIMIT_HOUR = parseInt(
+      this.configService.get<string>("RATE_LIMIT_HOUR") || "50",
+    );
+    this.RATE_LIMIT_DAY = parseInt(
+      this.configService.get<string>("RATE_LIMIT_DAY") || "500",
+    );
     this.setupKeyspaceNotifications();
   }
 
   async handleConnection(client: Socket) {
     this.logger.log(`Client connected: ${client.id}`);
-    
+
     // Auto-send challenge for V2 identities
-    const nonce = randomBytes(32).toString('hex');
+    const nonce = randomBytes(32).toString("hex");
     await this.inboxService.storeChallenge(client.id, nonce);
     client.emit("identity.challenge", { nonce });
-    await this.auditService.log('client_connected', { socket_id: client.id });
+    await this.auditService.log("client_connected", { socket_id: client.id });
   }
 
   async handleDisconnect(client: Socket) {
     this.logger.log(`Client disconnected: ${client.id}`);
     await this.inboxService.deleteChallenge(client.id);
-    await this.auditService.log('client_disconnected', { socket_id: client.id, public_id: client.data.publicId });
+    await this.auditService.log("client_disconnected", {
+      socket_id: client.id,
+      public_id: client.data.publicId,
+    });
   }
 
   @SubscribeMessage("identity.prove")
@@ -80,7 +87,11 @@ export class RelayGateway implements OnGatewayConnection, OnGatewayDisconnect {
       return;
     }
 
-    const isValid = this.cryptoUtils.verifySignature(nonce, payload.signature, payload.public_key);
+    const isValid = this.cryptoUtils.verifySignature(
+      nonce,
+      payload.signature,
+      payload.public_key,
+    );
     if (!isValid) {
       client.emit("error", { message: "Cryptographic proof failed" });
       return;
@@ -88,9 +99,12 @@ export class RelayGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
     client.data.publicId = payload.public_id;
     await client.join(`inbox:${payload.public_id}`);
-    
+
     this.logger.log(`Client ${client.id} verified as ${payload.public_id}`);
-    await this.auditService.log('identity_verified', { public_id: payload.public_id, socket_id: client.id });
+    await this.auditService.log("identity_verified", {
+      public_id: payload.public_id,
+      socket_id: client.id,
+    });
     client.emit("identity.verified", { public_id: payload.public_id });
     await this.inboxService.deleteChallenge(client.id);
   }
@@ -99,13 +113,21 @@ export class RelayGateway implements OnGatewayConnection, OnGatewayDisconnect {
   async handleInboxFetch(client: Socket, payload: { since?: number }) {
     const publicId = client.data.publicId;
     if (!publicId) {
-      client.emit("error", { message: "Unauthenticated. Prove identity first." });
+      client.emit("error", {
+        message: "Unauthenticated. Prove identity first.",
+      });
       return;
     }
 
-    const messages = await this.inboxService.fetchMessages(publicId, payload.since || 0);
+    const messages = await this.inboxService.fetchMessages(
+      publicId,
+      payload.since || 0,
+    );
     client.emit("inbox.messages", { messages });
-    await this.auditService.log('inbox_fetched', { public_id: publicId, count: messages.length });
+    await this.auditService.log("inbox_fetched", {
+      public_id: publicId,
+      count: messages.length,
+    });
     this.metricsService.downloadsTotal.inc();
   }
 
@@ -115,8 +137,13 @@ export class RelayGateway implements OnGatewayConnection, OnGatewayDisconnect {
     if (!publicId) return;
 
     await this.inboxService.acknowledgeMessage(publicId, payload.message_id);
-    this.logger.log(`Message ${payload.message_id} acknowledged by ${publicId}`);
-    await this.auditService.log('message_acked', { message_id: payload.message_id, recipient: publicId });
+    this.logger.log(
+      `Message ${payload.message_id} acknowledged by ${publicId}`,
+    );
+    await this.auditService.log("message_acked", {
+      message_id: payload.message_id,
+      recipient: publicId,
+    });
     this.metricsService.messagesAcked.inc();
   }
 
@@ -126,14 +153,22 @@ export class RelayGateway implements OnGatewayConnection, OnGatewayDisconnect {
     if (!publicId) return;
 
     await this.mediaService.deleteMedia(payload.media_id);
-    this.logger.log(`Media ${payload.media_id} deleted after view by ${publicId}`);
-    await this.auditService.log('media_viewed', { media_id: payload.media_id, viewer: publicId });
+    this.logger.log(
+      `Media ${payload.media_id} deleted after view by ${publicId}`,
+    );
+    await this.auditService.log("media_viewed", {
+      media_id: payload.media_id,
+      viewer: publicId,
+    });
   }
 
   @SubscribeMessage("space.join")
-  async handleJoin(client: Socket, payload: { roomId: string; deviceId?: string }) {
+  async handleJoin(
+    client: Socket,
+    payload: { roomId: string; deviceId?: string },
+  ) {
     this.logger.log(
-      `Join request for room: ${payload.roomId} from client: ${client.id} (Device: ${payload.deviceId || 'unknown'})`,
+      `Join request for room: ${payload.roomId} from client: ${client.id} (Device: ${payload.deviceId || "unknown"})`,
     );
     const room = await this.roomsService.getRoom(payload.roomId);
     if (!room) {
@@ -146,15 +181,17 @@ export class RelayGateway implements OnGatewayConnection, OnGatewayDisconnect {
     client.emit("space.joined", { roomId: payload.roomId });
 
     const allMessages = await this.roomsService.consumeMessages(payload.roomId);
-    const historyToDeliver = allMessages.filter(msg => msg.senderId !== payload.deviceId);
-    
+    const historyToDeliver = allMessages.filter(
+      (msg) => msg.senderId !== payload.deviceId,
+    );
+
     if (historyToDeliver.length > 0) {
       client.emit("space.history", {
         roomId: payload.roomId,
         messages: historyToDeliver,
       });
     }
-    await this.auditService.log('space_joined', { room_id: payload.roomId });
+    await this.auditService.log("space_joined", { room_id: payload.roomId });
   }
 
   @SubscribeMessage("message.send")
@@ -170,24 +207,37 @@ export class RelayGateway implements OnGatewayConnection, OnGatewayDisconnect {
       retention?: string;
     },
   ) {
-    const payloadSize = Buffer.byteLength(JSON.stringify(payload), 'utf8');
+    const payloadSize = Buffer.byteLength(JSON.stringify(payload), "utf8");
     const version = payload.v || 1;
+    this.logger.log(
+      `GHOST_LOG: MESSAGE_RECEIVED size=${payloadSize} version=${version}`,
+    );
 
     // Size Validation
     const maxSize = version === 2 ? 65536 : 32768; // 64KB for V2, 32KB for V1
     if (payloadSize > maxSize) {
-      this.logger.warn(`Payload too large from ${client.id} (Size: ${payloadSize})`);
-      client.emit('error', { message: 'Payload size limit exceeded' });
-      await this.auditService.log('payload_rejected', { socket_id: client.id, size: payloadSize });
-      return;
+      this.logger.warn(
+        `Payload too large from ${client.id} (Size: ${payloadSize})`,
+      );
+      client.emit("error", { message: "Payload size limit exceeded" });
+      await this.auditService.log("payload_rejected", {
+        socket_id: client.id,
+        size: payloadSize,
+      });
+      return { status: "error", error: "Payload size limit exceeded" };
     }
 
     if (version === 2) {
       // V2 Identity-based routing
       const senderPublicId = client.data.publicId;
       if (!senderPublicId) {
-        client.emit("error", { message: "Unauthenticated. Prove identity first." });
-        return;
+        client.emit("error", {
+          message: "Unauthenticated. Prove identity first.",
+        });
+        return {
+          status: "error",
+          error: "Unauthenticated. Prove identity first.",
+        };
       }
 
       // Rate Limiting (Redis)
@@ -199,11 +249,16 @@ export class RelayGateway implements OnGatewayConnection, OnGatewayDisconnect {
         this.redis.get(dailyKey),
       ]);
 
-      if (parseInt(hourlyCount || '0') >= this.RATE_LIMIT_HOUR || parseInt(dailyCount || '0') >= this.RATE_LIMIT_DAY) {
-        client.emit('error', { message: 'Rate limit exceeded' });
-        await this.auditService.log('rate_limit_exceeded', { public_id: senderPublicId });
+      if (
+        parseInt(hourlyCount || "0") >= this.RATE_LIMIT_HOUR ||
+        parseInt(dailyCount || "0") >= this.RATE_LIMIT_DAY
+      ) {
+        client.emit("error", { message: "Rate limit exceeded" });
+        await this.auditService.log("rate_limit_exceeded", {
+          public_id: senderPublicId,
+        });
         this.metricsService.rateLimitHits.inc();
-        return;
+        return { status: "error", error: "Rate limit exceeded" };
       }
 
       const pipeline = this.redis.pipeline();
@@ -212,30 +267,49 @@ export class RelayGateway implements OnGatewayConnection, OnGatewayDisconnect {
       pipeline.incr(dailyKey);
       pipeline.expire(dailyKey, 86400);
       await pipeline.exec();
-      
-      this.logger.log(`V2 message to ${payload.target_id} from ${senderPublicId}`);
+
+      this.logger.log(
+        `V2 message to ${payload.target_id} from ${senderPublicId}`,
+      );
+      this.logger.log("GHOST_LOG: MESSAGE_ROUTED");
 
       try {
-        const envelope = await this.inboxService.queueMessage(payload.target_id, {
-          id: (payload as any).id,
-          n: payload.nonce || '',
-          c: payload.ciphertext,
-          k: (payload as any).k || (payload as any).encryptedKey,
-          s: (payload as any).s || (payload as any).signature,
-          retention: payload.retention,
-        }, senderPublicId);
+        const envelope = await this.inboxService.queueMessage(
+          payload.target_id,
+          {
+            id: (payload as any).id,
+            n: (payload as any).n || payload.nonce || "",
+            c: (payload as any).c || payload.ciphertext,
+            k: (payload as any).k || (payload as any).encryptedKey,
+            s: (payload as any).s || (payload as any).signature,
+            retention: payload.retention,
+          },
+          senderPublicId,
+        );
+        this.logger.log("GHOST_LOG: MESSAGE_STORED");
 
-        this.server.to(`inbox:${payload.target_id}`).emit("message.receive", envelope);
-        await this.auditService.log('message_sent', { target: payload.target_id, version: 2, retention: payload.retention });
-        this.metricsService.messagesSent.inc({ version: '2' });
+        this.server
+          .to(`inbox:${payload.target_id}`)
+          .emit("message.receive", envelope);
+        this.logger.log("GHOST_LOG: MESSAGE_DELIVERED");
+        await this.auditService.log("message_sent", {
+          target: payload.target_id,
+          version: 2,
+          retention: payload.retention,
+        });
+        this.metricsService.messagesSent.inc({ version: "2" });
+        return { status: "ok", id: envelope.id };
       } catch (e: any) {
         this.logger.error(`Failed to queue V2 message: ${e?.message || e}`);
+        return { status: "error", error: e?.message || e };
       }
     } else {
       const roomId = payload.target_id;
       this.logger.log(`V1 message to room ${roomId} from client ${client.id}`);
-      
+      this.logger.log("GHOST_LOG: MESSAGE_ROUTED");
+
       client.to(roomId).emit("message.receive", payload);
+      this.logger.log("GHOST_LOG: MESSAGE_DELIVERED");
 
       try {
         await this.roomsService.addMessage(
@@ -243,10 +317,18 @@ export class RelayGateway implements OnGatewayConnection, OnGatewayDisconnect {
           payload,
           payload.expiry || 300,
         );
-        await this.auditService.log('message_sent', { target: roomId, version: 1 });
-        this.metricsService.messagesSent.inc({ version: '1' });
+        this.logger.log("GHOST_LOG: MESSAGE_STORED");
+        await this.auditService.log("message_sent", {
+          target: roomId,
+          version: 1,
+        });
+        this.metricsService.messagesSent.inc({ version: "1" });
+        return { status: "ok" };
       } catch (e: any) {
-        this.logger.error(`Failed to store V1 message for room ${roomId}: ${e?.message || e}`);
+        this.logger.error(
+          `Failed to store V1 message for room ${roomId}: ${e?.message || e}`,
+        );
+        return { status: "error", error: e?.message || e };
       }
     }
   }

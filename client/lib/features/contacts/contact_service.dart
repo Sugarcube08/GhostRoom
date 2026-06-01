@@ -25,11 +25,15 @@ class ContactService {
       encryptionKey = base64.decode(existingKey);
     }
 
-    await Hive.openBox<Contact>(
-      _boxName,
-      encryptionCipher: HiveAesCipher(encryptionKey),
-    );
-    await Hive.openBox<String>(_blockBoxName);
+    if (!Hive.isBoxOpen(_boxName)) {
+      await Hive.openBox<Contact>(
+        _boxName,
+        encryptionCipher: HiveAesCipher(encryptionKey),
+      );
+    }
+    if (!Hive.isBoxOpen(_blockBoxName)) {
+      await Hive.openBox<String>(_blockBoxName);
+    }
   }
 
   Box<Contact> get _box => Hive.box<Contact>(_boxName);

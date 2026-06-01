@@ -1,6 +1,6 @@
 import { Module } from "@nestjs/common";
 import { ConfigModule, ConfigService } from "@nestjs/config";
-import { TypeOrmModule } from '@nestjs/typeorm';
+import { TypeOrmModule } from "@nestjs/typeorm";
 import { RedisModule } from "./redis/redis.module";
 import { RoomsModule } from "./rooms/rooms.module";
 import { RelayModule } from "./relay/relay.module";
@@ -19,18 +19,18 @@ import { ThrottlerModule } from "@nestjs/throttler";
     TypeOrmModule.forRootAsync({
       inject: [ConfigService],
       useFactory: (configService: ConfigService) => {
-        if (process.env.NODE_ENV === 'test') {
+        if (process.env.NODE_ENV === "test") {
           return {
-            type: 'better-sqlite3',
-            database: ':memory:',
+            type: "better-sqlite3",
+            database: ":memory:",
             autoLoadEntities: true,
             synchronize: true,
             dropSchema: true,
           } as any;
         }
         return {
-          type: 'postgres',
-          url: configService.get<string>('DATABASE_URL'),
+          type: "postgres",
+          url: configService.get<string>("DATABASE_URL"),
           autoLoadEntities: true,
           synchronize: true,
         } as any;

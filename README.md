@@ -65,5 +65,19 @@ docker compose -f docker-compose.prod.yml up -d
 
 ---
 
+## 🔧 Troubleshooting
+
+### Redis: Memory overcommit warning
+If you see the warning `# WARNING Memory overcommit must be enabled!` in your logs, you can fix it on the host machine by running:
+```bash
+sudo sysctl vm.overcommit_memory=1
+```
+To make this persistent, add `vm.overcommit_memory = 1` to `/etc/sysctl.conf`.
+
+### MinIO/R2 Connectivity
+If the backend cannot reach MinIO or the client cannot download media, ensure `R2_ENDPOINT` and `R2_PUBLIC_ENDPOINT` are correctly configured in your `.env` or `docker-compose.yml`. For local development, `R2_ENDPOINT` should point to the container (`http://minio:9000`) and `R2_PUBLIC_ENDPOINT` should point to the host (`http://localhost:9000`).
+
+---
+
 ## 📜 License
 GhostRoom is [UNLICENSED](./LICENSE). See the LICENSE file for details.

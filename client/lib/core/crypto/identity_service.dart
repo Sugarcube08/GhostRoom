@@ -1,10 +1,14 @@
 import 'dart:convert';
 import 'dart:typed_data';
+import 'dart:io';
 import 'package:sodium/sodium_sumo.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:bip39/bip39.dart' as bip39;
 import 'package:bs58/bs58.dart';
+import 'package:path_provider/path_provider.dart';
 import '../network/relay_manager.dart';
+import '../stability_tracker.dart';
+import 'package:logger/logger.dart';
 
 class IdentityPackage {
   final int version;
@@ -66,6 +70,7 @@ class Identity {
 class IdentityService {
   final SodiumSumo sodium;
   final FlutterSecureStorage _storage = const FlutterSecureStorage();
+  final Logger _logger = Logger();
 
   static const String _seedKey = 'identity_seed_phrase';
   static const String _deviceIdKey = 'device_id';
@@ -90,10 +95,91 @@ class IdentityService {
     await _storage.write(key: _drillKey, value: DateTime.now().millisecondsSinceEpoch.toString());
   }
 
+  Future<bool> _checkPublicIdentityFlag() async {
+    try {
+      final dir = await getApplicationDocumentsDirectory();
+      final file = File('${dir.path}/identity_exists.flag');
+      return await file.exists();
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<void> _writePublicIdentityFlag() async {
+    try {
+      final dir = await getApplicationDocumentsDirectory();
+      final file = File('${dir.path}/identity_exists.flag');
+      await file.writeAsString('true');
+    } catch (_) {}
+  }
+
+  Future<void> _clearPublicIdentityFlag() async {
+    try {
+      final dir = await getApplicationDocumentsDirectory();
+      final file = File('${dir.path}/identity_exists.flag');
+      if (await file.exists()) {
+        await file.delete();
+      }
+    } catch (_) {}
+  }
+
   Future<void> initIdentity() async {
-    final seedPhrase = await _storage.read(key: _seedKey);
-    if (seedPhrase != null) {
-      await restoreIdentity(seedPhrase);
+    StabilityTracker.logMemory('IdentityInit_Start');
+    _logger.i("SecureStorage initialization check");
+    try {
+      // 1. Keystore settlement delay
+      _logger.i("Waiting for keystore settlement...");
+      await Future.delayed(const Duration(seconds: 2));
+
+      String? seedPhrase;
+      for (int i = 0; i < 5; i++) {
+        try {
+          _logger.i("Attempt ${i + 1}: Reading seed from SecureStorage...");
+          seedPhrase = await _storage.read(key: _seedKey);
+          if (seedPhrase != null) {
+            _logger.i("Seed phrase found in SecureStorage.");
+            break;
+          }
+          _logger.w("Seed phrase NOT found in attempt ${i + 1}");
+          await Future.delayed(const Duration(milliseconds: 500));
+        } catch (e) {
+          _logger.e("SecureStorage read error in attempt ${i + 1}: $e");
+          await Future.delayed(const Duration(milliseconds: 500));
+        }
+      }
+
+      final flagExists = await _checkPublicIdentityFlag();
+      _logger.i("Public identity flag file exists: $flagExists");
+
+      if (seedPhrase != null) {
+        _logger.i("Identity restoration starting...");
+        StabilityTracker.logEvent('IdentityFound_Restoring');
+        await restoreIdentity(seedPhrase);
+        _logger.i("IDENTITY_READY");
+        StabilityTracker.logEvent('IdentityRestored_Success');
+        if (!flagExists) {
+          _logger.i("Writing missing public flag file...");
+          await _writePublicIdentityFlag();
+        }
+      } else {
+        if (flagExists) {
+          _logger.e("CRITICAL: Flag file exists but seed is missing/unreadable! Keyring likely locked.");
+          StabilityTracker.logEvent('Identity_Keyring_Locked_Error');
+          throw Exception(
+            'Secure storage access failed. Your identity is present on disk, '
+            'but the system keyring is locked or inaccessible. Please unlock '
+            'your system keyring or restart the app.'
+          );
+        }
+        _logger.w("No identity found (no seed, no flag).");
+        StabilityTracker.logEvent('IdentityNotFound_Empty');
+      }
+    } catch (e) {
+      StabilityTracker.logEvent('IdentityInit_Error', data: {'error': e.toString()});
+      _logger.e('Identity initialization failed: $e');
+      rethrow; 
+    } finally {
+      StabilityTracker.logMemory('IdentityInit_End');
     }
   }
 
@@ -129,40 +215,50 @@ class IdentityService {
   }
 
   Future<Identity> restoreIdentity(String mnemonic, {String? preservedDeviceId}) async {
-    if (!bip39.validateMnemonic(mnemonic)) {
-      throw Exception('Invalid mnemonic seed phrase');
+    try {
+      final sanitizedMnemonic = mnemonic.trim().toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
+      if (!bip39.validateMnemonic(sanitizedMnemonic)) {
+        throw Exception('Invalid mnemonic seed phrase');
+      }
+
+      final seed = bip39.mnemonicToSeed(sanitizedMnemonic);
+      final ed25519SeedBytes = seed.sublist(0, 32);
+      final ed25519Seed = SecureKey.fromList(sodium, ed25519SeedBytes);
+      
+      final ed25519KeyPair = sodium.crypto.sign.seedKeyPair(ed25519Seed);
+      
+      final x25519Pk = sodium.crypto.sign.pkToCurve25519(ed25519KeyPair.publicKey);
+      final x25519Sk = sodium.crypto.sign.skToCurve25519(ed25519KeyPair.secretKey);
+      final x25519KeyPair = KeyPair(publicKey: x25519Pk, secretKey: x25519Sk);
+
+      final publicId = derivePublicId(ed25519KeyPair.publicKey);
+      final fingerprint = calculateFingerprint(ed25519KeyPair.publicKey, x25519KeyPair.publicKey);
+
+      String deviceId = preservedDeviceId ?? 
+          await _storage.read(key: _deviceIdKey) ?? 
+          sodium.randombytes.buf(16).map((b) => b.toRadixString(16).padLeft(2, '0')).join();
+
+      await _storage.write(key: _seedKey, value: sanitizedMnemonic);
+      await _storage.write(key: _deviceIdKey, value: deviceId);
+      
+      // Write public flag to survive keyring lockouts
+      await _writePublicIdentityFlag();
+
+      _currentIdentity = Identity(
+        mnemonic: sanitizedMnemonic,
+        ed25519KeyPair: ed25519KeyPair,
+        x25519KeyPair: x25519KeyPair,
+        publicId: publicId,
+        fingerprint: fingerprint,
+        deviceId: deviceId,
+      );
+
+      return _currentIdentity!;
+    } catch (e, stack) {
+      print('GHOST_CRITICAL: restoreIdentity failed: $e');
+      print(stack);
+      rethrow;
     }
-
-    final seed = bip39.mnemonicToSeed(mnemonic);
-    final ed25519SeedBytes = seed.sublist(0, 32);
-    final ed25519Seed = SecureKey.fromList(sodium, ed25519SeedBytes);
-    
-    final ed25519KeyPair = sodium.crypto.sign.seedKeyPair(ed25519Seed);
-    
-    final x25519Pk = sodium.crypto.sign.pkToCurve25519(ed25519KeyPair.publicKey);
-    final x25519Sk = sodium.crypto.sign.skToCurve25519(ed25519KeyPair.secretKey);
-    final x25519KeyPair = KeyPair(publicKey: x25519Pk, secretKey: x25519Sk);
-
-    final publicId = derivePublicId(ed25519KeyPair.publicKey);
-    final fingerprint = calculateFingerprint(ed25519KeyPair.publicKey, x25519KeyPair.publicKey);
-
-    String deviceId = preservedDeviceId ?? 
-        await _storage.read(key: _deviceIdKey) ?? 
-        sodium.randombytes.buf(16).map((b) => b.toRadixString(16).padLeft(2, '0')).join();
-
-    await _storage.write(key: _seedKey, value: mnemonic);
-    await _storage.write(key: _deviceIdKey, value: deviceId);
-
-    _currentIdentity = Identity(
-      mnemonic: mnemonic,
-      ed25519KeyPair: ed25519KeyPair,
-      x25519KeyPair: x25519KeyPair,
-      publicId: publicId,
-      fingerprint: fingerprint,
-      deviceId: deviceId,
-    );
-
-    return _currentIdentity!;
   }
 
   String _canonicalJson(Map<String, dynamic> data) {
@@ -236,6 +332,7 @@ class IdentityService {
     await _storage.delete(key: 'device_public_key');
     await _storage.delete(key: 'signing_secret_key');
     await _storage.delete(key: 'signing_public_key');
+    await _clearPublicIdentityFlag();
     _currentIdentity = null;
   }
 

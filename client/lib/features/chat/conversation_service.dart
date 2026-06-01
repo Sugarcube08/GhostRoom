@@ -46,46 +46,70 @@ class ConversationService {
   );
 
   List<Conversation> getConversations() {
-    final Map<String, List<Message>> grouped = {};
-    for (final msg in _chatRepository.getAllMessages().where((m) => !m.isRequest)) {
-      final otherId = msg.senderId == _chatRepository.myPublicId ? msg.recipientId : msg.senderId;
-      grouped.putIfAbsent(otherId, () => []).add(msg);
+    final Map<String, Message> lastMessages = {};
+    final Map<String, int> unreadCounts = {};
+    
+    final myId = _chatRepository.myPublicId;
+
+    for (final msg in _chatRepository.getAllMessages()) {
+      if (msg.isRequest) continue;
+      
+      final otherId = msg.senderId == myId ? msg.recipientId : msg.senderId;
+      
+      // Update last message
+      final existingLast = lastMessages[otherId];
+      if (existingLast == null || msg.timestamp.isAfter(existingLast.timestamp)) {
+        lastMessages[otherId] = msg;
+      }
+
+      // Update unread count
+      if (!msg.isRead && msg.senderId == otherId) {
+        unreadCounts[otherId] = (unreadCounts[otherId] ?? 0) + 1;
+      }
     }
 
-    return grouped.entries.map((entry) {
+    return lastMessages.entries.map((entry) {
       final contactId = entry.key;
-      final messages = entry.value..sort((a, b) => a.timestamp.compareTo(b.timestamp));
-      final unreadCount = messages.where((m) => !m.isRead && m.senderId == contactId).length;
+      final lastMsg = entry.value;
       
       return Conversation(
         contact: _contactResolver.resolveContact(contactId),
         contactId: contactId,
         alias: _contactResolver.resolveAlias(contactId),
-        messages: messages,
-        lastMessage: messages.isNotEmpty ? messages.last : null,
-        unreadCount: unreadCount,
+        messages: [], // Don't load all messages here!
+        lastMessage: lastMsg,
+        unreadCount: unreadCounts[contactId] ?? 0,
       );
     }).toList()..sort((a, b) => (b.lastMessage?.timestamp ?? DateTime(0)).compareTo(a.lastMessage?.timestamp ?? DateTime(0)));
   }
 
   List<Conversation> getRequests() {
-    final Map<String, List<Message>> grouped = {};
-    for (final msg in _chatRepository.getAllMessages().where((m) => m.isRequest)) {
-      final otherId = msg.senderId == _chatRepository.myPublicId ? msg.recipientId : msg.senderId;
-      grouped.putIfAbsent(otherId, () => []).add(msg);
+    final Map<String, Message> lastMessages = {};
+    final Map<String, int> counts = {};
+    final myId = _chatRepository.myPublicId;
+
+    for (final msg in _chatRepository.getAllMessages()) {
+      if (!msg.isRequest) continue;
+      
+      final otherId = msg.senderId == myId ? msg.recipientId : msg.senderId;
+      
+      final existingLast = lastMessages[otherId];
+      if (existingLast == null || msg.timestamp.isAfter(existingLast.timestamp)) {
+        lastMessages[otherId] = msg;
+      }
+      counts[otherId] = (counts[otherId] ?? 0) + 1;
     }
 
-    return grouped.entries.map((entry) {
+    return lastMessages.entries.map((entry) {
       final contactId = entry.key;
-      final messages = entry.value..sort((a, b) => a.timestamp.compareTo(b.timestamp));
       
       return Conversation(
         contact: null,
         contactId: contactId,
         alias: _contactResolver.resolveAlias(contactId),
-        messages: messages,
-        lastMessage: messages.isNotEmpty ? messages.last : null,
-        unreadCount: messages.length, 
+        messages: [], 
+        lastMessage: entry.value,
+        unreadCount: counts[contactId] ?? 0, 
       );
     }).toList()..sort((a, b) => (b.lastMessage?.timestamp ?? DateTime(0)).compareTo(a.lastMessage?.timestamp ?? DateTime(0)));
   }

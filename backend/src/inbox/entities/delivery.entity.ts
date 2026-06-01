@@ -1,17 +1,17 @@
-import { Entity, Column, PrimaryColumn, UpdateDateColumn } from 'typeorm';
+import { Entity, Column, PrimaryColumn, UpdateDateColumn } from "typeorm";
 
-@Entity('message_delivery')
+@Entity("message_delivery")
 export class DeliveryEntity {
-  @PrimaryColumn('uuid')
+  @PrimaryColumn("uuid")
   message_id: string;
 
-  @Column('varchar')
+  @Column("varchar")
   recipient_id: string;
 
-  @Column('varchar', { nullable: true })
+  @Column("varchar", { nullable: true })
   sender_id: string;
 
-  @Column('varchar', { default: 'PENDING' })
+  @Column("varchar", { default: "PENDING" })
   status: string;
 
   @UpdateDateColumn()

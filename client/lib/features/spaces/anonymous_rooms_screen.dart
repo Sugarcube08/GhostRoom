@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:permission_handler/permission_handler.dart';
 import '../../core/providers.dart';
 import '../chat/chat_screen.dart';
 import '../invite/invite_screen.dart';
 import '../spaces/space_service.dart';
+import '../contacts/contact_actions.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:sodium/sodium.dart';
 import 'package:image_picker/image_picker.dart';
@@ -257,31 +259,30 @@ class AnonymousRoomsScreen extends ConsumerWidget {
     );
   }
 
-  void _joinSpace(BuildContext context, WidgetRef ref) {
-    bool detected = false;
-    Navigator.push(
+  void _joinSpace(BuildContext context, WidgetRef ref) async {
+    final status = await Permission.camera.request();
+    if (!status.isGranted) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Camera permission is required to scan invites.'))
+        );
+      }
+      return;
+    }
+
+    if (!context.mounted) return;
+    final code = await Navigator.push<String>(
       context,
-      MaterialPageRoute(
-        builder: (scannerContext) => Scaffold(
-          appBar: AppBar(title: const Text('SCAN INVITE')),
-          body: MobileScanner(
-            onDetect: (capture) async {
-              if (detected) return;
-              final List<Barcode> barcodes = capture.barcodes;
-              for (final barcode in barcodes) {
-                final code = barcode.rawValue;
-                if (code != null && code.startsWith('ghost://room/')) {
-                  detected = true;
-                  Navigator.pop(scannerContext);
-                  await _handleInviteLink(context, ref, code);
-                  break;
-                }
-              }
-            },
-          ),
-        ),
-      ),
+      MaterialPageRoute(builder: (_) => const QRScannerScreen()),
     );
+
+    if (code != null && code.startsWith('ghost://room/') && context.mounted) {
+      await _handleInviteLink(context, ref, code);
+    } else if (code != null && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Not a valid Ghost Room invite.')),
+      );
+    }
   }
 
   void _joinFromGallery(BuildContext context, WidgetRef ref) async {
@@ -291,27 +292,19 @@ class AnonymousRoomsScreen extends ConsumerWidget {
 
     final scanner = MobileScannerController();
     try {
-      final captureFuture = scanner.barcodes.first.timeout(
-        const Duration(seconds: 10),
-        onTimeout: () => throw Exception('Timeout waiting for barcode results'),
-      );
+      final capture = await scanner.analyzeImage(image.path);
       
-      final bool found = await scanner.analyzeImage(image.path);
-      
-      if (found) {
-        final BarcodeCapture capture = await captureFuture;
-        if (capture.barcodes.isNotEmpty) {
-          final code = capture.barcodes.first.rawValue;
-          if (code != null && code.startsWith('ghost://room/')) {
-            if (context.mounted) {
-              await _handleInviteLink(context, ref, code);
-            }
-          } else {
-            if (context.mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Not a valid Ghost Room invite.')),
-              );
-            }
+      if (capture != null && capture.barcodes.isNotEmpty) {
+        final code = capture.barcodes.first.rawValue;
+        if (code != null && code.startsWith('ghost://room/')) {
+          if (context.mounted) {
+            await _handleInviteLink(context, ref, code);
+          }
+        } else {
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Not a valid Ghost Room invite.')),
+            );
           }
         }
       } else {

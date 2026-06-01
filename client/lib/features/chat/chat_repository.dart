@@ -8,6 +8,7 @@ import '../../core/network/websocket_service.dart';
 import '../contacts/contact_service.dart';
 import 'dart:convert';
 import 'package:logger/logger.dart';
+import '../../core/stability_tracker.dart';
 
 class ChatRepository {
   final IdentityService _idService;
@@ -18,7 +19,7 @@ class ChatRepository {
 
   static const String _msgBoxName = 'messages';
   static const String _syncBoxName = 'sync_metadata';
-  static const String _processedIdsKey = 'processed_ids';
+  static const String _processedBoxName = 'processed_envelopes';
   static const String _lastSyncKey = 'last_sync_t';
 
   ChatRepository(this._idService, this._dmService, this._contactService, this._wsService);
@@ -26,27 +27,39 @@ class ChatRepository {
   String get myPublicId => _idService.currentIdentity?.publicId ?? '';
 
   Future<void> init() async {
+    StabilityTracker.logMemory('ChatRepo_Init_Start');
     if (!Hive.isAdapterRegistered(MessageTypeAdapter().typeId)) {
       Hive.registerAdapter(MessageTypeAdapter());
     }
     if (!Hive.isAdapterRegistered(MessageAdapter().typeId)) {
       Hive.registerAdapter(MessageAdapter());
     }
-    await Hive.openBox<Message>(_msgBoxName);
-    await Hive.openBox(_syncBoxName);
+    
+    if (!Hive.isBoxOpen(_msgBoxName)) {
+      await Hive.openBox<Message>(_msgBoxName);
+      StabilityTracker.logResource('HiveBox', 'Opened_$_msgBoxName');
+    }
+    if (!Hive.isBoxOpen(_syncBoxName)) {
+      await Hive.openBox(_syncBoxName);
+      StabilityTracker.logResource('HiveBox', 'Opened_$_syncBoxName');
+    }
+    if (!Hive.isBoxOpen(_processedBoxName)) {
+      await Hive.openBox(_processedBoxName);
+      StabilityTracker.logResource('HiveBox', 'Opened_$_processedBoxName');
+    }
+    StabilityTracker.logMemory('ChatRepo_Init_End');
   }
 
   Box<Message> get _msgBox => Hive.box<Message>(_msgBoxName);
   Box get _syncBox => Hive.box(_syncBoxName);
+  Box get _processedBox => Hive.box(_processedBoxName);
 
   int get lastSyncTimestamp => _syncBox.get(_lastSyncKey, defaultValue: 0);
   
-  Set<String> get processedIds => Set<String>.from(_syncBox.get(_processedIdsKey, defaultValue: []));
+  bool isProcessed(String id) => _processedBox.containsKey(id);
 
   Future<void> _markProcessed(String id, int timestamp) async {
-    final ids = processedIds;
-    ids.add(id);
-    await _syncBox.put(_processedIdsKey, ids.toList());
+    await _processedBox.put(id, true);
     
     if (timestamp > lastSyncTimestamp) {
       await _syncBox.put(_lastSyncKey, timestamp);
@@ -57,8 +70,9 @@ class ChatRepository {
     for (final data in envelopes) {
       try {
         final envelope = DMEnvelope.fromJson(data);
+        _logger.i('GHOST_LOG: MESSAGE_RECEIVED id: ${envelope.id}');
         
-        if (processedIds.contains(envelope.id)) {
+        if (isProcessed(envelope.id)) {
           _wsService.acknowledgeMessage(envelope.id);
           continue;
         }
@@ -69,6 +83,8 @@ class ChatRepository {
         String plaintext;
         Uint8List senderEid;
 
+        _logger.i('GHOST_LOG: DECRYPT_START');
+        _logger.i("MESSAGE_DECRYPT_START");
         // Try Signature-First (Known Contacts)
         final knownEid = _getSenderEid(envelope);
         if (knownEid != null) {
@@ -114,6 +130,9 @@ class ChatRepository {
             throw Exception('Invalid signature from unknown sender');
           }
         }
+        _logger.i('GHOST_LOG: DECRYPT_SUCCESS');
+        _logger.i("MESSAGE_DECRYPT_SUCCESS");
+        _logger.i("MESSAGE_DECRYPTED");
         
         final payload = jsonDecode(plaintext);
         final senderId = _idService.derivePublicId(senderEid);
@@ -156,10 +175,15 @@ class ChatRepository {
         );
 
         await _msgBox.put(message.id, message);
+        _logger.i("MESSAGE_SAVED_LOCAL");
+        _logger.i('GHOST_LOG: MESSAGE_RENDERED');
+        _logger.i("MESSAGE_RENDERED_UI");
+        _logger.i("MESSAGE_RENDERED");
         await _markProcessed(message.id, actualTimestamp);
         _wsService.acknowledgeMessage(message.id);
         
       } catch (e) {
+        _logger.e("MESSAGE_DECRYPT_FAILED");
         _logger.e('Error processing envelope: $e');
       }
     }
@@ -201,6 +225,7 @@ class ChatRepository {
     String retention = 'PERSISTENT',
     Map<String, dynamic>? metadata,
   }) async {
+    _logger.i('GHOST_LOG: SEND_START for recipient: $recipientId');
     final contact = _contactService.getContact(recipientId);
     if (contact == null) throw Exception('Contact not found');
     
@@ -221,11 +246,16 @@ class ChatRepository {
       recipientXid: base64Decode(contact.xid),
       senderIdentity: identity,
     );
+    _logger.i('GHOST_LOG: SEND_ENCRYPT_SUCCESS');
 
     _wsService.sendMessage(recipientId, {
       ...envelope.toJson(),
       'retention': retention,
-    }, version: 2);
+    }, version: 2, ack: (ackData) {
+      _logger.i('GHOST_LOG: SEND_ACK_RECEIVED');
+    });
+    _logger.i('GHOST_LOG: SEND_SOCKET_EMIT');
+    _logger.i("MESSAGE_SENT");
 
     final message = Message(
       id: envelope.id,
@@ -247,8 +277,8 @@ class ChatRepository {
       ..sort((a, b) => a.timestamp.compareTo(b.timestamp));
   }
 
-  List<Message> getAllMessages() {
-    return _msgBox.values.toList();
+  Iterable<Message> getAllMessages() {
+    return _msgBox.values;
   }
 
   Future<void> dangerouslyClearAll() async {

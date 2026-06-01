@@ -23,6 +23,7 @@ services:
       - R2_SECRET_ACCESS_KEY=minioadmin
       - R2_BUCKET_NAME=ghostroom-media
       - R2_ENDPOINT=http://minio:9000
+      - R2_PUBLIC_ENDPOINT=${R2_PUBLIC_ENDPOINT:-http://localhost:9000}
     command: npm run start:dev
     depends_on:
       - redis
@@ -35,7 +36,7 @@ services:
     image: redis:7-alpine
     ports:
       - "6379:6379"
-    command: ["redis-server", "--appendonly", "yes", "--notify-keyspace-events", "Ex"]
+    command: [ "redis-server", "--appendonly", "yes", "--notify-keyspace-events", "Ex" ]
     networks:
       - ghostroom_net
 
@@ -64,7 +65,7 @@ services:
       - minio_data:/data
     command: server /data --console-address ":9001"
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      test: [ "CMD", "curl", "-f", "http://localhost:9000/minio/health/live" ]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -78,12 +79,7 @@ services:
       minio:
         condition: service_healthy
     entrypoint: >
-      /bin/sh -c "
-      /usr/bin/mc alias set local http://minio:9000 minioadmin minioadmin;
-      /usr/bin/mc mb --ignore-existing local/ghostroom-media;
-      /usr/bin/mc anonymous set public local/ghostroom-media;
-      exit 0;
-      "
+      /bin/sh -c " /usr/bin/mc alias set local http://minio:9000 minioadmin minioadmin; /usr/bin/mc mb --ignore-existing local/ghostroom-media; /usr/bin/mc anonymous set public local/ghostroom-media; exit 0; "
     networks:
       - ghostroom_net
 

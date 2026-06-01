@@ -35,6 +35,13 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     debugPrint('GHOST_LOG: ChatScreen initState completed');
   }
 
+  @override
+  void dispose() {
+    ref.read(webSocketServiceProvider).clearRoomCallbacks();
+    _controller.dispose();
+    super.dispose();
+  }
+
   void _setupListeners() {
     debugPrint('GHOST_LOG: ChatScreen _setupListeners starting');
     final ws = ref.read(webSocketServiceProvider);

@@ -196,12 +196,14 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
       );
 
       if (result == null || result.files.single.path == null) return;
+      if (!context.mounted) return;
 
       final fileBytes = await File(result.files.single.path!).readAsBytes();
       
-      if (!mounted) return;
+      if (!context.mounted) return;
 
       final passController = TextEditingController();
+      if (!context.mounted) return;
       showDialog(
         context: context,
         builder: (dialogContext) => AlertDialog(
@@ -215,16 +217,16 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
             TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('CANCEL')),
             TextButton(
               onPressed: () async {
-                try {
-                  await ref.read(backupServiceProvider).importBackup(fileBytes, passController.text);
-                  if (mounted) {
-                    Navigator.pop(dialogContext);
-                    nav.pushReplacement(MaterialPageRoute(builder: (_) => const NavigationShell()));
-                  }
-                } catch (e) {
-                  ScaffoldMessenger.of(dialogContext).showSnackBar(SnackBar(content: Text('Decryption failed: $e')));
-                }
-              },
+              try {
+                await ref.read(backupServiceProvider).importBackup(fileBytes, passController.text);
+                if (!context.mounted) return;
+                
+                Navigator.pop(dialogContext);
+                nav.pushReplacement(MaterialPageRoute(builder: (_) => const NavigationShell()));
+              } catch (e) {
+                ScaffoldMessenger.of(dialogContext).showSnackBar(SnackBar(content: Text('Decryption failed: $e')));
+              }
+            },
               child: const Text('IMPORT'),
             ),
           ],
@@ -261,75 +263,94 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
     );
   }
 
+  Widget _makeScrollable({required Widget child}) {
+    return LayoutBuilder(
+      builder: (context, constraints) => SingleChildScrollView(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(minHeight: constraints.maxHeight),
+          child: IntrinsicHeight(
+            child: child,
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildWelcome() {
-    return Padding(
-      padding: const EdgeInsets.all(40.0),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Image.asset('assets/images/banner.png', height: 100),
-          const SizedBox(height: 48),
-          const Text(
-            'GhostRoom',
-            style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold, letterSpacing: 2),
-          ),
-          const SizedBox(height: 24),
-          const Text(
-            'No phone number.\nNo email.\nTotal privacy.',
-            textAlign: TextAlign.center,
-            style: TextStyle(color: Colors.white, fontSize: 18, height: 1.5, fontWeight: FontWeight.w300),
-          ),
-          const Spacer(),
-          ElevatedButton(
-            onPressed: _nextPage,
-            style: ElevatedButton.styleFrom(
-              minimumSize: const Size(double.infinity, 60),
-              backgroundColor: Colors.white,
-              foregroundColor: Colors.black,
+    return _makeScrollable(
+      child: Padding(
+        padding: const EdgeInsets.all(40.0),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const SizedBox(height: 24),
+            Image.asset('assets/images/banner.png', height: 100),
+            const SizedBox(height: 48),
+            const Text(
+              'GhostRoom',
+              style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold, letterSpacing: 2),
             ),
-            child: const Text('GET STARTED'),
-          ),
-          const SizedBox(height: 16),
-          TextButton(
-            onPressed: _restoreFromSeed,
-            child: const Text('RESTORE FROM SEED', style: TextStyle(color: Colors.white24, letterSpacing: 1, fontSize: 11)),
-          ),
-          TextButton(
-            onPressed: _restoreFromBackup,
-            child: const Text('RESTORE FROM BACKUP', style: TextStyle(color: Colors.white24, letterSpacing: 1, fontSize: 11)),
-          ),
-          const SizedBox(height: 24),
-        ],
+            const SizedBox(height: 24),
+            const Text(
+              'No phone number.\nNo email.\nTotal privacy.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Colors.white, fontSize: 18, height: 1.5, fontWeight: FontWeight.w300),
+            ),
+            const Spacer(),
+            const SizedBox(height: 48),
+            ElevatedButton(
+              onPressed: _nextPage,
+              style: ElevatedButton.styleFrom(
+                minimumSize: const Size(double.infinity, 60),
+                backgroundColor: Colors.white,
+                foregroundColor: Colors.black,
+              ),
+              child: const Text('GET STARTED'),
+            ),
+            const SizedBox(height: 16),
+            TextButton(
+              onPressed: _restoreFromSeed,
+              child: const Text('RESTORE FROM SEED', style: TextStyle(color: Colors.white24, letterSpacing: 1, fontSize: 11)),
+            ),
+            TextButton(
+              onPressed: _restoreFromBackup,
+              child: const Text('RESTORE FROM BACKUP', style: TextStyle(color: Colors.white24, letterSpacing: 1, fontSize: 11)),
+            ),
+            const SizedBox(height: 24),
+          ],
+        ),
       ),
     );
   }
 
   Widget _buildSovereignty() {
-    return Padding(
-      padding: const EdgeInsets.all(40.0),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          const Icon(Icons.key_outlined, size: 80, color: Colors.blueAccent),
-          const SizedBox(height: 48),
-          const Text(
-            'Your identity lives\non your device.',
-            textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 24),
-          const Text(
-            'Only you control your keys.\nOnly you control your data.',
-            textAlign: TextAlign.center,
-            style: TextStyle(color: Colors.white54, height: 1.6),
-          ),
-          const Spacer(),
-          ElevatedButton(
-            onPressed: _nextPage,
-            style: ElevatedButton.styleFrom(minimumSize: const Size(double.infinity, 60)),
-            child: const Text('CONTINUE'),
-          ),
-        ],
+    return _makeScrollable(
+      child: Padding(
+        padding: const EdgeInsets.all(40.0),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.key_outlined, size: 80, color: Colors.blueAccent),
+            const SizedBox(height: 48),
+            const Text(
+              'Your identity lives\non your device.',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 24),
+            const Text(
+              'Only you control your keys.\nOnly you control your data.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Colors.white54, height: 1.6),
+            ),
+            const Spacer(),
+            ElevatedButton(
+              onPressed: _nextPage,
+              style: ElevatedButton.styleFrom(minimumSize: const Size(double.infinity, 60)),
+              child: const Text('CONTINUE'),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -360,48 +381,52 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
   }
 
   Widget _buildSecurityWarning() {
-    return Padding(
-      padding: const EdgeInsets.all(40.0),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          const Icon(Icons.warning_amber_rounded, size: 80, color: Colors.amber),
-          const SizedBox(height: 32),
-          const Text(
-            'Recovery is your\nresponsibility.',
-            textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 24),
-          const Text(
-            'If you lose your seed phrase and backup file, nobody can recover your identity. There is no "Forgot Password".',
-            textAlign: TextAlign.center,
-            style: TextStyle(color: Colors.white54, height: 1.6),
-          ),
-          const Spacer(),
-          ElevatedButton(
-            onPressed: _nextPage,
-            style: ElevatedButton.styleFrom(minimumSize: const Size(double.infinity, 60)),
-            child: const Text('I UNDERSTAND'),
-          ),
-        ],
+    return _makeScrollable(
+      child: Padding(
+        padding: const EdgeInsets.all(40.0),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.warning_amber_rounded, size: 80, color: Colors.amber),
+            const SizedBox(height: 32),
+            const Text(
+              'Recovery is your\nresponsibility.',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 24),
+            const Text(
+              'If you lose your seed phrase and backup file, nobody can recover your identity. There is no "Forgot Password".',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Colors.white54, height: 1.6),
+            ),
+            const Spacer(),
+            ElevatedButton(
+              onPressed: _nextPage,
+              style: ElevatedButton.styleFrom(minimumSize: const Size(double.infinity, 60)),
+              child: const Text('I UNDERSTAND'),
+            ),
+          ],
+        ),
       ),
     );
   }
 
   Widget _buildSeedReveal() {
     final words = _mnemonic?.split(' ') ?? [];
-    return Padding(
-      padding: const EdgeInsets.all(24.0),
-      child: Column(
-        children: [
-          const SizedBox(height: 24),
-          const Text('RECOVERY SEED', style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 2)),
-          const SizedBox(height: 8),
-          const Text('Write these 24 words down in order.', style: TextStyle(color: Colors.white24, fontSize: 12)),
-          const SizedBox(height: 32),
-          Expanded(
-            child: GridView.builder(
+    return _makeScrollable(
+      child: Padding(
+        padding: const EdgeInsets.all(24.0),
+        child: Column(
+          children: [
+            const SizedBox(height: 24),
+            const Text('RECOVERY SEED', style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 2)),
+            const SizedBox(height: 8),
+            const Text('Write these 24 words down in order.', style: TextStyle(color: Colors.white24, fontSize: 12)),
+            const SizedBox(height: 32),
+            GridView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
               gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                 crossAxisCount: 3,
                 childAspectRatio: 2.5,
@@ -422,178 +447,187 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                 ),
               ),
             ),
-          ),
-          const SizedBox(height: 24),
-          ElevatedButton(
-            onPressed: _nextPage,
-            style: ElevatedButton.styleFrom(minimumSize: const Size(double.infinity, 60)),
-            child: const Text('I HAVE WRITTEN IT DOWN'),
-          ),
-        ],
+            const Spacer(),
+            const SizedBox(height: 24),
+            ElevatedButton(
+              onPressed: _nextPage,
+              style: ElevatedButton.styleFrom(minimumSize: const Size(double.infinity, 60)),
+              child: const Text('I HAVE WRITTEN IT DOWN'),
+            ),
+          ],
+        ),
       ),
     );
   }
 
   Widget _buildSeedVerification() {
-    return Padding(
-      padding: const EdgeInsets.all(32.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text('VERIFY SEED', style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 2)),
-          const SizedBox(height: 8),
-          const Text('Confirm a few words to ensure you have them.', style: TextStyle(color: Colors.white24, fontSize: 12)),
-          const SizedBox(height: 48),
-          ..._verificationIndices.map((idx) => Padding(
-            padding: const EdgeInsets.only(bottom: 24.0),
-            child: TextField(
-              onChanged: (val) => _verificationAnswers[idx] = val,
-              style: const TextStyle(fontFamily: 'monospace'),
-              decoration: InputDecoration(
-                labelText: 'Word #${idx + 1}',
-                border: const OutlineInputBorder(),
+    return _makeScrollable(
+      child: Padding(
+        padding: const EdgeInsets.all(32.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('VERIFY SEED', style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 2)),
+            const SizedBox(height: 8),
+            const Text('Confirm a few words to ensure you have them.', style: TextStyle(color: Colors.white24, fontSize: 12)),
+            const SizedBox(height: 48),
+            ..._verificationIndices.map((idx) => Padding(
+              padding: const EdgeInsets.only(bottom: 24.0),
+              child: TextField(
+                onChanged: (val) => _verificationAnswers[idx] = val,
+                style: const TextStyle(fontFamily: 'monospace'),
+                decoration: InputDecoration(
+                  labelText: 'Word #${idx + 1}',
+                  border: const OutlineInputBorder(),
+                ),
               ),
+            )),
+            const Spacer(),
+            ElevatedButton(
+              onPressed: _verifyAndProceed,
+              style: ElevatedButton.styleFrom(minimumSize: const Size(double.infinity, 60)),
+              child: const Text('VERIFY'),
             ),
-          )),
-          const Spacer(),
-          ElevatedButton(
-            onPressed: _verifyAndProceed,
-            style: ElevatedButton.styleFrom(minimumSize: const Size(double.infinity, 60)),
-            child: const Text('VERIFY'),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
 
   Widget _buildInitialBackup() {
-    return Padding(
-      padding: const EdgeInsets.all(40.0),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          const Icon(Icons.backup_outlined, size: 80, color: Colors.blueAccent),
-          const SizedBox(height: 32),
-          const Text(
-            'Secure Backup',
-            textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 24),
-          const Text(
-            'Create an encrypted backup file to migrate your contacts and settings later.',
-            textAlign: TextAlign.center,
-            style: TextStyle(color: Colors.white54, height: 1.6),
-          ),
-          const Spacer(),
-          if (!_backupSaved)
-            ElevatedButton(
-              onPressed: _saveBackup,
-              style: ElevatedButton.styleFrom(minimumSize: const Size(double.infinity, 60)),
-              child: const Text('SAVE ENCRYPTED BACKUP'),
-            )
-          else
-            Column(
-              children: [
-                const Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(Icons.check_circle, color: Colors.green),
-                    SizedBox(width: 8),
-                    Text('Backup Created', style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold)),
-                  ],
-                ),
-                const SizedBox(height: 32),
-                ElevatedButton(
-                  onPressed: _nextPage,
-                  style: ElevatedButton.styleFrom(minimumSize: const Size(double.infinity, 60)),
-                  child: const Text('CONTINUE'),
-                ),
-              ],
+    return _makeScrollable(
+      child: Padding(
+        padding: const EdgeInsets.all(40.0),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.backup_outlined, size: 80, color: Colors.blueAccent),
+            const SizedBox(height: 32),
+            const Text(
+              'Secure Backup',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
             ),
-          const SizedBox(height: 16),
-          if (!_backupSaved)
-            TextButton(
-              onPressed: _nextPage, 
-              child: const Text('SKIP FOR NOW', style: TextStyle(color: Colors.white10))
+            const SizedBox(height: 24),
+            const Text(
+              'Create an encrypted backup file to migrate your contacts and settings later.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Colors.white54, height: 1.6),
             ),
-        ],
+            const Spacer(),
+            if (!_backupSaved)
+              ElevatedButton(
+                onPressed: _saveBackup,
+                style: ElevatedButton.styleFrom(minimumSize: const Size(double.infinity, 60)),
+                child: const Text('SAVE ENCRYPTED BACKUP'),
+              )
+            else
+              Column(
+                children: [
+                  const Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.check_circle, color: Colors.green),
+                      SizedBox(width: 8),
+                      Text('Backup Created', style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold)),
+                    ],
+                  ),
+                  const SizedBox(height: 32),
+                  ElevatedButton(
+                    onPressed: _nextPage,
+                    style: ElevatedButton.styleFrom(minimumSize: const Size(double.infinity, 60)),
+                    child: const Text('CONTINUE'),
+                  ),
+                ],
+              ),
+            const SizedBox(height: 16),
+            if (!_backupSaved)
+              TextButton(
+                onPressed: _nextPage, 
+                child: const Text('SKIP FOR NOW', style: TextStyle(color: Colors.white10))
+              ),
+          ],
+        ),
       ),
     );
   }
 
   Widget _buildRecoveryDrill() {
-    return Padding(
-      padding: const EdgeInsets.all(32.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text('RECOVERY DRILL', style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 2, color: Colors.blueAccent)),
-          const SizedBox(height: 8),
-          const Text('Final check. Can you restore your identity?', style: TextStyle(color: Colors.white70, fontSize: 13)),
-          const SizedBox(height: 48),
-          const Text(
-            'Imagine you lost your device. You need your seed phrase now.',
-            style: TextStyle(color: Colors.white24, fontSize: 12),
-          ),
-          const SizedBox(height: 32),
-          ..._drillIndices.map((idx) => Padding(
-            padding: const EdgeInsets.only(bottom: 24.0),
-            child: TextField(
-              onChanged: (val) => _drillAnswers[idx] = val,
-              style: const TextStyle(fontFamily: 'monospace'),
-              decoration: InputDecoration(
-                labelText: 'Word #${idx + 1}',
-                border: const OutlineInputBorder(),
-                focusedBorder: const OutlineInputBorder(borderSide: BorderSide(color: Colors.blueAccent)),
+    return _makeScrollable(
+      child: Padding(
+        padding: const EdgeInsets.all(32.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('RECOVERY DRILL', style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 2, color: Colors.blueAccent)),
+            const SizedBox(height: 8),
+            const Text('Final check. Can you restore your identity?', style: TextStyle(color: Colors.white70, fontSize: 13)),
+            const SizedBox(height: 48),
+            const Text(
+              'Imagine you lost your device. You need your seed phrase now.',
+              style: TextStyle(color: Colors.white24, fontSize: 12),
+            ),
+            const SizedBox(height: 32),
+            ..._drillIndices.map((idx) => Padding(
+              padding: const EdgeInsets.only(bottom: 24.0),
+              child: TextField(
+                onChanged: (val) => _drillAnswers[idx] = val,
+                style: const TextStyle(fontFamily: 'monospace'),
+                decoration: InputDecoration(
+                  labelText: 'Word #${idx + 1}',
+                  border: const OutlineInputBorder(),
+                  focusedBorder: const OutlineInputBorder(borderSide: BorderSide(color: Colors.blueAccent)),
+                ),
               ),
+            )),
+            const Spacer(),
+            ElevatedButton(
+              onPressed: _verifyDrillAndProceed,
+              style: ElevatedButton.styleFrom(
+                minimumSize: const Size(double.infinity, 60),
+                backgroundColor: Colors.blueAccent,
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('FINISH DRILL'),
             ),
-          )),
-          const Spacer(),
-          ElevatedButton(
-            onPressed: _verifyDrillAndProceed,
-            style: ElevatedButton.styleFrom(
-              minimumSize: const Size(double.infinity, 60),
-              backgroundColor: Colors.blueAccent,
-              foregroundColor: Colors.white,
-            ),
-            child: const Text('FINISH DRILL'),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
 
   Widget _buildSuccess() {
-    return Padding(
-      padding: const EdgeInsets.all(40.0),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          const Icon(Icons.verified_user_outlined, size: 80, color: Colors.green),
-          const SizedBox(height: 32),
-          const Text(
-            'Vault Active',
-            textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 24),
-          const Text(
-            'Your identity is secured and backed up.\nYou are ready to communicate.',
-            textAlign: TextAlign.center,
-            style: TextStyle(color: Colors.white54, height: 1.5),
-          ),
-          const Spacer(),
-          ElevatedButton(
-            onPressed: _completeOnboarding,
-            style: ElevatedButton.styleFrom(
-              minimumSize: const Size(double.infinity, 60),
-              backgroundColor: Colors.white,
-              foregroundColor: Colors.black,
+    return _makeScrollable(
+      child: Padding(
+        padding: const EdgeInsets.all(40.0),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.verified_user_outlined, size: 80, color: Colors.green),
+            const SizedBox(height: 32),
+            const Text(
+              'Vault Active',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
             ),
-            child: const Text('ENTER GHOSTROOM'),
-          ),
-        ],
+            const SizedBox(height: 24),
+            const Text(
+              'Your identity is secured and backed up.\nYou are ready to communicate.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Colors.white54, height: 1.5),
+            ),
+            const Spacer(),
+            ElevatedButton(
+              onPressed: _completeOnboarding,
+              style: ElevatedButton.styleFrom(
+                minimumSize: const Size(double.infinity, 60),
+                backgroundColor: Colors.white,
+                foregroundColor: Colors.black,
+              ),
+              child: const Text('ENTER GHOSTROOM'),
+            ),
+          ],
+        ),
       ),
     );
   }

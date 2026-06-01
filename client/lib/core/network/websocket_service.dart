@@ -4,25 +4,40 @@ import 'package:logger/logger.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers.dart';
 import 'dart:convert';
+import '../stability_tracker.dart';
 
 class WebSocketService {
   final Ref _ref;
   final Logger _logger = Logger();
   io.Socket? _socket;
   bool _isAuthenticated = false;
+  bool _isConnecting = false;
+  String? _activeUrl;
+
+  // Persistent callback registry to survive socket replacement
+  final Map<String, dynamic> _callbacks = {};
 
   WebSocketService(this._ref);
 
   bool get isConnected => _socket?.connected ?? false;
   bool get isAuthenticated => _isAuthenticated;
 
-  void connect(RelayProfile profile) {
-    if (_socket != null) {
-      _socket!.disconnect();
-      _socket!.dispose();
-    }
+  DateTime? _lastConnectAttempt;
+  static const _minConnectInterval = Duration(seconds: 3);
 
-    _isAuthenticated = false;
+  void connect(RelayProfile profile) async {
+    final now = DateTime.now();
+    if (_lastConnectAttempt != null && now.difference(_lastConnectAttempt!) < _minConnectInterval) {
+      _logger.d('WebSocket connection attempt throttled for ${profile.label}');
+      return;
+    }
+    _lastConnectAttempt = now;
+
+    if (_isConnecting) {
+      _logger.d('WebSocket connection already in progress for ${profile.label}');
+      StabilityTracker.logEvent('WS_Connect_Skipped_Busy');
+      return;
+    }
 
     // Ensure the URL is in a format socket_io_client likes
     String connectionUrl = profile.websocketUrl;
@@ -32,22 +47,55 @@ class WebSocketService {
       connectionUrl = connectionUrl.replaceFirst('wss://', 'https://');
     }
 
-    _socket = io.io(
-      connectionUrl,
-      io.OptionBuilder()
-          .setTransports(['websocket'])
-          .enableAutoConnect()
-          .enableForceNew()
-          .setExtraHeaders(
-            profile.token != null
-                ? {'Authorization': 'Bearer ${profile.token}'}
-                : {},
-          )
-          .build(),
-    );
+    if (_socket != null && _socket!.connected && _activeUrl == connectionUrl) {
+      _logger.d('Already connected to ${profile.label}');
+      return;
+    }
+
+    _logger.i('Connecting to relay: ${profile.label} ($connectionUrl)');
+    StabilityTracker.logEvent('WS_Connecting', data: {'relay': profile.label});
+    _isConnecting = true;
+
+    try {
+      if (_socket != null) {
+        _logger.i('Disposing existing socket before new connection');
+        _socket!.dispose();
+        _socket = null;
+      }
+
+      _isAuthenticated = false;
+
+      _socket = io.io(
+        connectionUrl,
+        io.OptionBuilder()
+            .setTransports(['websocket'])
+            .enableAutoConnect()
+            .enableForceNew() // Ensure a fresh instance
+            .setExtraHeaders(
+              profile.token != null
+                  ? {'Authorization': 'Bearer ${profile.token}'}
+                  : {},
+            )
+            .build(),
+      );
+
+      _activeUrl = connectionUrl;
+      _setupInternalListeners(profile);
+      
+    } catch (e) {
+      _logger.e('Failed to initiate WebSocket connection: $e');
+    } finally {
+      _isConnecting = false;
+    }
+  }
+
+  void _setupInternalListeners(RelayProfile profile) {
+    if (_socket == null) return;
 
     _socket!.onConnect((_) {
       _logger.i('Connected to relay: ${profile.label}');
+      _logger.i("SOCKET_CONNECTED");
+      StabilityTracker.logEvent('WS_Connected');
     });
 
     _socket!.on('identity.challenge', (data) async {
@@ -77,6 +125,52 @@ class WebSocketService {
     _socket!.on('identity.verified', (data) {
       _isAuthenticated = true;
       _logger.i('Identity verified by relay: ${data['public_id']}');
+      try {
+        final lastSync = _ref.read(chatRepositoryProvider).lastSyncTimestamp;
+        _logger.i("GHOST_LOG: INBOX_FETCH since $lastSync");
+        fetchInbox(since: lastSync);
+      } catch (e) {
+        _logger.e('Failed to auto-fetch inbox after verification: $e');
+      }
+    });
+
+    _socket!.on('message.receive', (data) {
+      _logger.i("GHOST_LOG: MESSAGE_RECEIVED_CLIENT");
+      
+      if (data != null && data['v'] == 2) {
+        try {
+          _ref.read(chatRepositoryProvider).processEnvelopes([data]);
+        } catch (e) {
+          _logger.e('Failed to process real-time V2 envelope: $e');
+        }
+      }
+
+      final callback = _callbacks['message.receive'];
+      if (callback != null) {
+        callback(data);
+      }
+    });
+
+    _socket!.on('inbox.messages', (data) {
+      final callback = _callbacks['inbox.messages'];
+      if (callback != null) {
+        final messages = data['messages'] as List<dynamic>? ?? [];
+        callback(messages);
+      }
+    });
+
+    _socket!.on('space.history', (data) {
+      final callback = _callbacks['space.history'];
+      if (callback != null) {
+        callback(data);
+      }
+    });
+
+    _socket!.on('space.expired', (data) {
+      final callback = _callbacks['space.expired'];
+      if (callback != null) {
+        callback(data);
+      }
     });
 
     _socket!.onDisconnect((reason) {
@@ -118,37 +212,47 @@ class WebSocketService {
     _socket?.emit('message.ack', {'message_id': messageId});
   }
 
-  void sendMessage(String targetId, Map<String, dynamic> payload, {int version = 1}) {
-    _socket?.emit('message.send', {
+  void sendMessage(String targetId, Map<String, dynamic> payload, {int version = 1, Function(dynamic)? ack}) {
+    final Map<String, dynamic> data = {
       'target_id': targetId,
       'v': version,
       ...payload
-    });
+    };
+    if (ack != null) {
+      _socket?.emitWithAck('message.send', data, ack: (response) {
+        ack(response);
+      });
+    } else {
+      _socket?.emit('message.send', data);
+    }
   }
 
   void onInboxMessages(Function(List<dynamic>) callback) {
-    _socket?.off('inbox.messages');
-    _socket?.on('inbox.messages', (data) {
-      callback(data['messages'] as List<dynamic>);
-    });
+    _callbacks['inbox.messages'] = callback;
   }
 
   void onMessage(Function(dynamic) callback) {
-    _socket?.off('message.receive');
-    _socket?.on('message.receive', (data) => callback(data));
+    _callbacks['message.receive'] = callback;
   }
 
   void onHistory(Function(dynamic) callback) {
-    _socket?.off('space.history');
-    _socket?.on('space.history', (data) => callback(data));
+    _callbacks['space.history'] = callback;
   }
 
   void onSpaceExpired(Function(dynamic) callback) {
-    _socket?.off('space.expired');
-    _socket?.on('space.expired', (data) => callback(data));
+    _callbacks['space.expired'] = callback;
+  }
+
+  void clearRoomCallbacks() {
+    _callbacks.remove('message.receive');
+    _callbacks.remove('space.history');
+    _callbacks.remove('space.expired');
   }
 
   void disconnect() {
     _socket?.disconnect();
+    _socket?.dispose();
+    _socket = null;
+    _isAuthenticated = false;
   }
 }

@@ -7,10 +7,12 @@ import 'package:chewie/chewie.dart';
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:path_provider/path_provider.dart';
+import 'package:hive_flutter/hive_flutter.dart';
 import '../../core/providers.dart';
 import 'conversation_service.dart';
 import 'message.dart';
 import '../media/attachment_envelope.dart';
+import '../contacts/contact_actions.dart';
 
 final conversationsProvider = Provider<List<Conversation>>((ref) {
   return ref.watch(conversationServiceProvider).getConversations();
@@ -20,114 +22,89 @@ final requestsProvider = Provider<List<Conversation>>((ref) {
   return ref.watch(conversationServiceProvider).getRequests();
 });
 
-class ChatsScreen extends ConsumerWidget {
+class ChatsScreen extends ConsumerStatefulWidget {
   const ChatsScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final conversations = ref.watch(conversationsProvider);
+  ConsumerState<ChatsScreen> createState() => _ChatsScreenState();
+}
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('MESSAGES'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.person_add_alt_1_outlined),
-            onPressed: () => _showAddContactOptions(context, ref),
+class _ChatsScreenState extends ConsumerState<ChatsScreen> with ContactActions {
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder(
+      valueListenable: Hive.box<Message>('messages').listenable(),
+      builder: (context, _, __) {
+        final conversations = ref.watch(conversationsProvider);
+
+        return Scaffold(
+          appBar: AppBar(
+            title: const Text('MESSAGES'),
+            actions: [
+              IconButton(
+                icon: const Icon(Icons.person_add_alt_1_outlined),
+                onPressed: () => showAddOptions(context),
+              ),
+            ],
           ),
-        ],
-      ),
-      body: conversations.isEmpty
-          ? _buildEmptyState()
-          : ListView.builder(
-              itemCount: conversations.length,
-              itemBuilder: (context, index) {
-                final conv = conversations[index];
-                return ListTile(
-                  leading: CircleAvatar(
-                    backgroundColor: Colors.white10,
-                    child: Text(conv.alias.isNotEmpty ? conv.alias[0].toUpperCase() : '?'),
-                  ),
-                  title: Text(conv.alias),
-                  subtitle: Text(
-                    conv.lastMessage?.plaintext ?? 'No messages',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: conv.unreadCount > 0 ? Colors.white70 : Colors.white24,
-                      fontWeight: conv.unreadCount > 0 ? FontWeight.bold : FontWeight.normal,
-                    ),
-                  ),
-                  trailing: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      if (conv.lastMessage != null)
-                        Text(
-                          DateFormat.Hm().format(conv.lastMessage!.timestamp),
-                          style: const TextStyle(fontSize: 10, color: Colors.white24),
-                        ),
-                      if (conv.unreadCount > 0)
-                        Container(
-                          margin: const EdgeInsets.only(top: 4),
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: Colors.redAccent,
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: Text(
-                            conv.unreadCount.toString(),
-                            style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold),
-                          ),
-                        ),
-                    ],
-                  ),
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => ConversationScreen(conversation: conv),
+          body: conversations.isEmpty
+              ? _buildEmptyState()
+              : ListView.builder(
+                  itemCount: conversations.length,
+                  itemBuilder: (context, index) {
+                    final conv = conversations[index];
+                    return ListTile(
+                      leading: CircleAvatar(
+                        backgroundColor: Colors.white10,
+                        child: Text(conv.alias.isNotEmpty ? conv.alias[0].toUpperCase() : '?'),
                       ),
+                      title: Text(conv.alias),
+                      subtitle: Text(
+                        conv.lastMessage?.plaintext ?? 'No messages',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: conv.unreadCount > 0 ? Colors.white70 : Colors.white24,
+                          fontWeight: conv.unreadCount > 0 ? FontWeight.bold : FontWeight.normal,
+                        ),
+                      ),
+                      trailing: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          if (conv.lastMessage != null)
+                            Text(
+                              DateFormat.Hm().format(conv.lastMessage!.timestamp),
+                              style: const TextStyle(fontSize: 10, color: Colors.white24),
+                            ),
+                          if (conv.unreadCount > 0)
+                            Container(
+                              margin: const EdgeInsets.only(top: 4),
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: Colors.redAccent,
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: Text(
+                                conv.unreadCount.toString(),
+                                style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold),
+                              ),
+                            ),
+                        ],
+                      ),
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => ConversationScreen(conversation: conv),
+                          ),
+                        );
+                      },
                     );
                   },
-                );
-              },
-            ),
-    );
-  }
-
-  void _showAddContactOptions(BuildContext context, WidgetRef ref) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: const Color(0xFF121212),
-      builder: (context) => Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const SizedBox(height: 16),
-          ListTile(
-            leading: const Icon(Icons.qr_code_scanner),
-            title: const Text('SCAN QR CODE'),
-            onTap: () {
-              Navigator.pop(context);
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.paste),
-            title: const Text('PASTE IDENTITY PACKAGE'),
-            onTap: () {
-              Navigator.pop(context);
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.input),
-            title: const Text('ENTER PUBLIC ID'),
-            onTap: () {
-              Navigator.pop(context);
-            },
-          ),
-          const SizedBox(height: 16),
-        ],
-      ),
+                ),
+        );
+      },
     );
   }
 
@@ -159,72 +136,77 @@ class RequestsScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final requests = ref.watch(requestsProvider);
+    return ValueListenableBuilder(
+      valueListenable: Hive.box<Message>('messages').listenable(),
+      builder: (context, _, __) {
+        final requests = ref.watch(requestsProvider);
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('REQUESTS'),
-      ),
-      body: requests.isEmpty
-          ? const Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.mail_lock_outlined, size: 64, color: Colors.white10),
-                  SizedBox(height: 16),
-                  Text('No pending requests.', style: TextStyle(color: Colors.white24)),
-                  SizedBox(height: 8),
-                  Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 48),
-                    child: Text(
-                      'Unknown senders appear here before entering your inbox.',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(color: Colors.white10, fontSize: 12),
-                    ),
-                  ),
-                ],
-              ),
-            )
-          : ListView.builder(
-              itemCount: requests.length,
-              itemBuilder: (context, index) {
-                final req = requests[index];
-                return Dismissible(
-                  key: Key(req.contactId),
-                  background: _buildDismissBackground(Colors.green, Icons.check, Alignment.centerLeft),
-                  secondaryBackground: _buildDismissBackground(Colors.red, Icons.block, Alignment.centerRight),
-                  confirmDismiss: (direction) async {
-                    if (direction == DismissDirection.startToEnd) {
-                      await ref.read(conversationServiceProvider).acceptRequest(req.contactId);
-                      return true;
-                    } else {
-                      await ref.read(conversationServiceProvider).blockRequest(req.contactId);
-                      return true;
-                    }
-                  },
-                  child: ListTile(
-                    leading: const CircleAvatar(
-                      backgroundColor: Colors.white10,
-                      child: Icon(Icons.person_outline, color: Colors.white54),
-                    ),
-                    title: const Text('Unknown Sender'),
-                    subtitle: Text(
-                      req.lastMessage?.plaintext ?? '',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => ConversationScreen(conversation: req, isRequestMode: true),
+        return Scaffold(
+          appBar: AppBar(
+            title: const Text('REQUESTS'),
+          ),
+          body: requests.isEmpty
+              ? const Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.mail_lock_outlined, size: 64, color: Colors.white10),
+                      SizedBox(height: 16),
+                      Text('No pending requests.', style: TextStyle(color: Colors.white24)),
+                      SizedBox(height: 8),
+                      Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 48),
+                        child: Text(
+                          'Unknown senders appear here before entering your inbox.',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(color: Colors.white10, fontSize: 12),
                         ),
-                      );
-                    },
+                      ),
+                    ],
                   ),
-                );
-              },
-            ),
+                )
+              : ListView.builder(
+                  itemCount: requests.length,
+                  itemBuilder: (context, index) {
+                    final req = requests[index];
+                    return Dismissible(
+                      key: Key(req.contactId),
+                      background: _buildDismissBackground(Colors.green, Icons.check, Alignment.centerLeft),
+                      secondaryBackground: _buildDismissBackground(Colors.red, Icons.block, Alignment.centerRight),
+                      confirmDismiss: (direction) async {
+                        if (direction == DismissDirection.startToEnd) {
+                          await ref.read(conversationServiceProvider).acceptRequest(req.contactId);
+                          return true;
+                        } else {
+                          await ref.read(conversationServiceProvider).blockRequest(req.contactId);
+                          return true;
+                        }
+                      },
+                      child: ListTile(
+                        leading: const CircleAvatar(
+                          backgroundColor: Colors.white10,
+                          child: Icon(Icons.person_outline, color: Colors.white54),
+                        ),
+                        title: const Text('Unknown Sender'),
+                        subtitle: Text(
+                          req.lastMessage?.plaintext ?? '',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => ConversationScreen(conversation: req, isRequestMode: true),
+                            ),
+                          );
+                        },
+                      ),
+                    );
+                  },
+                ),
+        );
+      },
     );
   }
 
@@ -328,41 +310,46 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final messages = ref.watch(chatRepositoryProvider).getMessagesForContact(widget.conversation.contactId);
+    return ValueListenableBuilder(
+      valueListenable: Hive.box<Message>('messages').listenable(),
+      builder: (context, _, __) {
+        final messages = ref.watch(chatRepositoryProvider).getMessagesForContact(widget.conversation.contactId);
 
-    return Scaffold(
-      appBar: AppBar(
-        title: GestureDetector(
-          onTap: () => _showSafetyNumbers(context),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(widget.conversation.alias),
-              Text(
-                'TAP TO VERIFY IDENTITY',
-                style: const TextStyle(fontSize: 8, color: Colors.blueAccent, fontWeight: FontWeight.bold),
+        return Scaffold(
+          appBar: AppBar(
+            title: GestureDetector(
+              onTap: () => _showSafetyNumbers(context),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(widget.conversation.alias),
+                  Text(
+                    'TAP TO VERIFY IDENTITY',
+                    style: const TextStyle(fontSize: 8, color: Colors.blueAccent, fontWeight: FontWeight.bold),
+                  ),
+                ],
               ),
-            ],
-          ),
-        ),
-      ),
-      body: Column(
-        children: [
-          Expanded(
-            child: ListView.builder(
-              controller: _scrollController,
-              padding: const EdgeInsets.all(16),
-              itemCount: messages.length,
-              itemBuilder: (context, index) {
-                final msg = messages[index];
-                final isMe = msg.senderId == ref.read(chatRepositoryProvider).myPublicId;
-                return _buildMessageBubble(msg, isMe);
-              },
             ),
           ),
-          widget.isRequestMode ? _buildRequestActions() : _buildInput(),
-        ],
-      ),
+          body: Column(
+            children: [
+              Expanded(
+                child: ListView.builder(
+                  controller: _scrollController,
+                  padding: const EdgeInsets.all(16),
+                  itemCount: messages.length,
+                  itemBuilder: (context, index) {
+                    final msg = messages[index];
+                    final isMe = msg.senderId == ref.read(chatRepositoryProvider).myPublicId;
+                    return _buildMessageBubble(msg, isMe);
+                  },
+                ),
+              ),
+              widget.isRequestMode ? _buildRequestActions() : _buildInput(),
+            ],
+          ),
+        );
+      },
     );
   }
 
@@ -811,7 +798,7 @@ class _VideoPreview extends StatefulWidget {
 }
 
 class _VideoPreviewState extends State<_VideoPreview> {
-  late VideoPlayerController _controller;
+  VideoPlayerController? _controller;
   ChewieController? _chewieController;
   File? _tempFile;
 
@@ -822,27 +809,44 @@ class _VideoPreviewState extends State<_VideoPreview> {
   }
 
   void _initPlayer() async {
-    final tempDir = await getTemporaryDirectory();
-    _tempFile = File('${tempDir.path}/${DateTime.now().microsecondsSinceEpoch}.mp4');
-    await _tempFile!.writeAsBytes(widget.data);
+    try {
+      final tempDir = await getTemporaryDirectory();
+      if (!mounted) return;
 
-    _controller = VideoPlayerController.file(_tempFile!);
-    await _controller.initialize();
+      final tempFile = File('${tempDir.path}/${DateTime.now().microsecondsSinceEpoch}.mp4');
+      _tempFile = tempFile;
+      await tempFile.writeAsBytes(widget.data);
+      if (!mounted) {
+        _tempFile?.delete().catchError((_) => null);
+        return;
+      }
 
-    _chewieController = ChewieController(
-      videoPlayerController: _controller,
-      autoPlay: true,
-      looping: false,
-      aspectRatio: _controller.value.aspectRatio,
-    );
-    if (mounted) setState(() {});
+      final controller = VideoPlayerController.file(tempFile);
+      _controller = controller;
+      await controller.initialize();
+      if (!mounted) {
+        controller.dispose();
+        _tempFile?.delete().catchError((_) => null);
+        return;
+      }
+
+      _chewieController = ChewieController(
+        videoPlayerController: controller,
+        autoPlay: true,
+        looping: false,
+        aspectRatio: controller.value.aspectRatio,
+      );
+      if (mounted) setState(() {});
+    } catch (e) {
+      debugPrint('GHOST_ERROR: _VideoPreview _initPlayer failed: $e');
+    }
   }
 
   @override
   void dispose() {
-    _controller.dispose();
+    _controller?.dispose();
     _chewieController?.dispose();
-    _tempFile?.delete();
+    _tempFile?.delete().catchError((_) => null);
     super.dispose();
   }
 

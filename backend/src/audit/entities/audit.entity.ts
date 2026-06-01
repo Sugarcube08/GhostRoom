@@ -1,16 +1,21 @@
-import { Entity, Column, PrimaryGeneratedColumn, CreateDateColumn } from 'typeorm';
+import {
+  Entity,
+  Column,
+  PrimaryGeneratedColumn,
+  CreateDateColumn,
+} from "typeorm";
 
-@Entity('relay_audit')
+@Entity("relay_audit")
 export class AuditEntity {
-  @PrimaryGeneratedColumn('uuid')
+  @PrimaryGeneratedColumn("uuid")
   id: string;
 
-  @Column('varchar')
+  @Column("varchar")
   event_type: string;
 
   @CreateDateColumn()
   created_at: Date;
 
-  @Column('jsonb', { nullable: true })
+  @Column("jsonb", { nullable: true })
   metadata: Record<string, any>;
 }

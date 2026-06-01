@@ -1,12 +1,12 @@
-import { Injectable, Inject, Logger } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, MoreThan, IsNull, LessThan } from 'typeorm';
-import { Cron, CronExpression } from '@nestjs/schedule';
-import { ConfigService } from '@nestjs/config';
-import Redis from 'ioredis';
-import { v4 as uuidv4 } from 'uuid';
-import { MessageEntity } from './entities/message.entity';
-import { DeliveryEntity } from './entities/delivery.entity';
+import { Injectable, Inject, Logger } from "@nestjs/common";
+import { InjectRepository } from "@nestjs/typeorm";
+import { Repository, MoreThan, IsNull, LessThan } from "typeorm";
+import { Cron, CronExpression } from "@nestjs/schedule";
+import { ConfigService } from "@nestjs/config";
+import Redis from "ioredis";
+import { v4 as uuidv4 } from "uuid";
+import { MessageEntity } from "./entities/message.entity";
+import { DeliveryEntity } from "./entities/delivery.entity";
 
 export interface MessageEnvelope {
   id: string;
@@ -23,45 +23,59 @@ export interface MessageEnvelope {
 export class InboxService {
   private readonly logger = new Logger(InboxService.name);
   private readonly INBOX_TTL = 14 * 24 * 60 * 60; // 14 days for cache
-  
+
   private readonly INBOX_MAX_MESSAGES: number;
   private readonly PAIR_PENDING_MAX: number;
 
   constructor(
     private readonly configService: ConfigService,
-    @Inject('REDIS_CLIENT') private readonly redis: Redis,
+    @Inject("REDIS_CLIENT") private readonly redis: Redis,
     @InjectRepository(MessageEntity)
     private readonly messageRepo: Repository<MessageEntity>,
     @InjectRepository(DeliveryEntity)
     private readonly deliveryRepo: Repository<DeliveryEntity>,
   ) {
-    this.INBOX_MAX_MESSAGES = parseInt(this.configService.get<string>('INBOX_MAX_MESSAGES') || '5000');
-    this.PAIR_PENDING_MAX = parseInt(this.configService.get<string>('PAIR_PENDING_MAX') || '50');
+    this.INBOX_MAX_MESSAGES = parseInt(
+      this.configService.get<string>("INBOX_MAX_MESSAGES") || "5000",
+    );
+    this.PAIR_PENDING_MAX = parseInt(
+      this.configService.get<string>("PAIR_PENDING_MAX") || "50",
+    );
   }
 
-  async queueMessage(publicId: string, payload: any, senderId?: string): Promise<MessageEnvelope> {
+  async queueMessage(
+    publicId: string,
+    payload: any,
+    senderId?: string,
+  ): Promise<MessageEnvelope> {
     // Enforcement 1: Global Inbox Cap
     const pendingCount = await this.deliveryRepo.count({
-      where: { recipient_id: publicId, status: 'PENDING' },
+      where: { recipient_id: publicId, status: "PENDING" },
     });
     if (pendingCount >= this.INBOX_MAX_MESSAGES) {
-      throw new Error('capacity_exceeded: Recipient inbox is full');
+      throw new Error("capacity_exceeded: Recipient inbox is full");
     }
 
     // Enforcement 2: Sender-Recipient Pair Cap
     if (senderId) {
       const pairCount = await this.deliveryRepo.count({
-        where: { recipient_id: publicId, sender_id: senderId, status: 'PENDING' },
+        where: {
+          recipient_id: publicId,
+          sender_id: senderId,
+          status: "PENDING",
+        },
       });
       if (pairCount >= this.PAIR_PENDING_MAX) {
-        throw new Error('capacity_exceeded: Max pending messages for this sender-recipient pair reached');
+        throw new Error(
+          "capacity_exceeded: Max pending messages for this sender-recipient pair reached",
+        );
       }
     }
 
     const messageId = payload.id || uuidv4();
     const timestamp = Date.now();
-    const retentionMode = payload.retention || 'PERSISTENT';
-    
+    const retentionMode = payload.retention || "PERSISTENT";
+
     const envelope: MessageEnvelope = {
       id: messageId,
       t: timestamp,
@@ -74,9 +88,9 @@ export class InboxService {
     };
 
     let expiresAt: Date | null = null;
-    if (retentionMode === 'EPHEMERAL') {
+    if (retentionMode === "EPHEMERAL") {
       expiresAt = new Date(timestamp + 30 * 24 * 60 * 60 * 1000); // 30 days
-    } else if (retentionMode === 'VIEW_ONCE') {
+    } else if (retentionMode === "VIEW_ONCE") {
       expiresAt = new Date(timestamp + 24 * 60 * 60 * 1000); // 24h fallback
     }
     // PERSISTENT mode now has null expiresAt (unlimited)
@@ -96,11 +110,13 @@ export class InboxService {
         message_id: messageId,
         recipient_id: publicId,
         sender_id: senderId,
-        status: 'PENDING',
+        status: "PENDING",
       });
       await this.deliveryRepo.save(deliveryEntity);
-      
-      this.logger.log(`Audit: Message ${messageId} queued for ${publicId} (Mode: ${retentionMode})`);
+
+      this.logger.log(
+        `Audit: Message ${messageId} queued for ${publicId} (Mode: ${retentionMode})`,
+      );
     } catch (e: any) {
       this.logger.error(`Failed to save message to Postgres: ${e?.message}`);
       throw e;
@@ -120,26 +136,30 @@ export class InboxService {
     return envelope;
   }
 
-  async fetchMessages(publicId: string, since: number = 0): Promise<MessageEnvelope[]> {
+  async fetchMessages(
+    publicId: string,
+    since: number = 0,
+  ): Promise<MessageEnvelope[]> {
     try {
       const messages = await this.messageRepo.find({
         where: [
           {
             recipient_id: publicId,
-            delivered_at: IsNull(), // Fetch unread
+            delivered_at: IsNull(),
           },
           {
             recipient_id: publicId,
-            created_at: MoreThan(new Date(since)), // Or fetch since timestamp for sync
-          }
+            created_at: MoreThan(new Date(since)),
+          },
         ],
         order: {
-          created_at: 'ASC',
+          created_at: "ASC",
         },
+        take: 500, // Limit to prevent OOM on client
       });
 
       if (messages.length > 0) {
-        return messages.map(m => m.envelope as MessageEnvelope);
+        return messages.map((m) => m.envelope as MessageEnvelope);
       }
     } catch (e: any) {
       this.logger.error(`Postgres fetch failed: ${e?.message}`);
@@ -150,23 +170,28 @@ export class InboxService {
 
   async acknowledgeMessage(publicId: string, messageId: string): Promise<void> {
     try {
-      const message = await this.messageRepo.findOne({ where: { id: messageId } });
+      const message = await this.messageRepo.findOne({
+        where: { id: messageId },
+      });
       if (!message) return;
 
-      if (message.retention_mode === 'VIEW_ONCE') {
+      if (message.retention_mode === "VIEW_ONCE") {
         // Immediate deletion
         await this.messageRepo.delete(messageId);
       } else {
         // Mark as delivered
         message.delivered_at = new Date();
-        if (message.retention_mode === 'EPHEMERAL') {
+        if (message.retention_mode === "EPHEMERAL") {
           // Update expiry to 30 days from now if not already set or shorter
           message.expires_at = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
         }
         await this.messageRepo.save(message);
       }
 
-      await this.deliveryRepo.update({ message_id: messageId }, { status: 'ACKNOWLEDGED' });
+      await this.deliveryRepo.update(
+        { message_id: messageId },
+        { status: "ACKNOWLEDGED" },
+      );
     } catch (e: any) {
       this.logger.error(`Failed to ACK message in Postgres: ${e?.message}`);
     }

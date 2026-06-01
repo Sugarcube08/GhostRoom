@@ -8,12 +8,7 @@ import { MetricsService } from "./metrics.service";
 import { HealthController } from "./health.controller";
 
 @Module({
-  imports: [
-    RoomsModule, 
-    InboxModule, 
-    MediaModule,
-    AuditModule,
-  ],
+  imports: [RoomsModule, InboxModule, MediaModule, AuditModule],
   controllers: [HealthController],
   providers: [RelayGateway, MetricsService],
   exports: [MetricsService],
