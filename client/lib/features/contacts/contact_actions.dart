@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'dart:convert';
 import '../../core/providers.dart';
@@ -41,6 +42,33 @@ mixin ContactActions<T extends ConsumerStatefulWidget> on ConsumerState<T> {
             onTap: () {
               Navigator.pop(context);
               openScanner(context);
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.photo_library_outlined),
+            title: const Text('IMPORT FROM GALLERY'),
+            onTap: () async {
+              Navigator.pop(context);
+              final picker = ImagePicker();
+              final image = await picker.pickImage(source: ImageSource.gallery);
+              if (image == null) return;
+              
+              final scanner = MobileScannerController();
+              final capture = await scanner.analyzeImage(image.path);
+              
+              if (capture != null && capture.barcodes.isNotEmpty) {
+                final result = capture.barcodes.first.rawValue;
+                if (result != null && context.mounted) {
+                  processScannedData(context, result);
+                  return;
+                }
+              }
+
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('No valid Identity QR found in image.'))
+                );
+              }
             },
           ),
           ListTile(
@@ -194,11 +222,31 @@ class QRScannerScreen extends StatefulWidget {
 class _QRScannerScreenState extends State<QRScannerScreen> {
   final MobileScannerController controller = MobileScannerController();
   bool _isStopping = false;
+  bool _hasError = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _startScanner();
+  }
+
+  Future<void> _startScanner() async {
+    try {
+      await controller.start();
+    } catch (e) {
+      debugPrint('GHOST_ERROR: MobileScanner failed to start: $e');
+      if (mounted) setState(() => _hasError = true);
+    }
+  }
 
   Future<void> _stopAndPop([String? result]) async {
     if (_isStopping) return;
     _isStopping = true;
-    await controller.stop();
+    try {
+      await controller.stop();
+    } catch (e) {
+      debugPrint('GHOST_ERROR: MobileScanner failed to stop: $e');
+    }
     if (mounted) {
       Navigator.of(context).pop(result);
     }
@@ -212,6 +260,23 @@ class _QRScannerScreenState extends State<QRScannerScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (_hasError) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('SCAN ERROR')),
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.error_outline, color: Colors.redAccent, size: 48),
+              const SizedBox(height: 16),
+              const Text('Camera failed to initialize.'),
+              TextButton(onPressed: () => Navigator.pop(context), child: const Text('CLOSE')),
+            ],
+          ),
+        ),
+      );
+    }
+
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (bool didPop, Object? result) async {
@@ -219,23 +284,41 @@ class _QRScannerScreenState extends State<QRScannerScreen> {
         await _stopAndPop(result as String?);
       },
       child: Scaffold(
+        backgroundColor: Colors.black,
         appBar: AppBar(
           title: const Text('SCAN PASSPORT'),
+          backgroundColor: Colors.transparent,
+          elevation: 0,
           leading: BackButton(
             onPressed: () => _stopAndPop(),
           ),
         ),
-        body: MobileScanner(
-          controller: controller,
-          onDetect: (capture) async {
-            final List<Barcode> barcodes = capture.barcodes;
-            for (final barcode in barcodes) {
-              if (barcode.rawValue != null) {
-                await _stopAndPop(barcode.rawValue);
-                break;
-              }
-            }
-          },
+        body: Stack(
+          children: [
+            MobileScanner(
+              controller: controller,
+              onDetect: (capture) async {
+                final List<Barcode> barcodes = capture.barcodes;
+                for (final barcode in barcodes) {
+                  if (barcode.rawValue != null) {
+                    await _stopAndPop(barcode.rawValue);
+                    break;
+                  }
+                }
+              },
+            ),
+            // Scanner Overlay
+            Center(
+              child: Container(
+                width: 250,
+                height: 250,
+                decoration: BoxDecoration(
+                  border: Border.all(color: Colors.blueAccent.withAlpha(100), width: 2),
+                  borderRadius: BorderRadius.circular(24),
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );

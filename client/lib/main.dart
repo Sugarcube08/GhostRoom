@@ -13,6 +13,10 @@ import 'dart:async';
 import 'dart:io';
 import 'features/chat/chat_screens.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:app_links/app_links.dart';
+import 'dart:convert';
+import 'core/crypto/identity_service.dart';
+import 'features/contacts/contact_actions.dart';
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
@@ -77,11 +81,82 @@ class GhostApp extends ConsumerStatefulWidget {
   ConsumerState<GhostApp> createState() => _GhostAppState();
 }
 
-class _GhostAppState extends ConsumerState<GhostApp> with WidgetsBindingObserver {
+class _GhostAppState extends ConsumerState<GhostApp> with WidgetsBindingObserver, ContactActions {
+  late AppLinks _appLinks;
+  StreamSubscription<Uri>? _linkSubscription;
+
+  void _initDeepLinks() {
+    _appLinks = AppLinks();
+    _linkSubscription = _appLinks.uriLinkStream.listen((uri) {
+      _handleDeepLink(uri);
+    });
+    
+    // Check for initial link
+    _appLinks.getInitialLink().then((uri) {
+      if (uri != null) _handleDeepLink(uri);
+    });
+  }
+
+  void _handleDeepLink(Uri uri) {
+    debugPrint('GHOST_LOG: Handling deep link: $uri');
+    if (uri.scheme == 'ghostroom' && uri.host == 'identity') {
+      final payload = uri.pathSegments.isNotEmpty ? uri.pathSegments.first : null;
+      if (payload != null) {
+        // Find the current navigator state and show a preview dialog
+        final context = navigatorKey.currentContext;
+        if (context != null && context.mounted) {
+          Future.microtask(() {
+            if (context.mounted) _showDeepLinkPreview(context, payload);
+          });
+        }
+      }
+    }
+  }
+
+  void _showDeepLinkPreview(BuildContext context, String payload) {
+    try {
+      final pkg = IdentityPackage.fromEncodedString(payload);
+      final idService = ref.read(identityServiceProvider);
+      final eidBytes = base64Decode(pkg.eid);
+      final publicId = idService.derivePublicId(eidBytes);
+
+      showDialog(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          backgroundColor: const Color(0xFF121212),
+          title: const Text('NEW IDENTITY LINK'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('An identity package was shared via deep link.', style: TextStyle(color: Colors.white54)),
+              const SizedBox(height: 16),
+              Text(publicId, style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.blueAccent)),
+              const SizedBox(height: 8),
+              const Text('Would you like to view and add this contact?', style: TextStyle(fontSize: 12)),
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('CANCEL')),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.pop(dialogContext);
+                processScannedData(context, payload);
+              }, 
+              child: const Text('ADD CONTACT')
+            ),
+          ],
+        ),
+      );
+    } catch (e) {
+      debugPrint('GHOST_ERROR: Failed to parse deep link payload: $e');
+    }
+  }
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _initDeepLinks();
 
     Future.microtask(() {
       final notifService = ref.read(notificationServiceProvider);
@@ -111,6 +186,7 @@ class _GhostAppState extends ConsumerState<GhostApp> with WidgetsBindingObserver
 
   @override
   void dispose() {
+    _linkSubscription?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }

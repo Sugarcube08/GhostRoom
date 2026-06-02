@@ -5,11 +5,9 @@ part 'conversation_state.g.dart';
 @HiveType(typeId: 3)
 enum ConversationMode {
   @HiveField(0)
-  persistent,
+  normal,
   @HiveField(1)
-  ephemeral,
-  @HiveField(2)
-  viewOnce,
+  ghost,
 }
 
 @HiveType(typeId: 4)
@@ -31,7 +29,7 @@ class ConversationState extends HiveObject {
 
   ConversationState({
     required this.contactId,
-    this.mode = ConversationMode.persistent,
+    this.mode = ConversationMode.normal,
     required this.lastChangedBy,
     required this.lastChangedAt,
     required this.lastActivityAt,

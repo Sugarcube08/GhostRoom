@@ -444,6 +444,7 @@ class ContactDetailScreen extends ConsumerWidget {
                       contactId: contact.publicId,
                       alias: contact.alias,
                       messages: [],
+                      lastActivityAt: DateTime.now(),
                     );
                     Navigator.push(
                       context,

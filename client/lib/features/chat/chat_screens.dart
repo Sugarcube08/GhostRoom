@@ -27,16 +27,7 @@ Widget _buildSubtitle(Conversation conv) {
   String text = conv.lastMessage?.plaintext ?? 'No messages';
   bool isSystem = conv.lastMessage?.type == MessageType.system;
   
-  if (isSystem) {
-    final systemType = conv.lastMessage?.metadata?['system_type'];
-    if (systemType == 'mode_change') {
-      final modeIndex = conv.lastMessage?.metadata?['mode'] as int?;
-      final modeName = modeIndex != null ? ConversationMode.values[modeIndex].name.toUpperCase() : 'UNKNOWN';
-      text = 'Conversation mode changed to $modeName';
-    } else if (systemType == 'receipt') {
-      text = 'Message consumed';
-    }
-  } else if (conv.lastMessage?.type == MessageType.image) {
+  if (conv.lastMessage?.type == MessageType.image) {
     text = '[Image]';
   } else if (conv.lastMessage?.type == MessageType.video) {
     text = '[Video]';
@@ -332,14 +323,18 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
 
   @override
   void dispose() {
-    // Purge any viewed VIEW_ONCE messages for this contact when leaving the screen
     final contactId = widget.conversation.contactId;
-    Future.microtask(() {
+    Future.microtask(() async {
       final messages = ref.read(chatRepositoryProvider).getMessagesForContact(contactId);
+      bool didDeleteGhost = false;
       for (final msg in messages) {
-        if (msg.isRead && msg.metadata?['retention'] == 'VIEW_ONCE') {
-          msg.delete();
+        if (msg.metadata?['is_ghost'] == true) {
+          await msg.delete();
+          didDeleteGhost = true;
         }
+      }
+      if (didDeleteGhost) {
+        await ref.read(chatRepositoryProvider).sendGhostFlush(contactId);
       }
     });
     _controller.dispose();
@@ -358,7 +353,7 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
     );
   }
 
-  void _pickMedia({bool viewOnce = false}) async {
+  void _pickMedia() async {
     final messenger = ScaffoldMessenger.of(context);
     
     showModalBottomSheet(
@@ -369,25 +364,17 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
         children: [
           ListTile(
             leading: const Icon(Icons.image_outlined),
-            title: Text(viewOnce ? 'VIEW-ONCE PHOTO' : 'PHOTO'),
+            title: const Text('PHOTO'),
             onTap: () async {
               Navigator.pop(context);
               final XFile? image = await _picker.pickImage(source: ImageSource.gallery);
               if (image == null || !mounted) return;
               messenger.showSnackBar(const SnackBar(content: Text('Encrypting & Uploading...')));
               try {
-                if (viewOnce) {
-                  // Explicit view-once media sends override conversation mode
-                  await ref.read(conversationServiceProvider).sendImage(
-                    widget.conversation.contactId, 
-                    File(image.path),
-                  );
-                } else {
-                  await ref.read(conversationServiceProvider).sendImage(
-                    widget.conversation.contactId, 
-                    File(image.path),
-                  );
-                }
+                await ref.read(conversationServiceProvider).sendImage(
+                  widget.conversation.contactId, 
+                  File(image.path),
+                );
               } catch (e) {
                 if (mounted) messenger.showSnackBar(SnackBar(content: Text('Upload failed: $e')));
               }
@@ -395,7 +382,7 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
           ),
           ListTile(
             leading: const Icon(Icons.video_library_outlined),
-            title: Text(viewOnce ? 'VIEW-ONCE VIDEO' : 'VIDEO'),
+            title: const Text('VIDEO'),
             onTap: () async {
               Navigator.pop(context);
               final XFile? video = await _picker.pickVideo(source: ImageSource.gallery);
@@ -422,13 +409,12 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
       valueListenable: Hive.box<ConversationState>('conversation_states').listenable(keys: [widget.conversation.contactId]),
       builder: (context, Box<ConversationState> stateBox, _) {
         final state = stateBox.get(widget.conversation.contactId);
-        final currentMode = state?.mode ?? ConversationMode.persistent;
+        final currentMode = state?.mode ?? ConversationMode.normal;
         
         // Detect remote change for highlight
         if (state != null && state.lastChangedBy != ref.read(chatRepositoryProvider).myPublicId) {
           if (_lastRemoteChange == null || state.lastChangedAt.isAfter(_lastRemoteChange!)) {
             _lastRemoteChange = state.lastChangedAt;
-            // Trigger haptic or just visual highlight logic
           }
         }
 
@@ -436,6 +422,22 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
           valueListenable: Hive.box<Message>('messages').listenable(),
           builder: (context, _, _) {
             final messages = ref.watch(chatRepositoryProvider).getMessagesForContact(widget.conversation.contactId);
+
+            // Auto-scroll logic
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (_scrollController.hasClients) {
+                final pos = _scrollController.position;
+                final atBottom = pos.pixels >= pos.maxScrollExtent - 100;
+                
+                if (atBottom) {
+                  _scrollController.animateTo(
+                    pos.maxScrollExtent,
+                    duration: const Duration(milliseconds: 200),
+                    curve: Curves.easeOut,
+                  );
+                }
+              }
+            });
 
             return Scaffold(
               appBar: AppBar(
@@ -580,10 +582,10 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
                   DateFormat.Hm().format(msg.timestamp),
                   style: const TextStyle(fontSize: 8, color: Colors.white24),
                 ),
-                if (msg.metadata?['retention'] != null && msg.metadata?['retention'] != 'PERSISTENT') ...[
+                if (msg.metadata?['is_ghost'] == true) ...[
                   const SizedBox(width: 4),
-                  Icon(
-                    msg.metadata?['retention'] == 'VIEW_ONCE' ? Icons.visibility_off_outlined : Icons.timer_outlined,
+                  const Icon(
+                    Icons.visibility_off_outlined,
                     size: 8,
                     color: Colors.white24,
                   ),
@@ -618,7 +620,7 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            _buildRetentionSelector(currentMode, state),
+            _buildModeSelector(currentMode, state),
             Row(
               children: [
                 IconButton(
@@ -654,15 +656,12 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
     );
   }
 
-  Widget _buildRetentionSelector(ConversationMode currentMode, ConversationState? state) {
-    IconData icon = Icons.history;
-    String label = 'PERSISTENT';
-    if (currentMode == ConversationMode.ephemeral) {
-      icon = Icons.timer_outlined;
-      label = '30 DAYS';
-    } else if (currentMode == ConversationMode.viewOnce) {
+  Widget _buildModeSelector(ConversationMode currentMode, ConversationState? state) {
+    IconData icon = Icons.chat_bubble_outline;
+    String label = 'NORMAL';
+    if (currentMode == ConversationMode.ghost) {
       icon = Icons.visibility_off_outlined;
-      label = 'VIEW ONCE';
+      label = 'GHOST';
     }
 
     final isRemoteChange = state != null && 
@@ -672,7 +671,7 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
     return Padding(
       padding: const EdgeInsets.only(bottom: 8.0),
       child: GestureDetector(
-        onTap: _showRetentionOptions,
+        onTap: _showModeOptions,
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 500),
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
@@ -703,7 +702,7 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
     );
   }
 
-  void _showRetentionOptions() {
+  void _showModeOptions() {
     showModalBottomSheet(
       context: context,
       backgroundColor: const Color(0xFF121212),
@@ -711,31 +710,21 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
         mainAxisSize: MainAxisSize.min,
         children: [
           ListTile(
-            leading: const Icon(Icons.history),
-            title: const Text('PERSISTENT'),
-            subtitle: const Text('Kept in mailbox until acknowledged'),
+            leading: const Icon(Icons.chat_bubble_outline),
+            title: const Text('NORMAL'),
+            subtitle: const Text('Standard encrypted chat'),
             onTap: () async {
-              await ref.read(conversationServiceProvider).setConversationMode(widget.conversation.contactId, ConversationMode.persistent);
-              if (!context.mounted) return;
-              Navigator.pop(context);
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.timer_outlined),
-            title: const Text('EPHEMERAL'),
-            subtitle: const Text('Auto-delete after 30 days'),
-            onTap: () async {
-              await ref.read(conversationServiceProvider).setConversationMode(widget.conversation.contactId, ConversationMode.ephemeral);
+              await ref.read(conversationServiceProvider).setConversationMode(widget.conversation.contactId, ConversationMode.normal);
               if (!context.mounted) return;
               Navigator.pop(context);
             },
           ),
           ListTile(
             leading: const Icon(Icons.visibility_off_outlined),
-            title: const Text('VIEW ONCE'),
-            subtitle: const Text('Immediate deletion upon reading'),
+            title: const Text('GHOST'),
+            subtitle: const Text('Messages vanish when chat is closed'),
             onTap: () async {
-              await ref.read(conversationServiceProvider).setConversationMode(widget.conversation.contactId, ConversationMode.viewOnce);
+              await ref.read(conversationServiceProvider).setConversationMode(widget.conversation.contactId, ConversationMode.ghost);
               if (!context.mounted) return;
               Navigator.pop(context);
             },
@@ -767,23 +756,6 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
             onTap: () {
               Navigator.pop(context);
               _pickMedia();
-            },
-          ),
-          const Divider(color: Colors.white10),
-          ListTile(
-            leading: const Icon(Icons.visibility_off_outlined, color: Colors.amber),
-            title: const Text('SEND VIEW-ONCE PHOTO', style: TextStyle(color: Colors.amber)),
-            onTap: () {
-              Navigator.pop(context);
-              _pickMedia(viewOnce: true);
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.videocam_off_outlined, color: Colors.amber),
-            title: const Text('SEND VIEW-ONCE VIDEO', style: TextStyle(color: Colors.amber)),
-            onTap: () {
-              Navigator.pop(context);
-              _pickMedia(viewOnce: true);
             },
           ),
           const SizedBox(height: 16),
@@ -878,7 +850,7 @@ class _AttachmentWidgetState extends ConsumerState<AttachmentWidget> {
 
     final meta = widget.message.metadata;
     final sizeStr = meta?['size'] != null ? '${((meta!['size'] as int) / 1024 / 1024).toStringAsFixed(1)} MB' : '';
-    final isViewOnce = meta?['retention'] == 'VIEW_ONCE';
+    final isGhost = meta?['is_ghost'] == true;
 
     return Container(
       width: 200,
@@ -889,7 +861,7 @@ class _AttachmentWidgetState extends ConsumerState<AttachmentWidget> {
         image: _thumbData != null ? DecorationImage(
           image: MemoryImage(_thumbData!),
           fit: BoxFit.cover,
-          opacity: isViewOnce ? 0.1 : 0.3,
+          opacity: isGhost ? 0.1 : 0.3,
         ) : null,
       ),
       child: Stack(
@@ -900,7 +872,7 @@ class _AttachmentWidgetState extends ConsumerState<AttachmentWidget> {
                 : Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      if (isViewOnce)
+                      if (isGhost)
                         const Padding(
                           padding: EdgeInsets.only(bottom: 8.0),
                           child: Icon(Icons.visibility_off_outlined, color: Colors.amber, size: 24),
@@ -910,15 +882,15 @@ class _AttachmentWidgetState extends ConsumerState<AttachmentWidget> {
                           widget.message.type == MessageType.video 
                             ? Icons.play_circle_outline 
                             : Icons.download_for_offline_outlined, 
-                          color: isViewOnce ? Colors.amber : Colors.white70,
+                          color: isGhost ? Colors.amber : Colors.white70,
                           size: 32,
                         ),
                         onPressed: _download,
                       ),
                       Text(
-                        '${isViewOnce ? 'VIEW ONCE ' : ''}${widget.message.type.name.toUpperCase()} $sizeStr',
+                        '${isGhost ? 'GHOST ' : ''}${widget.message.type.name.toUpperCase()} $sizeStr',
                         style: TextStyle(
-                          color: isViewOnce ? Colors.amber.withAlpha(100) : Colors.white30, 
+                          color: isGhost ? Colors.amber.withAlpha(100) : Colors.white30, 
                           fontSize: 9, 
                           fontWeight: FontWeight.bold
                         ),
@@ -930,7 +902,7 @@ class _AttachmentWidgetState extends ConsumerState<AttachmentWidget> {
             Positioned(
               bottom: 8,
               right: 8,
-              child: Icon(Icons.videocam_outlined, size: 16, color: isViewOnce ? Colors.amber.withAlpha(100) : Colors.white24),
+              child: Icon(Icons.videocam_outlined, size: 16, color: isGhost ? Colors.amber.withAlpha(100) : Colors.white24),
             ),
         ],
       ),

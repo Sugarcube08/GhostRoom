@@ -72,34 +72,8 @@ class ChatRepository {
     _wsService.onMessage(_handleNewMessage);
     _wsService.onInboxMessages(_handleInboxMessages);
     
-    // Run cleanup tasks
-    _cleanupEphemeralMessages();
-    
     _logger.i('GHOST_LOG: ChatRepository initialized and listeners registered.');
     StabilityTracker.logMemory('ChatRepo_Init_End');
-  }
-
-  void _cleanupEphemeralMessages() {
-    final now = DateTime.now();
-    final expiredThreshold = now.subtract(const Duration(days: 30));
-    
-    int deletedCount = 0;
-    final keysToDelete = <dynamic>[];
-
-    for (final key in _msgBox.keys) {
-      final msg = _msgBox.get(key);
-      if (msg != null && msg.metadata?['retention'] == 'EPHEMERAL') {
-        if (msg.timestamp.isBefore(expiredThreshold)) {
-          keysToDelete.add(key);
-          deletedCount++;
-        }
-      }
-    }
-
-    if (keysToDelete.isNotEmpty) {
-      _msgBox.deleteAll(keysToDelete);
-      _logger.i('GHOST_LOG: EPHEMERAL_CLEANUP purged $deletedCount messages.');
-    }
   }
 
   void _handleIdentityVerified(dynamic data) {
@@ -271,6 +245,18 @@ class ChatRepository {
               await _stateBox.put(senderId, state);
               _logger.i('Conversation mode for $senderId changed to ${newMode.name} by partner.');
             }
+          } else if (systemType == 'ghost_flush') {
+            final keysToDelete = <dynamic>[];
+            for (final key in _msgBox.keys) {
+              final m = _msgBox.get(key);
+              if (m != null && m.metadata?['is_ghost'] == true && (m.senderId == senderId || m.recipientId == senderId)) {
+                keysToDelete.add(key);
+              }
+            }
+            if (keysToDelete.isNotEmpty) {
+              await _msgBox.deleteAll(keysToDelete);
+              _logger.i('Flushed ghost messages for $senderId upon remote exit.');
+            }
           }
           // Do not save system messages to the box
           await _markProcessed(envelope.id, actualTimestamp);
@@ -283,11 +269,11 @@ class ChatRepository {
         if (state != null) {
           // Check for 18-hour inactivity reset
           final inactivity = DateTime.now().difference(state.lastActivityAt);
-          if (inactivity.inHours >= 18 && state.mode != ConversationMode.persistent) {
-            state.mode = ConversationMode.persistent;
+          if (inactivity.inHours >= 18 && state.mode != ConversationMode.normal) {
+            state.mode = ConversationMode.normal;
             state.lastChangedBy = 'system';
             state.lastChangedAt = DateTime.now();
-            _logger.i('Conversation mode for $senderId reset to persistent due to inactivity.');
+            _logger.i('Conversation mode for $senderId reset to normal due to inactivity.');
           }
           state.lastActivityAt = DateTime.now();
           await _stateBox.put(senderId, state);
@@ -411,17 +397,29 @@ class ChatRepository {
     _logger.i('GHOST_LOG: SEND_SOCKET_EMIT');
     _logger.i("MESSAGE_SENT");
 
-    final message = Message(
-      id: envelope.id,
-      senderId: identity.publicId,
-      recipientId: recipientId,
-      plaintext: text,
-      timestamp: DateTime.now(),
-      isRead: true,
-      type: type,
-      metadata: metadata,
+    // Update Activity
+    final state = _stateBox.get(recipientId) ?? ConversationState(
+      contactId: recipientId,
+      lastChangedBy: identity.publicId,
+      lastChangedAt: DateTime.now(),
+      lastActivityAt: DateTime.now(),
     );
-    await _msgBox.put(message.id, message);
+    state.lastActivityAt = DateTime.now();
+    await _stateBox.put(recipientId, state);
+
+    if (type != MessageType.system) {
+      final message = Message(
+        id: envelope.id,
+        senderId: identity.publicId,
+        recipientId: recipientId,
+        plaintext: text,
+        timestamp: DateTime.now(),
+        isRead: true,
+        type: type,
+        metadata: metadata,
+      );
+      await _msgBox.put(message.id, message);
+    }
   }
 
   Future<void> updateConversationMode(String contactId, ConversationMode mode) async {
@@ -450,7 +448,17 @@ class ChatRepository {
         'mode': mode.index,
       },
     );
-    _logger.i('Sent conversation mode change to ${mode.name} for $contactId');
+  }
+
+  Future<void> sendGhostFlush(String recipientId) async {
+    await sendMessage(
+      recipientId: recipientId,
+      text: '[FLUSH]',
+      type: MessageType.system,
+      metadata: {
+        'system_type': 'ghost_flush',
+      },
+    );
   }
 
   Future<void> sendConsumptionReceipt(String recipientId, String messageId) async {
@@ -479,6 +487,10 @@ class ChatRepository {
 
   Iterable<Message> getAllMessages() {
     return _msgBox.values;
+  }
+
+  Iterable<ConversationState> getAllConversationStates() {
+    return _stateBox.values;
   }
 
   Future<void> dangerouslyClearAll() async {
