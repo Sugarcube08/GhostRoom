@@ -277,7 +277,8 @@ class ConversationService {
   }
 
   Future<void> markAsRead(String contactId) async {
-    final messages = _chatRepository.getMessagesForContact(contactId);
+    // Only fetch recent messages for marking as read
+    final messages = _chatRepository.getMessagesForContact(contactId, limit: 100);
     for (final msg in messages) {
       if (!msg.isRead && msg.senderId == contactId) {
         msg.isRead = true;

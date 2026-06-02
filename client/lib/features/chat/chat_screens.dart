@@ -421,18 +421,21 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
         return ValueListenableBuilder(
           valueListenable: Hive.box<Message>('messages').listenable(),
           builder: (context, _, _) {
-            final messages = ref.watch(chatRepositoryProvider).getMessagesForContact(widget.conversation.contactId);
+            final messages = ref.watch(chatRepositoryProvider).getMessagesForContact(widget.conversation.contactId, limit: 200);
 
             // Auto-scroll logic
             WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (_scrollController.hasClients) {
+              if (_scrollController.hasClients && messages.isNotEmpty) {
                 final pos = _scrollController.position;
-                final atBottom = pos.pixels >= pos.maxScrollExtent - 100;
+                final lastMsg = messages.last;
+                final isMe = lastMsg.senderId == ref.read(chatRepositoryProvider).myPublicId;
                 
-                if (atBottom) {
+                final atBottom = pos.pixels >= pos.maxScrollExtent - 200;
+                
+                if (isMe || atBottom) {
                   _scrollController.animateTo(
                     pos.maxScrollExtent,
-                    duration: const Duration(milliseconds: 200),
+                    duration: const Duration(milliseconds: 300),
                     curve: Curves.easeOut,
                   );
                 }
@@ -657,6 +660,7 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
   }
 
   Widget _buildModeSelector(ConversationMode currentMode, ConversationState? state) {
+    debugPrint('GHOST_LOG: MODE_SELECTOR_REBUILT mode: ${currentMode.name}');
     IconData icon = Icons.chat_bubble_outline;
     String label = 'NORMAL';
     if (currentMode == ConversationMode.ghost) {

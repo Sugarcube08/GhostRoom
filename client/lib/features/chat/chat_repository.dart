@@ -244,6 +244,8 @@ class ChatRepository {
               state.lastChangedAt = DateTime.now();
               await _stateBox.put(senderId, state);
               _logger.i('Conversation mode for $senderId changed to ${newMode.name} by partner.');
+              _logger.i('GHOST_LOG: MODE_CHANGE_RECEIVED');
+              _logger.i('GHOST_LOG: MODE_CHANGE_APPLIED');
             }
           } else if (systemType == 'ghost_flush') {
             final keysToDelete = <dynamic>[];
@@ -377,8 +379,12 @@ class ChatRepository {
       'text': text,
       'sender_eid': base64Encode(identity.ed25519KeyPair.publicKey),
       'sender_xid': base64Encode(identity.x25519KeyPair.publicKey),
-      ...?metadata,
+      'metadata': metadata ?? {},
     };
+
+    if (metadata?['system_type'] == 'mode_change') {
+      _logger.i('MODE_CHANGE_SENT: ${metadata?['mode']}');
+    }
 
     final envelope = await _dmService.encryptDM(
       plaintext: jsonEncode(payload),
@@ -478,10 +484,22 @@ class ChatRepository {
     }
   }
 
-  List<Message> getMessagesForContact(String contactId) {
-    return _msgBox.values
-        .where((m) => m.senderId == contactId || m.recipientId == contactId)
-        .toList()
+  List<Message> getMessagesForContact(String contactId, {int limit = 100}) {
+    // RAM OPTIMIZATION: Do not load all values. Iterate and filter.
+    // Future improvement: use an index box for performance.
+    final result = <Message>[];
+    final values = _msgBox.values;
+    
+    // Reverse iteration to get latest messages first
+    for (var i = values.length - 1; i >= 0; i--) {
+      final m = values.elementAt(i);
+      if (m.senderId == contactId || m.recipientId == contactId) {
+        result.add(m);
+        if (result.length >= limit) break;
+      }
+    }
+    
+    return result.reversed.toList()
       ..sort((a, b) => a.timestamp.compareTo(b.timestamp));
   }
 

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:gal/gal.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:flutter/rendering.dart';
 import 'dart:ui' as ui;
@@ -201,7 +202,7 @@ class _IdentityVaultScreenState extends ConsumerState<IdentityVaultScreen> {
                   TextButton.icon(
                     onPressed: () => _saveQRToGallery(identity.publicId), 
                     icon: const Icon(Icons.download, size: 16), 
-                    label: const Text('SAVE QR', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
+                    label: const Text('DOWNLOAD PASSPORT', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
                   ),
                   const SizedBox(width: 8),
                   TextButton.icon(
@@ -226,9 +227,10 @@ class _IdentityVaultScreenState extends ConsumerState<IdentityVaultScreen> {
   }
 
   void _shareIdentityLink(String encodedPkg) {
-    final link = 'ghostroom://identity/$encodedPkg';
+    final customLink = 'ghostroom://identity/$encodedPkg';
+    final webLink = 'https://ghostroom.app/i/$encodedPkg';
     Share.share(
-      'Connect with me on GhostRoom: $link',
+      'Connect with me on GhostRoom!\n\nApp Link: $customLink\nWeb Link: $webLink',
       subject: 'GhostRoom Identity',
     );
   }
