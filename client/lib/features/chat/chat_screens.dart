@@ -12,6 +12,7 @@ import '../../core/providers.dart';
 import 'conversation_service.dart';
 import 'conversation_state.dart';
 import 'message.dart';
+import '../contacts/contact.dart';
 import '../media/attachment_envelope.dart';
 import '../contacts/contact_actions.dart';
 
@@ -64,9 +65,14 @@ class ChatsScreen extends ConsumerStatefulWidget {
 class _ChatsScreenState extends ConsumerState<ChatsScreen> with ContactActions {
   @override
   Widget build(BuildContext context) {
-    return ValueListenableBuilder(
-      valueListenable: Hive.box<Message>('messages').listenable(),
-      builder: (context, _, _) {
+    // Listen to all boxes that affect the conversation list
+    return ListenableBuilder(
+      listenable: Listenable.merge([
+        Hive.box<Message>('messages').listenable(),
+        Hive.box<Contact>('contacts').listenable(),
+        Hive.box<ConversationState>('conversation_states').listenable(),
+      ]),
+      builder: (context, _) {
         final conversations = ref.watch(conversationsProvider);
         final requests = ref.watch(requestsProvider);
 
@@ -113,81 +119,113 @@ class _ChatsScreenState extends ConsumerState<ChatsScreen> with ContactActions {
               ),
             ],
           ),
-          body: conversations.isEmpty
-              ? _buildEmptyState()
-              : ListView.builder(
-                  itemCount: conversations.length,
-                  itemBuilder: (context, index) {
-                    final conv = conversations[index];
-                    return ListTile(
-                      leading: CircleAvatar(
-                        backgroundColor: conv.unreadCount > 0 ? Colors.blueAccent.withAlpha(40) : Colors.white10,
-                        child: Text(
-                          conv.alias.isNotEmpty ? conv.alias[0].toUpperCase() : '?',
-                          style: TextStyle(
-                            color: conv.unreadCount > 0 ? Colors.blueAccent : Colors.white54,
-                            fontWeight: conv.unreadCount > 0 ? FontWeight.bold : FontWeight.normal,
-                          ),
-                        ),
-                      ),
-                      title: Text(
-                        conv.alias,
-                        style: TextStyle(
-                          fontWeight: conv.unreadCount > 0 ? FontWeight.w900 : FontWeight.normal,
-                          color: conv.unreadCount > 0 ? Colors.white : Colors.white70,
-                        ),
-                      ),
-                      subtitle: _buildSubtitle(conv),
-                      trailing: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        children: [
-                          if (conv.lastMessage != null)
-                            Text(
-                              DateFormat.Hm().format(conv.lastMessage!.timestamp),
-                              style: TextStyle(
-                                fontSize: 10, 
-                                color: conv.unreadCount > 0 ? Colors.blueAccent : Colors.white24,
-                                fontWeight: conv.unreadCount > 0 ? FontWeight.bold : FontWeight.normal,
-                              ),
-                            ),
-                          if (conv.unreadCount > 0)
-                            Container(
-                              margin: const EdgeInsets.only(top: 4),
-                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                              decoration: BoxDecoration(
-                                color: Colors.blueAccent,
-                                borderRadius: BorderRadius.circular(10),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Colors.blueAccent.withAlpha(100),
-                                    blurRadius: 4,
-                                    spreadRadius: 1,
-                                  ),
-                                ],
-                              ),
-                              child: Text(
-                                conv.unreadCount > 9 ? '9+' : conv.unreadCount.toString(),
-                                style: const TextStyle(
-                                  fontSize: 10, 
-                                  fontWeight: FontWeight.w900,
-                                  color: Colors.white,
-                                ),
-                              ),
-                            ),
-                        ],
-                      ),
-                      onTap: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => ConversationScreen(conversation: conv),
-                          ),
-                        );
-                      },
+          body: Column(
+            children: [
+              if (requests.isNotEmpty)
+                ListTile(
+                  leading: const CircleAvatar(
+                    backgroundColor: Colors.orangeAccent,
+                    child: Icon(Icons.mail_lock, color: Colors.black, size: 18),
+                  ),
+                  title: const Text('MESSAGE REQUESTS', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                  trailing: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: Colors.orangeAccent,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      requests.length.toString(),
+                      style: const TextStyle(color: Colors.black, fontSize: 10, fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const RequestsScreen()),
                     );
                   },
                 ),
+              Expanded(
+                child: conversations.isEmpty
+                    ? _buildEmptyState()
+                    : ListView.builder(
+                        itemCount: conversations.length,
+                        itemBuilder: (context, index) {
+                          final conv = conversations[index];
+
+                          return ListTile(
+                            leading: CircleAvatar(
+                              backgroundColor: conv.unreadCount > 0 ? Colors.blueAccent.withAlpha(40) : Colors.white10,
+                              child: Text(
+                                conv.alias.isNotEmpty ? conv.alias[0].toUpperCase() : '?',
+                                style: TextStyle(
+                                  color: conv.unreadCount > 0 ? Colors.blueAccent : Colors.white54,
+                                  fontWeight: conv.unreadCount > 0 ? FontWeight.bold : FontWeight.normal,
+                                ),
+                              ),
+                            ),
+                            title: Text(
+                              conv.alias,
+                              style: TextStyle(
+                                fontWeight: conv.unreadCount > 0 ? FontWeight.w900 : FontWeight.normal,
+                                color: conv.unreadCount > 0 ? Colors.white : Colors.white70,
+                              ),
+                            ),
+                            subtitle: _buildSubtitle(conv),
+                            trailing: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              crossAxisAlignment: CrossAxisAlignment.end,
+                              children: [
+                                if (conv.lastMessage != null)
+                                  Text(
+                                    DateFormat.Hm().format(conv.lastMessage!.timestamp),
+                                    style: TextStyle(
+                                      fontSize: 10, 
+                                      color: conv.unreadCount > 0 ? Colors.blueAccent : Colors.white24,
+                                      fontWeight: conv.unreadCount > 0 ? FontWeight.bold : FontWeight.normal,
+                                    ),
+                                  ),
+                                if (conv.unreadCount > 0)
+                                  Container(
+                                    margin: const EdgeInsets.only(top: 4),
+                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: Colors.blueAccent,
+                                      borderRadius: BorderRadius.circular(10),
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: Colors.blueAccent.withAlpha(100),
+                                          blurRadius: 4,
+                                          spreadRadius: 1,
+                                        ),
+                                      ],
+                                    ),
+                                    child: Text(
+                                      conv.unreadCount > 9 ? '9+' : conv.unreadCount.toString(),
+                                      style: const TextStyle(
+                                        fontSize: 10, 
+                                        fontWeight: FontWeight.w900,
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                            onTap: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => ConversationScreen(conversation: conv),
+                                ),
+                              );
+                            },
+                          );
+                        },
+                      ),
+              ),
+            ],
+          ),
         );
       },
     );
@@ -312,31 +350,30 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
   
   // Visual state for highlight
   DateTime? _lastRemoteChange;
+  bool _showScrollButton = false;
 
   @override
   void initState() {
     super.initState();
+    _scrollController.addListener(_onScroll);
     Future.microtask(() {
       ref.read(conversationServiceProvider).markAsRead(widget.conversation.contactId);
     });
   }
 
+  void _onScroll() {
+    if (!_scrollController.hasClients) return;
+    final atBottom = _scrollController.position.pixels >= _scrollController.position.maxScrollExtent - 200;
+    if (atBottom && _showScrollButton) {
+      setState(() => _showScrollButton = false);
+    }
+  }
+
   @override
   void dispose() {
+    _scrollController.removeListener(_onScroll);
     final contactId = widget.conversation.contactId;
-    Future.microtask(() async {
-      final messages = ref.read(chatRepositoryProvider).getMessagesForContact(contactId);
-      bool didDeleteGhost = false;
-      for (final msg in messages) {
-        if (msg.metadata?['is_ghost'] == true) {
-          await msg.delete();
-          didDeleteGhost = true;
-        }
-      }
-      if (didDeleteGhost) {
-        await ref.read(chatRepositoryProvider).sendGhostFlush(contactId);
-      }
-    });
+    Future.microtask(() => ref.read(chatRepositoryProvider).flushGhostMessages(contactId));
     _controller.dispose();
     _scrollController.dispose();
     super.dispose();
@@ -438,12 +475,21 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
                     duration: const Duration(milliseconds: 300),
                     curve: Curves.easeOut,
                   );
+                } else if (!isMe && !atBottom && !_showScrollButton) {
+                  setState(() => _showScrollButton = true);
                 }
               }
             });
 
-            return Scaffold(
-              appBar: AppBar(
+            return PopScope(
+              canPop: true,
+              onPopInvokedWithResult: (didPop, result) {
+                if (didPop) {
+                  ref.read(chatRepositoryProvider).flushGhostMessages(widget.conversation.contactId);
+                }
+              },
+              child: Scaffold(
+                appBar: AppBar(
                 title: GestureDetector(
                   onTap: () => _showSafetyNumbers(context),
                   child: Column(
@@ -458,6 +504,20 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
                   ),
                 ),
               ),
+              floatingActionButton: _showScrollButton ? FloatingActionButton.extended(
+                backgroundColor: Colors.blueAccent,
+                label: const Text('NEW MESSAGES', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
+                icon: const Icon(Icons.arrow_downward, size: 16),
+                onPressed: () {
+                  _scrollController.animateTo(
+                    _scrollController.position.maxScrollExtent,
+                    duration: const Duration(milliseconds: 300),
+                    curve: Curves.easeOut,
+                  );
+                  setState(() => _showScrollButton = false);
+                },
+              ) : null,
+              floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
               body: Column(
                 children: [
                   Expanded(
@@ -475,12 +535,13 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
                   widget.isRequestMode ? _buildRequestActions() : _buildInput(currentMode, state),
                 ],
               ),
-            );
-          },
-        );
-      }
-    );
-  }
+            ),
+          );
+        },
+      );
+    },
+  );
+}
 
   void _showSafetyNumbers(BuildContext context) {
     final contact = widget.conversation.contact;

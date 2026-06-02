@@ -1,6 +1,6 @@
 import 'package:hive_flutter/hive_flutter.dart';
+import 'package:flutter/foundation.dart';
 import 'package:sodium/sodium_sumo.dart' hide Box;
-import 'dart:typed_data';
 import 'message.dart';
 import 'dm_service.dart';
 import 'conversation_state.dart';
@@ -18,7 +18,17 @@ class ChatRepository {
   final ContactService _contactService;
   final WebSocketService _wsService;
   final NotificationService _notificationService;
-  final Logger _logger = Logger();
+  final Logger _logger = Logger(
+    level: kReleaseMode ? Level.warning : Level.info,
+    printer: PrettyPrinter(
+      methodCount: 0, 
+      errorMethodCount: 5, 
+      lineLength: 50, 
+      colors: true, 
+      printEmojis: true, 
+      dateTimeFormat: DateTimeFormat.onlyTimeAndSinceStart,
+    ),
+  );
 
   static const String _msgBoxName = 'messages';
   static const String _syncBoxName = 'sync_metadata';
@@ -465,6 +475,21 @@ class ChatRepository {
         'system_type': 'ghost_flush',
       },
     );
+  }
+
+  Future<void> flushGhostMessages(String contactId) async {
+    final messages = getMessagesForContact(contactId, limit: 1000);
+    bool didDeleteGhost = false;
+    for (final msg in messages) {
+      if (msg.metadata?['is_ghost'] == true) {
+        await msg.delete();
+        didDeleteGhost = true;
+      }
+    }
+    if (didDeleteGhost) {
+      await sendGhostFlush(contactId);
+      _logger.i('GHOST_LOG: Local ghost messages flushed for $contactId');
+    }
   }
 
   Future<void> sendConsumptionReceipt(String recipientId, String messageId) async {

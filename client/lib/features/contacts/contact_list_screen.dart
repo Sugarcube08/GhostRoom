@@ -1,4 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
+import 'dart:io';
+import 'dart:ui' as ui;
+import 'package:path_provider/path_provider.dart';
+import 'package:gal/gal.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import '../../core/providers.dart';
@@ -6,6 +11,7 @@ import '../contacts/contact.dart';
 import '../../core/crypto/identity_service.dart';
 import '../chat/chat_screens.dart';
 import '../chat/conversation_service.dart';
+import '../settings/identity_actions.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'contact_actions.dart';
 
@@ -17,7 +23,7 @@ class ContactListScreen extends ConsumerStatefulWidget {
 }
 
 class _ContactListScreenState extends ConsumerState<ContactListScreen>
-    with ContactActions {
+    with ContactActions, IdentityActions {
   @override
   Widget build(BuildContext context) {
     return ValueListenableBuilder(
@@ -239,11 +245,58 @@ class _ContactListScreenState extends ConsumerState<ContactListScreen>
   }
 }
 
-class MyPassportScreen extends ConsumerWidget {
+class MyPassportScreen extends ConsumerStatefulWidget {
   const MyPassportScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<MyPassportScreen> createState() => _MyPassportScreenState();
+}
+
+class _MyPassportScreenState extends ConsumerState<MyPassportScreen> with IdentityActions {
+  final GlobalKey _qrKey = GlobalKey();
+
+  Future<void> _saveQRToGallery(String publicId) async {
+    try {
+      final boundary = _qrKey.currentContext?.findRenderObject() as RenderRepaintBoundary?;
+      if (boundary == null) return;
+
+      final image = await boundary.toImage(pixelRatio: 3.0);
+      final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+      if (byteData == null) return;
+
+      final bytes = byteData.buffer.asUint8List();
+      
+      if (Platform.isLinux) {
+        final home = Platform.environment['HOME'];
+        final downloadsDir = Directory('$home/Downloads/GhostRoom');
+        if (!await downloadsDir.exists()) {
+          await downloadsDir.create(recursive: true);
+        }
+        final file = File('${downloadsDir.path}/ghost_identity_${publicId.substring(0, 8)}.png');
+        await file.writeAsBytes(bytes);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Identity saved to: ${file.path}')));
+        }
+      } else {
+        final tempDir = await getTemporaryDirectory();
+        final file = File('${tempDir.path}/ghost_identity_${publicId.substring(0, 8)}.png');
+        await file.writeAsBytes(bytes);
+
+        await Gal.putImage(file.path);
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Identity QR saved to gallery!')));
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to save QR: $e')));
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final idService = ref.watch(identityServiceProvider);
     final identity = idService.currentIdentity;
     if (identity == null) {
@@ -272,31 +325,26 @@ class MyPassportScreen extends ConsumerWidget {
                   final pkgString = snapshot.data!.toEncodedString();
                   return Column(
                     children: [
-                      Container(
-                        padding: const EdgeInsets.all(24),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(32),
-                        ),
-                        child: QrImageView(
-                          data: pkgString,
-                          version: QrVersions.auto,
-                          size: 260,
-                          gapless: false,
-                        ),
-                      ),
-                      const SizedBox(height: 48),
-                      const Text(
-                        'PUBLIC ID',
-                        style: TextStyle(
-                          color: Colors.white24,
-                          fontSize: 10,
-                          letterSpacing: 4,
-                          fontWeight: FontWeight.bold,
+                      RepaintBoundary(
+                        key: _qrKey,
+                        child: Container(
+                          padding: const EdgeInsets.all(24),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(32),
+                          ),
+                          child: QrImageView(
+                            data: pkgString,
+                            version: QrVersions.auto,
+                            size: 260,
+                            gapless: false,
+                            eyeStyle: const QrEyeStyle(eyeShape: QrEyeShape.square, color: Colors.black),
+                            dataModuleStyle: const QrDataModuleStyle(dataModuleShape: QrDataModuleShape.square, color: Colors.black),
+                          ),
                         ),
                       ),
-                      const SizedBox(height: 12),
-                      SelectableText(
+                      const SizedBox(height: 32),
+                      Text(
                         identity.publicId,
                         textAlign: TextAlign.center,
                         style: const TextStyle(
@@ -305,43 +353,43 @@ class MyPassportScreen extends ConsumerWidget {
                           letterSpacing: 1,
                         ),
                       ),
-                      const SizedBox(height: 32),
+                      const SizedBox(height: 8),
                       const Text(
-                        'FINGERPRINT',
-                        style: TextStyle(
-                          color: Colors.white24,
-                          fontSize: 10,
-                          letterSpacing: 4,
-                          fontWeight: FontWeight.bold,
+                        'YOUR GHOSTROOM IDENTITY',
+                        style: TextStyle(fontSize: 10, color: Colors.blueAccent, fontWeight: FontWeight.w900),
+                      ),
+                      const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 24),
+                        child: Text(
+                          'Sharing this passport allows others to connect with you securely. No phone number or email is exposed.',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(fontSize: 12, color: Colors.white38),
+                        ),
+                      ),
+                      ElevatedButton.icon(
+                        icon: const Icon(Icons.download),
+                        onPressed: () => _saveQRToGallery(identity.publicId),
+                        label: const Text('DOWNLOAD PASSPORT'),
+                        style: ElevatedButton.styleFrom(
+                          minimumSize: const Size(double.infinity, 56),
+                          backgroundColor: Colors.white10,
+                          foregroundColor: Colors.white,
                         ),
                       ),
                       const SizedBox(height: 12),
-                      Text(
-                        identity.fingerprint,
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          fontFamily: 'monospace',
-                          fontSize: 11,
-                          color: Colors.blueAccent,
-                          fontWeight: FontWeight.bold,
+                      ElevatedButton.icon(
+                        icon: const Icon(Icons.share),
+                        onPressed: () => shareIdentity(ref),
+                        label: const Text('SHARE IDENTITY LINK'),
+                        style: ElevatedButton.styleFrom(
+                          minimumSize: const Size(double.infinity, 56),
+                          backgroundColor: Colors.blueAccent,
+                          foregroundColor: Colors.white,
                         ),
                       ),
                     ],
                   );
                 },
-              ),
-              const SizedBox(height: 64),
-              ElevatedButton.icon(
-                icon: const Icon(Icons.share),
-                onPressed: () async {
-                  // Placeholder for share
-                },
-                style: ElevatedButton.styleFrom(
-                  minimumSize: const Size(double.infinity, 56),
-                  backgroundColor: Colors.white10,
-                  foregroundColor: Colors.white,
-                ),
-                label: const Text('SHARE IDENTITY PACKAGE'),
               ),
               const SizedBox(height: 48),
             ],

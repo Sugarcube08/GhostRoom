@@ -2,13 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:gal/gal.dart';
-import 'package:share_plus/share_plus.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:flutter/rendering.dart';
 import 'dart:ui' as ui;
 import 'dart:io';
 import '../../core/providers.dart';
 import 'relay_settings_screen.dart';
+import 'identity_actions.dart';
 
 class IdentityVaultScreen extends ConsumerStatefulWidget {
   const IdentityVaultScreen({super.key});
@@ -17,7 +17,7 @@ class IdentityVaultScreen extends ConsumerStatefulWidget {
   ConsumerState<IdentityVaultScreen> createState() => _IdentityVaultScreenState();
 }
 
-class _IdentityVaultScreenState extends ConsumerState<IdentityVaultScreen> {
+class _IdentityVaultScreenState extends ConsumerState<IdentityVaultScreen> with IdentityActions {
   final GlobalKey _qrKey = GlobalKey();
 
   Future<void> _saveQRToGallery(String publicId) async {
@@ -188,14 +188,22 @@ class _IdentityVaultScreenState extends ConsumerState<IdentityVaultScreen> {
               const SizedBox(height: 24),
               Text(
                 identity.publicId,
-                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, letterSpacing: 1),
+                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, letterSpacing: 1),
               ),
               const SizedBox(height: 8),
-              Text(
-                'FINGERPRINT: ${identity.fingerprint}',
-                style: const TextStyle(fontSize: 9, color: Colors.white24, fontFamily: 'monospace'),
+              const Text(
+                'YOUR GHOSTROOM IDENTITY',
+                style: TextStyle(fontSize: 10, color: Colors.blueAccent, fontWeight: FontWeight.w900),
               ),
-              const SizedBox(height: 16),
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                child: Text(
+                  'Anyone who scans this passport can send you encrypted messages. No phone number or email is required.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 11, color: Colors.white38),
+                ),
+              ),
+              const SizedBox(height: 8),
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
@@ -206,7 +214,7 @@ class _IdentityVaultScreenState extends ConsumerState<IdentityVaultScreen> {
                   ),
                   const SizedBox(width: 8),
                   TextButton.icon(
-                    onPressed: () => _shareIdentityLink(encodedPkg), 
+                    onPressed: () => shareIdentity(ref), 
                     icon: const Icon(Icons.share, size: 16), 
                     label: const Text('SHARE LINK', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
                   ),
@@ -224,15 +232,6 @@ class _IdentityVaultScreenState extends ConsumerState<IdentityVaultScreen> {
     final relays = await relayManager.getRelays();
     final pkg = await ref.read(identityServiceProvider).createPackage(relays);
     return pkg.toEncodedString();
-  }
-
-  void _shareIdentityLink(String encodedPkg) {
-    final customLink = 'ghostroom://identity/$encodedPkg';
-    final webLink = 'https://ghostroom.app/i/$encodedPkg';
-    Share.share(
-      'Connect with me on GhostRoom!\n\nApp Link: $customLink\nWeb Link: $webLink',
-      subject: 'GhostRoom Identity',
-    );
   }
 
   Widget _buildSecurityScore(BuildContext context, WidgetRef ref) {

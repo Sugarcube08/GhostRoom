@@ -14,10 +14,12 @@ class StabilityTracker {
   }
 
   static void logEvent(String event, {Map<String, dynamic>? data}) {
+    if (kReleaseMode) return;
     _logger.d('STABILITY_EVENT: $event ${data ?? ""}');
   }
 
   static void logResource(String type, String action) {
+    if (kReleaseMode) return;
     _logger.d('RESOURCE: $type -> $action');
   }
 }

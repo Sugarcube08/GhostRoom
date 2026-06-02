@@ -1,6 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
+import 'package:flutter/foundation.dart';
 import 'package:sodium/sodium_sumo.dart';
 import 'package:crypto/crypto.dart' as crypto;
 import 'package:flutter_image_compress/flutter_image_compress.dart';
@@ -15,7 +15,17 @@ import 'attachment_envelope.dart';
 class MediaService {
   final SodiumSumo sodium;
   final IdentityService _idService;
-  final Logger _logger = Logger();
+  final Logger _logger = Logger(
+    level: kReleaseMode ? Level.warning : Level.info,
+    printer: PrettyPrinter(
+      methodCount: 0, 
+      errorMethodCount: 5, 
+      lineLength: 50, 
+      colors: true, 
+      printEmojis: true, 
+      dateTimeFormat: DateTimeFormat.onlyTimeAndSinceStart,
+    ),
+  );
 
   MediaService(this.sodium, this._idService);
 
