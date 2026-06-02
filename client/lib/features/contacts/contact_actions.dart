@@ -73,12 +73,19 @@ mixin ContactActions<T extends ConsumerStatefulWidget> on ConsumerState<T> {
         title: const Text('MANUAL ENTRY'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Note: You can only send text messages to a manual ID until they share their full identity package.', style: TextStyle(fontSize: 10, color: Colors.white54)),
+            const Text(
+              'IMPORTANT: Manual entry only works for V1 Ephemeral Spaces. To send E2EE Direct Messages, you MUST scan the recipient\'s Identity Package QR code.', 
+              style: TextStyle(fontSize: 11, color: Colors.orangeAccent, fontWeight: FontWeight.bold)
+            ),
             const SizedBox(height: 16),
             TextField(
               controller: controller,
-              decoration: const InputDecoration(hintText: 'Enter Public ID...'),
+              decoration: const InputDecoration(
+                hintText: 'Enter Public ID...',
+                helperText: 'e.g. ABCD-EFGH...',
+              ),
             ),
           ],
         ),

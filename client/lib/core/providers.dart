@@ -3,6 +3,7 @@ import 'package:sodium/sodium_sumo.dart';
 import 'crypto/identity_service.dart';
 import 'network/relay_manager.dart';
 import 'network/websocket_service.dart';
+import 'notification_service.dart';
 
 import '../features/spaces/space_service.dart';
 import '../features/contacts/contact_service.dart';
@@ -13,11 +14,23 @@ import '../features/chat/conversation_service.dart';
 import '../features/media/media_service.dart';
 import 'backup/backup_service.dart';
 
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+
 final sodiumProvider = Provider<SodiumSumo>((ref) => throw UnimplementedError());
+
+final secureStorageProvider = Provider<FlutterSecureStorage>((ref) {
+  return const FlutterSecureStorage(
+    aOptions: AndroidOptions(
+      encryptedSharedPreferences: true,
+      // On some devices, the key might be lost if we don't use this
+      resetOnError: true,
+    ),
+  );
+});
 
 final identityServiceProvider = Provider<IdentityService>((ref) {
   final sodium = ref.watch(sodiumProvider);
-  return IdentityService(sodium);
+  return IdentityService(sodium, ref.watch(secureStorageProvider));
 });
 
 final dmServiceProvider = Provider<DMService>((ref) {
@@ -26,7 +39,7 @@ final dmServiceProvider = Provider<DMService>((ref) {
 });
 
 final contactServiceProvider = Provider<ContactService>((ref) {
-  return ContactService();
+  return ContactService(ref.watch(secureStorageProvider));
 });
 
 final contactResolverProvider = Provider<ContactResolver>((ref) {
@@ -39,6 +52,7 @@ final chatRepositoryProvider = Provider<ChatRepository>((ref) {
     ref.watch(dmServiceProvider),
     ref.watch(contactServiceProvider),
     ref.watch(webSocketServiceProvider),
+    ref.watch(notificationServiceProvider),
   );
 });
 
@@ -78,7 +92,11 @@ final spaceServiceProvider = Provider<SpaceService>((ref) {
 });
 
 final relayManagerProvider = Provider<RelayManager>((ref) {
-  return RelayManager();
+  return RelayManager(ref.watch(secureStorageProvider));
+});
+
+final notificationServiceProvider = Provider<NotificationService>((ref) {
+  return NotificationService();
 });
 
 final webSocketServiceProvider = Provider<WebSocketService>((ref) {

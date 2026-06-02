@@ -69,7 +69,7 @@ class Identity {
 
 class IdentityService {
   final SodiumSumo sodium;
-  final FlutterSecureStorage _storage = const FlutterSecureStorage();
+  final FlutterSecureStorage _storage;
   final Logger _logger = Logger();
 
   static const String _seedKey = 'identity_seed_phrase';
@@ -78,7 +78,7 @@ class IdentityService {
 
   Identity? _currentIdentity;
 
-  IdentityService(this.sodium);
+  IdentityService(this.sodium, this._storage);
 
   Identity? get currentIdentity => _currentIdentity;
 
@@ -140,6 +140,22 @@ class IdentityService {
             _logger.i("Seed phrase found in SecureStorage.");
             break;
           }
+          
+          // FALLBACK: Try reading from standard storage if encrypted read returns null
+          // This helps if the app was previously using default options.
+          if (i == 0) {
+            _logger.i("Trying fallback read without encryptedSharedPreferences...");
+            const fallbackStorage = FlutterSecureStorage();
+            seedPhrase = await fallbackStorage.read(key: _seedKey);
+            if (seedPhrase != null) {
+              _logger.i("SUCCESS: Seed phrase found in fallback storage! Migrating...");
+              await _storage.write(key: _seedKey, value: seedPhrase);
+              final devId = await fallbackStorage.read(key: _deviceIdKey);
+              if (devId != null) await _storage.write(key: _deviceIdKey, value: devId);
+              break;
+            }
+          }
+          
           _logger.w("Seed phrase NOT found in attempt ${i + 1}");
           await Future.delayed(const Duration(milliseconds: 500));
         } catch (e) {
@@ -163,16 +179,12 @@ class IdentityService {
         }
       } else {
         if (flagExists) {
-          _logger.e("CRITICAL: Flag file exists but seed is missing/unreadable! Keyring likely locked.");
-          StabilityTracker.logEvent('Identity_Keyring_Locked_Error');
-          throw Exception(
-            'Secure storage access failed. Your identity is present on disk, '
-            'but the system keyring is locked or inaccessible. Please unlock '
-            'your system keyring or restart the app.'
-          );
+          _logger.e("CRITICAL: Flag file exists but seed is missing/unreadable!");
+          StabilityTracker.logEvent('Identity_Data_Missing_Warning');
+        } else {
+          _logger.w("No identity found (no seed, no flag).");
+          StabilityTracker.logEvent('IdentityNotFound_Empty');
         }
-        _logger.w("No identity found (no seed, no flag).");
-        StabilityTracker.logEvent('IdentityNotFound_Empty');
       }
     } catch (e) {
       StabilityTracker.logEvent('IdentityInit_Error', data: {'error': e.toString()});
@@ -332,6 +344,13 @@ class IdentityService {
     await _storage.delete(key: 'device_public_key');
     await _storage.delete(key: 'signing_secret_key');
     await _storage.delete(key: 'signing_public_key');
+    
+    // Clear fallback storage too
+    try {
+      const fallbackStorage = FlutterSecureStorage();
+      await fallbackStorage.deleteAll();
+    } catch (_) {}
+
     await _clearPublicIdentityFlag();
     _currentIdentity = null;
   }

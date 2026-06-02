@@ -125,25 +125,19 @@ class WebSocketService {
     _socket!.on('identity.verified', (data) {
       _isAuthenticated = true;
       _logger.i('Identity verified by relay: ${data['public_id']}');
-      try {
-        final lastSync = _ref.read(chatRepositoryProvider).lastSyncTimestamp;
-        _logger.i("GHOST_LOG: INBOX_FETCH since $lastSync");
-        fetchInbox(since: lastSync);
-      } catch (e) {
-        _logger.e('Failed to auto-fetch inbox after verification: $e');
+      
+      final callback = _callbacks['identity.verified'];
+      if (callback != null) {
+        try {
+          callback(data);
+        } catch (e) {
+          _logger.e('Error in identity.verified callback: $e');
+        }
       }
     });
 
     _socket!.on('message.receive', (data) {
       _logger.i("GHOST_LOG: MESSAGE_RECEIVED_CLIENT");
-      
-      if (data != null && data['v'] == 2) {
-        try {
-          _ref.read(chatRepositoryProvider).processEnvelopes([data]);
-        } catch (e) {
-          _logger.e('Failed to process real-time V2 envelope: $e');
-        }
-      }
 
       final callback = _callbacks['message.receive'];
       if (callback != null) {
@@ -225,6 +219,10 @@ class WebSocketService {
     } else {
       _socket?.emit('message.send', data);
     }
+  }
+
+  void onIdentityVerified(Function(dynamic) callback) {
+    _callbacks['identity.verified'] = callback;
   }
 
   void onInboxMessages(Function(List<dynamic>) callback) {

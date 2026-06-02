@@ -73,7 +73,7 @@ export class InboxService {
     }
 
     const messageId = payload.id || uuidv4();
-    const timestamp = Date.now();
+    const timestamp = payload.t || Date.now();
     const retentionMode = payload.retention || "PERSISTENT";
 
     const envelope: MessageEnvelope = {

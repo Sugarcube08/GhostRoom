@@ -34,15 +34,13 @@ class RelayProfile {
     token: json['token'],
   );
 }
-
 class RelayManager {
-  final FlutterSecureStorage _storage = const FlutterSecureStorage(
-    aOptions: AndroidOptions(encryptedSharedPreferences: true),
-  );
+  final FlutterSecureStorage _storage;
   static const String _relaysKey = 'saved_relays';
   static const String _activeRelayIdKey = 'active_relay_id';
   static const String _recentRoomsKey = 'recent_rooms';
 
+  RelayManager(this._storage);
   /// Pings the relay's API to wake it up (for Render free tier)
   Future<void> wakeUpRelay(RelayProfile profile) async {
     try {
@@ -58,7 +56,22 @@ class RelayManager {
   }
 
   Future<List<RelayProfile>> getRelays() async {
-    final data = await _storage.read(key: _relaysKey);
+    String? data = await _storage.read(key: _relaysKey);
+    
+    // FALLBACK: Try reading from standard storage if encrypted read returns null
+    if (data == null) {
+      try {
+        const fallbackStorage = FlutterSecureStorage();
+        data = await fallbackStorage.read(key: _relaysKey);
+        if (data != null) {
+          debugPrint('GHOST_LOG: Migrating relays from fallback storage...');
+          await _storage.write(key: _relaysKey, value: data);
+          final activeId = await fallbackStorage.read(key: _activeRelayIdKey);
+          if (activeId != null) await _storage.write(key: _activeRelayIdKey, value: activeId);
+        }
+      } catch (_) {}
+    }
+
     List<RelayProfile> relays = [];
     if (data != null) {
       final List<dynamic> decoded = jsonDecode(data);

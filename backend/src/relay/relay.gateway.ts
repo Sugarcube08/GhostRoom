@@ -278,6 +278,8 @@ export class RelayGateway implements OnGatewayConnection, OnGatewayDisconnect {
           payload.target_id,
           {
             id: (payload as any).id,
+            t: (payload as any).t,
+            v: (payload as any).v || payload.v,
             n: (payload as any).n || payload.nonce || "",
             c: (payload as any).c || payload.ciphertext,
             k: (payload as any).k || (payload as any).encryptedKey,

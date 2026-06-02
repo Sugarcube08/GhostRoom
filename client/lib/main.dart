@@ -10,6 +10,8 @@ import 'features/home/onboarding_screen.dart';
 import 'core/app_initializer.dart';
 import 'core/stability_tracker.dart';
 import 'dart:async';
+import 'dart:io';
+import 'package:path_provider/path_provider.dart';
 
 void main() async {
   runZonedGuarded(() async {
@@ -171,8 +173,72 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
       return;
     }
 
+    final idService = ref.read(identityServiceProvider);
+    if (!idService.hasIdentity) {
+      // Check if we should have had an identity
+      final dir = await getApplicationDocumentsDirectory();
+      final flagFile = File('${dir.path}/identity_exists.flag');
+      if (await flagFile.exists()) {
+        if (mounted) {
+          _showIdentityMissingDialog();
+        }
+        return;
+      }
+    }
+
     // Initialization success, proceed to identity check
     _proceedToApp();
+  }
+
+  void _showIdentityMissingDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFF1A1A1A),
+        title: const Text('Identity Warning'),
+        content: const Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Your identity data was found but couldn\'t be loaded. '
+              'Your system keyring might be locked, or data may have been cleared.',
+              style: TextStyle(color: Colors.white70)
+            ),
+            SizedBox(height: 16),
+            Text(
+              'You can try restarting the app or restore from your 24-word seed phrase.',
+              style: TextStyle(color: Colors.white54, fontSize: 12)
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              _showResetConfirmDialog();
+            },
+            child: const Text('RESET', style: TextStyle(color: Colors.redAccent)),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              _showRecoverDialog();
+            },
+            child: const Text('RECOVER'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              ref.read(appInitializerProvider).status = InitializationStatus.idle;
+              _checkInitialization();
+            },
+            child: const Text('RETRY'),
+          ),
+        ],
+      ),
+    );
   }
 
   void _showRecoverDialog() {
@@ -341,10 +407,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
         ref.read(relayManagerProvider).wakeUpRelay(relay);
         final ws = ref.read(webSocketServiceProvider);
         ws.connect(relay);
-        
-        ws.onInboxMessages((envelopes) {
-          ref.read(chatRepositoryProvider).processEnvelopes(envelopes);
-        });
+        // Listeners are now handled by ChatRepository
       }
 
       debugPrint('GHOST_LOG: Identity verified. Entering app.');

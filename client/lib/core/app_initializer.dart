@@ -37,6 +37,10 @@ class AppInitializer {
       debugPrint('GHOST_LOG: Initializing ChatRepository...');
       await container.read(chatRepositoryProvider).init();
 
+      // 5. Notifications
+      debugPrint('GHOST_LOG: Initializing NotificationService...');
+      await container.read(notificationServiceProvider).init();
+
       status = InitializationStatus.success;
       debugPrint('GHOST_LOG: System initialization complete.');
     } catch (e, stack) {

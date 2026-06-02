@@ -62,8 +62,8 @@ class ConversationService {
         lastMessages[otherId] = msg;
       }
 
-      // Update unread count
-      if (!msg.isRead && msg.senderId == otherId) {
+      // Update unread count (only count incoming messages)
+      if (!msg.isRead && msg.senderId != myId) {
         unreadCounts[otherId] = (unreadCounts[otherId] ?? 0) + 1;
       }
     }
@@ -220,7 +220,16 @@ class ConversationService {
     for (final msg in messages) {
       if (!msg.isRead && msg.senderId == contactId) {
         msg.isRead = true;
-        await msg.save();
+        
+        // Handle View Once immediate deletion & Receipt
+        final isViewOnce = msg.metadata?['retention'] == 'VIEW_ONCE';
+        if (isViewOnce) {
+          // Send receipt BEFORE deleting
+          await _chatRepository.sendConsumptionReceipt(msg.senderId, msg.id);
+          await msg.delete();
+        } else {
+          await msg.save();
+        }
       }
     }
   }

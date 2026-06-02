@@ -7,15 +7,34 @@ import 'package:ghostroom/features/chat/message.dart';
 import 'package:ghostroom/features/contacts/contact_service.dart';
 import 'package:ghostroom/features/contacts/contact.dart';
 import 'package:ghostroom/core/network/websocket_service.dart';
+import 'package:ghostroom/core/notification_service.dart';
 import 'dart:convert';
 import 'dart:typed_data';
 import 'package:bip39/bip39.dart' as bip39;
 import 'package:hive/hive.dart';
 
+class ManualMockNotificationService implements NotificationService {
+  @override
+  Future<void> init() async {}
+  @override
+  Future<void> showNotification({required String title, required String body, String? payload}) async {}
+  
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
 class ManualMockWebSocketService implements WebSocketService {
   String? lastAckedId;
   @override
   void acknowledgeMessage(String? messageId) => lastAckedId = messageId;
+  
+  @override
+  void onIdentityVerified(Function(dynamic) callback) {}
+  @override
+  void onMessage(Function(dynamic) callback) {}
+  @override
+  void onInboxMessages(Function(List<dynamic>) callback) {}
+
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
@@ -98,6 +117,7 @@ void main() {
 
     final mockWs = ManualMockWebSocketService();
     final mockContacts = ManualMockContactService();
+    final mockNotifications = ManualMockNotificationService();
     
     final bobContact = Contact(
       publicId: bobIdentity.publicId,
@@ -109,7 +129,7 @@ void main() {
     );
     mockContacts.contacts.add(bobContact);
 
-    final repo = ChatRepository(idService, dmService, mockContacts, mockWs);
+    final repo = ChatRepository(idService, dmService, mockContacts, mockWs, mockNotifications);
     await repo.init();
     await repo.dangerouslyClearAll();
 

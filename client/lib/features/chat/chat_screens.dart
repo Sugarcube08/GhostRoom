@@ -36,11 +36,45 @@ class _ChatsScreenState extends ConsumerState<ChatsScreen> with ContactActions {
       valueListenable: Hive.box<Message>('messages').listenable(),
       builder: (context, _, __) {
         final conversations = ref.watch(conversationsProvider);
+        final requests = ref.watch(requestsProvider);
 
         return Scaffold(
           appBar: AppBar(
             title: const Text('MESSAGES'),
             actions: [
+              if (requests.isNotEmpty)
+                Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.mail_lock_outlined, color: Colors.orangeAccent),
+                      onPressed: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (_) => const RequestsScreen()),
+                        );
+                      },
+                      tooltip: 'Message Requests',
+                    ),
+                    Positioned(
+                      right: 8,
+                      top: 8,
+                      child: Container(
+                        padding: const EdgeInsets.all(2),
+                        decoration: BoxDecoration(
+                          color: Colors.red,
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        constraints: const BoxConstraints(minWidth: 12, minHeight: 12),
+                        child: Text(
+                          requests.length.toString(),
+                          style: const TextStyle(color: Colors.white, fontSize: 8, fontWeight: FontWeight.bold),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               IconButton(
                 icon: const Icon(Icons.person_add_alt_1_outlined),
                 onPressed: () => showAddOptions(context),
@@ -55,16 +89,28 @@ class _ChatsScreenState extends ConsumerState<ChatsScreen> with ContactActions {
                     final conv = conversations[index];
                     return ListTile(
                       leading: CircleAvatar(
-                        backgroundColor: Colors.white10,
-                        child: Text(conv.alias.isNotEmpty ? conv.alias[0].toUpperCase() : '?'),
+                        backgroundColor: conv.unreadCount > 0 ? Colors.blueAccent.withAlpha(40) : Colors.white10,
+                        child: Text(
+                          conv.alias.isNotEmpty ? conv.alias[0].toUpperCase() : '?',
+                          style: TextStyle(
+                            color: conv.unreadCount > 0 ? Colors.blueAccent : Colors.white54,
+                            fontWeight: conv.unreadCount > 0 ? FontWeight.bold : FontWeight.normal,
+                          ),
+                        ),
                       ),
-                      title: Text(conv.alias),
+                      title: Text(
+                        conv.alias,
+                        style: TextStyle(
+                          fontWeight: conv.unreadCount > 0 ? FontWeight.w900 : FontWeight.normal,
+                          color: conv.unreadCount > 0 ? Colors.white : Colors.white70,
+                        ),
+                      ),
                       subtitle: Text(
                         conv.lastMessage?.plaintext ?? 'No messages',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                          color: conv.unreadCount > 0 ? Colors.white70 : Colors.white24,
+                          color: conv.unreadCount > 0 ? Colors.white.withAlpha(200) : Colors.white24,
                           fontWeight: conv.unreadCount > 0 ? FontWeight.bold : FontWeight.normal,
                         ),
                       ),
@@ -75,19 +121,34 @@ class _ChatsScreenState extends ConsumerState<ChatsScreen> with ContactActions {
                           if (conv.lastMessage != null)
                             Text(
                               DateFormat.Hm().format(conv.lastMessage!.timestamp),
-                              style: const TextStyle(fontSize: 10, color: Colors.white24),
+                              style: TextStyle(
+                                fontSize: 10, 
+                                color: conv.unreadCount > 0 ? Colors.blueAccent : Colors.white24,
+                                fontWeight: conv.unreadCount > 0 ? FontWeight.bold : FontWeight.normal,
+                              ),
                             ),
                           if (conv.unreadCount > 0)
                             Container(
                               margin: const EdgeInsets.only(top: 4),
                               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                               decoration: BoxDecoration(
-                                color: Colors.redAccent,
+                                color: Colors.blueAccent,
                                 borderRadius: BorderRadius.circular(10),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.blueAccent.withAlpha(100),
+                                    blurRadius: 4,
+                                    spreadRadius: 1,
+                                  ),
+                                ],
                               ),
                               child: Text(
-                                conv.unreadCount.toString(),
-                                style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold),
+                                conv.unreadCount > 9 ? '9+' : conv.unreadCount.toString(),
+                                style: const TextStyle(
+                                  fontSize: 10, 
+                                  fontWeight: FontWeight.w900,
+                                  color: Colors.white,
+                                ),
                               ),
                             ),
                         ],
@@ -463,7 +524,18 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
                     size: 8,
                     color: Colors.white24,
                   ),
-                ]
+                ],
+                if (msg.metadata?['consumed'] == true) ...[
+                  const SizedBox(width: 4),
+                  const Text(
+                    'CONSUMED',
+                    style: TextStyle(
+                      fontSize: 8, 
+                      color: Colors.blueAccent, 
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ],
               ],
             ),
           ],

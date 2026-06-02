@@ -1,5 +1,6 @@
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:flutter/foundation.dart';
 import 'dart:convert';
 import 'dart:typed_data';
 import 'contact.dart';
@@ -8,7 +9,9 @@ class ContactService {
   static const String _boxName = 'contacts';
   static const String _blockBoxName = 'blocked_identities';
   static const String _hiveKey = 'hive_encryption_key';
-  final FlutterSecureStorage _storage = const FlutterSecureStorage();
+  final FlutterSecureStorage _storage;
+
+  ContactService(this._storage);
   
   Future<void> init() async {
     if (!Hive.isAdapterRegistered(0)) {
@@ -16,7 +19,20 @@ class ContactService {
     }
 
     // Get or generate encryption key
-    final existingKey = await _storage.read(key: _hiveKey);
+    String? existingKey = await _storage.read(key: _hiveKey);
+    
+    // FALLBACK: Try standard storage
+    if (existingKey == null) {
+      try {
+        const fallbackStorage = FlutterSecureStorage();
+        existingKey = await fallbackStorage.read(key: _hiveKey);
+        if (existingKey != null) {
+          debugPrint('GHOST_LOG: Migrating Hive key from fallback storage...');
+          await _storage.write(key: _hiveKey, value: existingKey);
+        }
+      } catch (_) {}
+    }
+
     Uint8List encryptionKey;
     if (existingKey == null) {
       encryptionKey = Uint8List.fromList(Hive.generateSecureKey());

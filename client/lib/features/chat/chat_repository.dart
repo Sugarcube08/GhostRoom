@@ -5,6 +5,7 @@ import 'message.dart';
 import 'dm_service.dart';
 import '../../core/crypto/identity_service.dart';
 import '../../core/network/websocket_service.dart';
+import '../../core/notification_service.dart';
 import '../contacts/contact_service.dart';
 import 'dart:convert';
 import 'package:logger/logger.dart';
@@ -15,6 +16,7 @@ class ChatRepository {
   final DMService _dmService;
   final ContactService _contactService;
   final WebSocketService _wsService;
+  final NotificationService _notificationService;
   final Logger _logger = Logger();
 
   static const String _msgBoxName = 'messages';
@@ -22,7 +24,13 @@ class ChatRepository {
   static const String _processedBoxName = 'processed_envelopes';
   static const String _lastSyncKey = 'last_sync_t';
 
-  ChatRepository(this._idService, this._dmService, this._contactService, this._wsService);
+  ChatRepository(
+    this._idService, 
+    this._dmService, 
+    this._contactService, 
+    this._wsService,
+    this._notificationService,
+  );
 
   String get myPublicId => _idService.currentIdentity?.publicId ?? '';
 
@@ -47,7 +55,29 @@ class ChatRepository {
       await Hive.openBox(_processedBoxName);
       StabilityTracker.logResource('HiveBox', 'Opened_$_processedBoxName');
     }
+
+    // Register WebSocket Callbacks
+    _wsService.onIdentityVerified(_handleIdentityVerified);
+    _wsService.onMessage(_handleNewMessage);
+    _wsService.onInboxMessages(_handleInboxMessages);
+    
+    _logger.i('GHOST_LOG: ChatRepository initialized and listeners registered.');
     StabilityTracker.logMemory('ChatRepo_Init_End');
+  }
+
+  void _handleIdentityVerified(dynamic data) {
+    _logger.i('GHOST_LOG: Identity verified. Triggering inbox sync...');
+    _wsService.fetchInbox(since: lastSyncTimestamp);
+  }
+
+  void _handleNewMessage(dynamic data) {
+    _logger.i('GHOST_LOG: Real-time message received via WebSocket.');
+    processEnvelopes([data]);
+  }
+
+  void _handleInboxMessages(List<dynamic> messages) {
+    _logger.i('GHOST_LOG: Inbox batch received. Count: ${messages.length}');
+    processEnvelopes(messages);
   }
 
   Box<Message> get _msgBox => Hive.box<Message>(_msgBoxName);
@@ -127,7 +157,7 @@ class ChatRepository {
           );
 
           if (!isSignatureValid) {
-            throw Exception('Invalid signature from unknown sender');
+            throw Exception('Cryptographic signature verification failed');
           }
         }
         _logger.i('GHOST_LOG: DECRYPT_SUCCESS');
@@ -174,7 +204,44 @@ class ChatRepository {
           isRequest: isRequest,
         );
 
+        // HANDLE SYSTEM MESSAGES
+        if (type == MessageType.system) {
+          final systemType = payload['metadata']?['system_type'];
+          if (systemType == 'receipt') {
+            final targetId = payload['metadata']?['target_id'];
+            if (targetId != null) {
+              final targetMsg = _msgBox.get(targetId);
+              if (targetMsg != null) {
+                targetMsg.metadata?['consumed'] = true;
+                await targetMsg.save();
+                _logger.i('Message $targetId marked as consumed by receipt.');
+              }
+            }
+          }
+          // Do not save system messages to the box
+          await _markProcessed(envelope.id, actualTimestamp);
+          _wsService.acknowledgeMessage(envelope.id);
+          continue;
+        }
+
         await _msgBox.put(message.id, message);
+        
+        // TRIGGER NOTIFICATION
+        if (isRequest) {
+          _notificationService.showNotification(
+            title: 'GhostRoom',
+            body: 'New secure message request',
+            payload: 'requests',
+          );
+        } else {
+          final alias = _contactService.getContact(senderId)?.alias ?? 'Contact';
+          _notificationService.showNotification(
+            title: alias,
+            body: type == MessageType.text ? (payload['text'] ?? 'New message') : 'Sent an attachment',
+            payload: senderId,
+          );
+        }
+
         _logger.i("MESSAGE_SAVED_LOCAL");
         _logger.i('GHOST_LOG: MESSAGE_RENDERED');
         _logger.i("MESSAGE_RENDERED_UI");
@@ -185,6 +252,10 @@ class ChatRepository {
       } catch (e) {
         _logger.e("MESSAGE_DECRYPT_FAILED");
         _logger.e('Error processing envelope: $e');
+        // Acknowledge anyway to prevent infinite retry loop for broken envelopes
+        if (data['id'] != null) {
+          _wsService.acknowledgeMessage(data['id']);
+        }
       }
     }
   }
@@ -226,11 +297,18 @@ class ChatRepository {
     Map<String, dynamic>? metadata,
   }) async {
     _logger.i('GHOST_LOG: SEND_START for recipient: $recipientId');
-    final contact = _contactService.getContact(recipientId);
-    if (contact == null) throw Exception('Contact not found');
     
     final identity = _idService.currentIdentity;
     if (identity == null) throw Exception('Identity not ready');
+
+    // Attempt to find XID for encryption
+    final contact = _contactService.getContact(recipientId);
+    final String? recipientXidBase64 = contact?.xid;
+
+    if (recipientXidBase64 == null || recipientXidBase64.isEmpty) {
+      _logger.e('GHOST_FATAL: Cannot send E2EE message to $recipientId - missing X25519 public key.');
+      throw Exception('Cannot send E2EE message without recipient public key. Please scan their Identity Package QR.');
+    }
 
     final payload = {
       'type': type.name,
@@ -243,7 +321,7 @@ class ChatRepository {
     final envelope = await _dmService.encryptDM(
       plaintext: jsonEncode(payload),
       recipientPublicId: recipientId,
-      recipientXid: base64Decode(contact.xid),
+      recipientXid: base64Decode(recipientXidBase64),
       senderIdentity: identity,
     );
     _logger.i('GHOST_LOG: SEND_ENCRYPT_SUCCESS');
@@ -268,6 +346,23 @@ class ChatRepository {
       metadata: metadata,
     );
     await _msgBox.put(message.id, message);
+  }
+
+  Future<void> sendConsumptionReceipt(String recipientId, String messageId) async {
+    try {
+      await sendMessage(
+        recipientId: recipientId,
+        text: '[RECEIPT]',
+        type: MessageType.system,
+        metadata: {
+          'system_type': 'receipt',
+          'target_id': messageId,
+        },
+      );
+      _logger.i('Sent consumption receipt for message $messageId to $recipientId');
+    } catch (e) {
+      _logger.w('Failed to send consumption receipt: $e');
+    }
   }
 
   List<Message> getMessagesForContact(String contactId) {
