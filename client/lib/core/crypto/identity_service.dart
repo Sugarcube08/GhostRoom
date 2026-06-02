@@ -267,8 +267,7 @@ class IdentityService {
 
       return _currentIdentity!;
     } catch (e, stack) {
-      print('GHOST_CRITICAL: restoreIdentity failed: $e');
-      print(stack);
+      _logger.e('GHOST_CRITICAL: restoreIdentity failed: $e', error: e, stackTrace: stack);
       rethrow;
     }
   }

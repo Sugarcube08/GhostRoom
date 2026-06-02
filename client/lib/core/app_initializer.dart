@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_flutter/hive_flutter.dart';
-import 'package:sodium/sodium_sumo.dart';
 import '../core/providers.dart';
 
 enum InitializationStatus { idle, initializing, success, failure }

@@ -10,6 +10,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import '../../core/providers.dart';
 import 'conversation_service.dart';
+import 'conversation_state.dart';
 import 'message.dart';
 import '../media/attachment_envelope.dart';
 import '../contacts/contact_actions.dart';
@@ -21,6 +22,46 @@ final conversationsProvider = Provider<List<Conversation>>((ref) {
 final requestsProvider = Provider<List<Conversation>>((ref) {
   return ref.watch(conversationServiceProvider).getRequests();
 });
+
+Widget _buildSubtitle(Conversation conv) {
+  String text = conv.lastMessage?.plaintext ?? 'No messages';
+  bool isSystem = conv.lastMessage?.type == MessageType.system;
+  
+  if (isSystem) {
+    final systemType = conv.lastMessage?.metadata?['system_type'];
+    if (systemType == 'mode_change') {
+      final modeIndex = conv.lastMessage?.metadata?['mode'] as int?;
+      final modeName = modeIndex != null ? ConversationMode.values[modeIndex].name.toUpperCase() : 'UNKNOWN';
+      text = 'Conversation mode changed to $modeName';
+    } else if (systemType == 'receipt') {
+      text = 'Message consumed';
+    }
+  } else if (conv.lastMessage?.type == MessageType.image) {
+    text = '[Image]';
+  } else if (conv.lastMessage?.type == MessageType.video) {
+    text = '[Video]';
+  }
+
+  return Text(
+    text,
+    maxLines: 1,
+    overflow: TextOverflow.ellipsis,
+    style: TextStyle(
+      color: conv.unreadCount > 0 ? Colors.white.withAlpha(200) : Colors.white24,
+      fontWeight: conv.unreadCount > 0 ? FontWeight.bold : FontWeight.normal,
+      fontStyle: isSystem ? FontStyle.italic : FontStyle.normal,
+    ),
+  );
+}
+
+Widget _buildDismissBackground(Color color, IconData icon, Alignment alignment) {
+  return Container(
+    color: color,
+    alignment: alignment,
+    padding: const EdgeInsets.symmetric(horizontal: 20),
+    child: Icon(icon, color: Colors.white),
+  );
+}
 
 class ChatsScreen extends ConsumerStatefulWidget {
   const ChatsScreen({super.key});
@@ -34,7 +75,7 @@ class _ChatsScreenState extends ConsumerState<ChatsScreen> with ContactActions {
   Widget build(BuildContext context) {
     return ValueListenableBuilder(
       valueListenable: Hive.box<Message>('messages').listenable(),
-      builder: (context, _, __) {
+      builder: (context, _, _) {
         final conversations = ref.watch(conversationsProvider);
         final requests = ref.watch(requestsProvider);
 
@@ -105,15 +146,7 @@ class _ChatsScreenState extends ConsumerState<ChatsScreen> with ContactActions {
                           color: conv.unreadCount > 0 ? Colors.white : Colors.white70,
                         ),
                       ),
-                      subtitle: Text(
-                        conv.lastMessage?.plaintext ?? 'No messages',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: conv.unreadCount > 0 ? Colors.white.withAlpha(200) : Colors.white24,
-                          fontWeight: conv.unreadCount > 0 ? FontWeight.bold : FontWeight.normal,
-                        ),
-                      ),
+                      subtitle: _buildSubtitle(conv),
                       trailing: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         crossAxisAlignment: CrossAxisAlignment.end,
@@ -199,7 +232,7 @@ class RequestsScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     return ValueListenableBuilder(
       valueListenable: Hive.box<Message>('messages').listenable(),
-      builder: (context, _, __) {
+      builder: (context, _, _) {
         final requests = ref.watch(requestsProvider);
 
         return Scaffold(
@@ -270,15 +303,6 @@ class RequestsScreen extends ConsumerWidget {
       },
     );
   }
-
-  Widget _buildDismissBackground(Color color, IconData icon, Alignment alignment) {
-    return Container(
-      color: color,
-      alignment: alignment,
-      padding: const EdgeInsets.symmetric(horizontal: 20),
-      child: Icon(icon, color: Colors.white),
-    );
-  }
 }
 
 class ConversationScreen extends ConsumerStatefulWidget {
@@ -294,7 +318,9 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
   final TextEditingController _controller = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   final ImagePicker _picker = ImagePicker();
-  String _selectedRetention = 'PERSISTENT';
+  
+  // Visual state for highlight
+  DateTime? _lastRemoteChange;
 
   @override
   void initState() {
@@ -304,6 +330,23 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
     });
   }
 
+  @override
+  void dispose() {
+    // Purge any viewed VIEW_ONCE messages for this contact when leaving the screen
+    final contactId = widget.conversation.contactId;
+    Future.microtask(() {
+      final messages = ref.read(chatRepositoryProvider).getMessagesForContact(contactId);
+      for (final msg in messages) {
+        if (msg.isRead && msg.metadata?['retention'] == 'VIEW_ONCE') {
+          msg.delete();
+        }
+      }
+    });
+    _controller.dispose();
+    _scrollController.dispose();
+    super.dispose();
+  }
+
   void _sendMessage() async {
     if (_controller.text.isEmpty) return;
     final text = _controller.text;
@@ -311,14 +354,12 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
     
     await ref.read(conversationServiceProvider).sendMessage(
       widget.conversation.contactId, 
-      text, 
-      retention: _selectedRetention
+      text,
     );
   }
 
   void _pickMedia({bool viewOnce = false}) async {
     final messenger = ScaffoldMessenger.of(context);
-    final retention = viewOnce ? 'VIEW_ONCE' : _selectedRetention;
     
     showModalBottomSheet(
       context: context,
@@ -332,16 +373,23 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
             onTap: () async {
               Navigator.pop(context);
               final XFile? image = await _picker.pickImage(source: ImageSource.gallery);
-              if (image == null) return;
+              if (image == null || !mounted) return;
               messenger.showSnackBar(const SnackBar(content: Text('Encrypting & Uploading...')));
               try {
-                await ref.read(conversationServiceProvider).sendImage(
-                  widget.conversation.contactId, 
-                  File(image.path),
-                  retention: retention,
-                );
+                if (viewOnce) {
+                  // Explicit view-once media sends override conversation mode
+                  await ref.read(conversationServiceProvider).sendImage(
+                    widget.conversation.contactId, 
+                    File(image.path),
+                  );
+                } else {
+                  await ref.read(conversationServiceProvider).sendImage(
+                    widget.conversation.contactId, 
+                    File(image.path),
+                  );
+                }
               } catch (e) {
-                messenger.showSnackBar(SnackBar(content: Text('Upload failed: $e')));
+                if (mounted) messenger.showSnackBar(SnackBar(content: Text('Upload failed: $e')));
               }
             },
           ),
@@ -351,16 +399,15 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
             onTap: () async {
               Navigator.pop(context);
               final XFile? video = await _picker.pickVideo(source: ImageSource.gallery);
-              if (video == null) return;
+              if (video == null || !mounted) return;
               messenger.showSnackBar(const SnackBar(content: Text('Compressing & Uploading...')));
               try {
                 await ref.read(conversationServiceProvider).sendVideo(
                   widget.conversation.contactId, 
                   File(video.path),
-                  retention: retention,
                 );
               } catch (e) {
-                messenger.showSnackBar(SnackBar(content: Text('Upload failed: $e')));
+                if (mounted) messenger.showSnackBar(SnackBar(content: Text('Upload failed: $e')));
               }
             },
           ),
@@ -372,45 +419,61 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
   @override
   Widget build(BuildContext context) {
     return ValueListenableBuilder(
-      valueListenable: Hive.box<Message>('messages').listenable(),
-      builder: (context, _, __) {
-        final messages = ref.watch(chatRepositoryProvider).getMessagesForContact(widget.conversation.contactId);
+      valueListenable: Hive.box<ConversationState>('conversation_states').listenable(keys: [widget.conversation.contactId]),
+      builder: (context, Box<ConversationState> stateBox, _) {
+        final state = stateBox.get(widget.conversation.contactId);
+        final currentMode = state?.mode ?? ConversationMode.persistent;
+        
+        // Detect remote change for highlight
+        if (state != null && state.lastChangedBy != ref.read(chatRepositoryProvider).myPublicId) {
+          if (_lastRemoteChange == null || state.lastChangedAt.isAfter(_lastRemoteChange!)) {
+            _lastRemoteChange = state.lastChangedAt;
+            // Trigger haptic or just visual highlight logic
+          }
+        }
 
-        return Scaffold(
-          appBar: AppBar(
-            title: GestureDetector(
-              onTap: () => _showSafetyNumbers(context),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(widget.conversation.alias),
-                  Text(
-                    'TAP TO VERIFY IDENTITY',
-                    style: const TextStyle(fontSize: 8, color: Colors.blueAccent, fontWeight: FontWeight.bold),
+        return ValueListenableBuilder(
+          valueListenable: Hive.box<Message>('messages').listenable(),
+          builder: (context, _, _) {
+            final messages = ref.watch(chatRepositoryProvider).getMessagesForContact(widget.conversation.contactId);
+
+            return Scaffold(
+              appBar: AppBar(
+                title: GestureDetector(
+                  onTap: () => _showSafetyNumbers(context),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(widget.conversation.alias),
+                      const Text(
+                        'TAP TO VERIFY IDENTITY',
+                        style: TextStyle(fontSize: 8, color: Colors.blueAccent, fontWeight: FontWeight.bold),
+                      ),
+                    ],
                   ),
-                ],
-              ),
-            ),
-          ),
-          body: Column(
-            children: [
-              Expanded(
-                child: ListView.builder(
-                  controller: _scrollController,
-                  padding: const EdgeInsets.all(16),
-                  itemCount: messages.length,
-                  itemBuilder: (context, index) {
-                    final msg = messages[index];
-                    final isMe = msg.senderId == ref.read(chatRepositoryProvider).myPublicId;
-                    return _buildMessageBubble(msg, isMe);
-                  },
                 ),
               ),
-              widget.isRequestMode ? _buildRequestActions() : _buildInput(),
-            ],
-          ),
+              body: Column(
+                children: [
+                  Expanded(
+                    child: ListView.builder(
+                      controller: _scrollController,
+                      padding: const EdgeInsets.all(16),
+                      itemCount: messages.length,
+                      itemBuilder: (context, index) {
+                        final msg = messages[index];
+                        final isMe = msg.senderId == ref.read(chatRepositoryProvider).myPublicId;
+                        return _buildMessageBubble(msg, isMe);
+                      },
+                    ),
+                  ),
+                  widget.isRequestMode ? _buildRequestActions() : _buildInput(currentMode, state),
+                ],
+              ),
+            );
+          },
         );
-      },
+      }
     );
   }
 
@@ -544,7 +607,7 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
     );
   }
 
-  Widget _buildInput() {
+  Widget _buildInput(ConversationMode currentMode, ConversationState? state) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
       decoration: const BoxDecoration(
@@ -555,7 +618,7 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            _buildRetentionSelector(),
+            _buildRetentionSelector(currentMode, state),
             Row(
               children: [
                 IconButton(
@@ -591,32 +654,50 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
     );
   }
 
-  Widget _buildRetentionSelector() {
+  Widget _buildRetentionSelector(ConversationMode currentMode, ConversationState? state) {
     IconData icon = Icons.history;
     String label = 'PERSISTENT';
-    if (_selectedRetention == 'EPHEMERAL') {
+    if (currentMode == ConversationMode.ephemeral) {
       icon = Icons.timer_outlined;
       label = '30 DAYS';
-    } else if (_selectedRetention == 'VIEW_ONCE') {
+    } else if (currentMode == ConversationMode.viewOnce) {
       icon = Icons.visibility_off_outlined;
       label = 'VIEW ONCE';
     }
+
+    final isRemoteChange = state != null && 
+                           state.lastChangedBy != ref.read(chatRepositoryProvider).myPublicId &&
+                           DateTime.now().difference(state.lastChangedAt).inSeconds < 10;
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 8.0),
       child: GestureDetector(
         onTap: _showRetentionOptions,
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(icon, size: 12, color: Colors.white24),
-            const SizedBox(width: 4),
-            Text(
-              label,
-              style: const TextStyle(fontSize: 10, color: Colors.white24, fontWeight: FontWeight.bold),
-            ),
-            const Icon(Icons.arrow_drop_down, size: 12, color: Colors.white24),
-          ],
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 500),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+          decoration: BoxDecoration(
+            color: isRemoteChange ? Colors.blueAccent.withAlpha(40) : Colors.transparent,
+            borderRadius: BorderRadius.circular(12),
+            border: isRemoteChange ? Border.all(color: Colors.blueAccent.withAlpha(100)) : null,
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, size: 12, color: isRemoteChange ? Colors.blueAccent : Colors.white24),
+              const SizedBox(width: 4),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 10, 
+                  color: isRemoteChange ? Colors.white : Colors.white24, 
+                  fontWeight: FontWeight.bold
+                ),
+              ),
+              Icon(Icons.arrow_drop_down, size: 12, color: isRemoteChange ? Colors.blueAccent : Colors.white24),
+            ],
+          ),
         ),
       ),
     );
@@ -633,8 +714,9 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
             leading: const Icon(Icons.history),
             title: const Text('PERSISTENT'),
             subtitle: const Text('Kept in mailbox until acknowledged'),
-            onTap: () {
-              setState(() => _selectedRetention = 'PERSISTENT');
+            onTap: () async {
+              await ref.read(conversationServiceProvider).setConversationMode(widget.conversation.contactId, ConversationMode.persistent);
+              if (!context.mounted) return;
               Navigator.pop(context);
             },
           ),
@@ -642,8 +724,9 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
             leading: const Icon(Icons.timer_outlined),
             title: const Text('EPHEMERAL'),
             subtitle: const Text('Auto-delete after 30 days'),
-            onTap: () {
-              setState(() => _selectedRetention = 'EPHEMERAL');
+            onTap: () async {
+              await ref.read(conversationServiceProvider).setConversationMode(widget.conversation.contactId, ConversationMode.ephemeral);
+              if (!context.mounted) return;
               Navigator.pop(context);
             },
           ),
@@ -651,8 +734,9 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
             leading: const Icon(Icons.visibility_off_outlined),
             title: const Text('VIEW ONCE'),
             subtitle: const Text('Immediate deletion upon reading'),
-            onTap: () {
-              setState(() => _selectedRetention = 'VIEW_ONCE');
+            onTap: () async {
+              await ref.read(conversationServiceProvider).setConversationMode(widget.conversation.contactId, ConversationMode.viewOnce);
+              if (!context.mounted) return;
               Navigator.pop(context);
             },
           ),
@@ -794,6 +878,7 @@ class _AttachmentWidgetState extends ConsumerState<AttachmentWidget> {
 
     final meta = widget.message.metadata;
     final sizeStr = meta?['size'] != null ? '${((meta!['size'] as int) / 1024 / 1024).toStringAsFixed(1)} MB' : '';
+    final isViewOnce = meta?['retention'] == 'VIEW_ONCE';
 
     return Container(
       width: 200,
@@ -804,7 +889,7 @@ class _AttachmentWidgetState extends ConsumerState<AttachmentWidget> {
         image: _thumbData != null ? DecorationImage(
           image: MemoryImage(_thumbData!),
           fit: BoxFit.cover,
-          opacity: 0.3,
+          opacity: isViewOnce ? 0.1 : 0.3,
         ) : null,
       ),
       child: Stack(
@@ -815,28 +900,37 @@ class _AttachmentWidgetState extends ConsumerState<AttachmentWidget> {
                 : Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
+                      if (isViewOnce)
+                        const Padding(
+                          padding: EdgeInsets.only(bottom: 8.0),
+                          child: Icon(Icons.visibility_off_outlined, color: Colors.amber, size: 24),
+                        ),
                       IconButton(
                         icon: Icon(
                           widget.message.type == MessageType.video 
                             ? Icons.play_circle_outline 
                             : Icons.download_for_offline_outlined, 
-                          color: Colors.white70,
+                          color: isViewOnce ? Colors.amber : Colors.white70,
                           size: 32,
                         ),
                         onPressed: _download,
                       ),
                       Text(
-                        '${widget.message.type.name.toUpperCase()} $sizeStr',
-                        style: const TextStyle(color: Colors.white30, fontSize: 9, fontWeight: FontWeight.bold),
+                        '${isViewOnce ? 'VIEW ONCE ' : ''}${widget.message.type.name.toUpperCase()} $sizeStr',
+                        style: TextStyle(
+                          color: isViewOnce ? Colors.amber.withAlpha(100) : Colors.white30, 
+                          fontSize: 9, 
+                          fontWeight: FontWeight.bold
+                        ),
                       ),
                     ],
                   ),
           ),
           if (widget.message.type == MessageType.video)
-            const Positioned(
+            Positioned(
               bottom: 8,
               right: 8,
-              child: Icon(Icons.videocam_outlined, size: 16, color: Colors.white24),
+              child: Icon(Icons.videocam_outlined, size: 16, color: isViewOnce ? Colors.amber.withAlpha(100) : Colors.white24),
             ),
         ],
       ),
@@ -889,7 +983,7 @@ class _VideoPreviewState extends State<_VideoPreview> {
       _tempFile = tempFile;
       await tempFile.writeAsBytes(widget.data);
       if (!mounted) {
-        _tempFile?.delete().catchError((_) => null);
+        _tempFile?.delete().catchError((_) => File(''));
         return;
       }
 
@@ -898,7 +992,7 @@ class _VideoPreviewState extends State<_VideoPreview> {
       await controller.initialize();
       if (!mounted) {
         controller.dispose();
-        _tempFile?.delete().catchError((_) => null);
+        _tempFile?.delete().catchError((_) => File(''));
         return;
       }
 
@@ -918,7 +1012,7 @@ class _VideoPreviewState extends State<_VideoPreview> {
   void dispose() {
     _controller?.dispose();
     _chewieController?.dispose();
-    _tempFile?.delete().catchError((_) => null);
+    _tempFile?.delete().catchError((_) => File(''));
     super.dispose();
   }
 

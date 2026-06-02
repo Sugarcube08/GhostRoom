@@ -22,7 +22,7 @@ class _ContactListScreenState extends ConsumerState<ContactListScreen>
   Widget build(BuildContext context) {
     return ValueListenableBuilder(
       valueListenable: Hive.box<Contact>('contacts').listenable(),
-      builder: (context, _, __) {
+      builder: (context, _, _) {
         final contacts = ref.watch(contactServiceProvider).getAllContacts();
 
         return Scaffold(

@@ -200,10 +200,8 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
 
       final fileBytes = await File(result.files.single.path!).readAsBytes();
       
-      if (!context.mounted) return;
-
       final passController = TextEditingController();
-      if (!context.mounted) return;
+      if (!mounted) return;
       showDialog(
         context: context,
         builder: (dialogContext) => AlertDialog(
@@ -224,7 +222,9 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                 Navigator.pop(dialogContext);
                 nav.pushReplacement(MaterialPageRoute(builder: (_) => const NavigationShell()));
               } catch (e) {
-                ScaffoldMessenger.of(dialogContext).showSnackBar(SnackBar(content: Text('Decryption failed: $e')));
+                if (dialogContext.mounted) {
+                  ScaffoldMessenger.of(dialogContext).showSnackBar(SnackBar(content: Text('Decryption failed: $e')));
+                }
               }
             },
               child: const Text('IMPORT'),

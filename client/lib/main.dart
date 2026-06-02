@@ -11,7 +11,10 @@ import 'core/app_initializer.dart';
 import 'core/stability_tracker.dart';
 import 'dart:async';
 import 'dart:io';
+import 'features/chat/chat_screens.dart';
 import 'package:path_provider/path_provider.dart';
+
+final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
 void main() async {
   runZonedGuarded(() async {
@@ -57,7 +60,7 @@ void main() async {
     runApp(
       UncontrolledProviderScope(
         container: container,
-        child: const GhostRoomApp(),
+        child: const GhostApp(),
       ),
     );
   }, (error, stack) {
@@ -67,18 +70,43 @@ void main() async {
   });
 }
 
-class GhostRoomApp extends ConsumerStatefulWidget {
-  const GhostRoomApp({super.key});
+class GhostApp extends ConsumerStatefulWidget {
+  const GhostApp({super.key});
 
   @override
-  ConsumerState<GhostRoomApp> createState() => _GhostRoomAppState();
+  ConsumerState<GhostApp> createState() => _GhostAppState();
 }
 
-class _GhostRoomAppState extends ConsumerState<GhostRoomApp> with WidgetsBindingObserver {
+class _GhostAppState extends ConsumerState<GhostApp> with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+
+    Future.microtask(() {
+      final notifService = ref.read(notificationServiceProvider);
+      notifService.onNotificationTap = (payload) {
+        if (payload == null) return;
+
+        if (payload == 'requests') {
+          navigatorKey.currentState?.popUntil((route) => route.isFirst);
+          navigatorKey.currentState?.push(MaterialPageRoute(
+            builder: (_) => const RequestsScreen(),
+          ));
+        } else {
+          final convService = ref.read(conversationServiceProvider);
+          final convs = convService.getConversations();
+          final targetConv = convs.where((c) => c.contactId == payload).firstOrNull;
+
+          if (targetConv != null) {
+            navigatorKey.currentState?.popUntil((route) => route.isFirst);
+            navigatorKey.currentState?.push(MaterialPageRoute(
+              builder: (_) => ConversationScreen(conversation: targetConv),
+            ));
+          }
+        }
+      };
+    });
   }
 
   @override
@@ -100,6 +128,7 @@ class _GhostRoomAppState extends ConsumerState<GhostRoomApp> with WidgetsBinding
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      navigatorKey: navigatorKey,
       debugShowCheckedModeBanner: false,
       title: 'Ghost Room',
       theme: GhostTheme.darkTheme,
@@ -264,18 +293,19 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
           ),
           TextButton(
             onPressed: () async {
+              final scaffoldMessenger = ScaffoldMessenger.of(context);
               final seed = controller.text.trim();
               if (seed.isEmpty) return;
               try {
                 await ref.read(identityServiceProvider).restoreIdentity(seed);
-                if (mounted) {
-                  Navigator.pop(dialogContext); // Close recovery dialog
-                  ref.read(appInitializerProvider).status = InitializationStatus.idle;
-                  await ref.read(appInitializerProvider).initialize();
-                  _checkInitialization();
-                }
+                if (!context.mounted) return;
+                
+                Navigator.pop(dialogContext); // Close recovery dialog
+                ref.read(appInitializerProvider).status = InitializationStatus.idle;
+                await ref.read(appInitializerProvider).initialize();
+                _checkInitialization();
               } catch (e) {
-                ScaffoldMessenger.of(context).showSnackBar(
+                scaffoldMessenger.showSnackBar(
                   SnackBar(content: Text('Recovery failed: $e')),
                 );
               }

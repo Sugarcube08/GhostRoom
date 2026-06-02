@@ -3,6 +3,7 @@ import 'package:sodium/sodium_sumo.dart' hide Box;
 import 'dart:typed_data';
 import 'message.dart';
 import 'dm_service.dart';
+import 'conversation_state.dart';
 import '../../core/crypto/identity_service.dart';
 import '../../core/network/websocket_service.dart';
 import '../../core/notification_service.dart';
@@ -42,10 +43,20 @@ class ChatRepository {
     if (!Hive.isAdapterRegistered(MessageAdapter().typeId)) {
       Hive.registerAdapter(MessageAdapter());
     }
+    if (!Hive.isAdapterRegistered(ConversationModeAdapter().typeId)) {
+      Hive.registerAdapter(ConversationModeAdapter());
+    }
+    if (!Hive.isAdapterRegistered(ConversationStateAdapter().typeId)) {
+      Hive.registerAdapter(ConversationStateAdapter());
+    }
     
     if (!Hive.isBoxOpen(_msgBoxName)) {
       await Hive.openBox<Message>(_msgBoxName);
       StabilityTracker.logResource('HiveBox', 'Opened_$_msgBoxName');
+    }
+    if (!Hive.isBoxOpen('conversation_states')) {
+      await Hive.openBox<ConversationState>('conversation_states');
+      StabilityTracker.logResource('HiveBox', 'Opened_conversation_states');
     }
     if (!Hive.isBoxOpen(_syncBoxName)) {
       await Hive.openBox(_syncBoxName);
@@ -61,8 +72,34 @@ class ChatRepository {
     _wsService.onMessage(_handleNewMessage);
     _wsService.onInboxMessages(_handleInboxMessages);
     
+    // Run cleanup tasks
+    _cleanupEphemeralMessages();
+    
     _logger.i('GHOST_LOG: ChatRepository initialized and listeners registered.');
     StabilityTracker.logMemory('ChatRepo_Init_End');
+  }
+
+  void _cleanupEphemeralMessages() {
+    final now = DateTime.now();
+    final expiredThreshold = now.subtract(const Duration(days: 30));
+    
+    int deletedCount = 0;
+    final keysToDelete = <dynamic>[];
+
+    for (final key in _msgBox.keys) {
+      final msg = _msgBox.get(key);
+      if (msg != null && msg.metadata?['retention'] == 'EPHEMERAL') {
+        if (msg.timestamp.isBefore(expiredThreshold)) {
+          keysToDelete.add(key);
+          deletedCount++;
+        }
+      }
+    }
+
+    if (keysToDelete.isNotEmpty) {
+      _msgBox.deleteAll(keysToDelete);
+      _logger.i('GHOST_LOG: EPHEMERAL_CLEANUP purged $deletedCount messages.');
+    }
   }
 
   void _handleIdentityVerified(dynamic data) {
@@ -81,6 +118,7 @@ class ChatRepository {
   }
 
   Box<Message> get _msgBox => Hive.box<Message>(_msgBoxName);
+  Box<ConversationState> get _stateBox => Hive.box<ConversationState>('conversation_states');
   Box get _syncBox => Hive.box(_syncBoxName);
   Box get _processedBox => Hive.box(_processedBoxName);
 
@@ -217,11 +255,49 @@ class ChatRepository {
                 _logger.i('Message $targetId marked as consumed by receipt.');
               }
             }
+          } else if (systemType == 'mode_change') {
+            final modeIndex = payload['metadata']?['mode'] as int?;
+            if (modeIndex != null && modeIndex < ConversationMode.values.length) {
+              final newMode = ConversationMode.values[modeIndex];
+              final state = _stateBox.get(senderId) ?? ConversationState(
+                contactId: senderId, 
+                lastChangedBy: senderId, 
+                lastChangedAt: DateTime.now(), 
+                lastActivityAt: DateTime.now(),
+              );
+              state.mode = newMode;
+              state.lastChangedBy = senderId;
+              state.lastChangedAt = DateTime.now();
+              await _stateBox.put(senderId, state);
+              _logger.i('Conversation mode for $senderId changed to ${newMode.name} by partner.');
+            }
           }
           // Do not save system messages to the box
           await _markProcessed(envelope.id, actualTimestamp);
           _wsService.acknowledgeMessage(envelope.id);
           continue;
+        }
+
+        // UPDATE INACTIVITY TRACKER
+        final state = _stateBox.get(senderId);
+        if (state != null) {
+          // Check for 18-hour inactivity reset
+          final inactivity = DateTime.now().difference(state.lastActivityAt);
+          if (inactivity.inHours >= 18 && state.mode != ConversationMode.persistent) {
+            state.mode = ConversationMode.persistent;
+            state.lastChangedBy = 'system';
+            state.lastChangedAt = DateTime.now();
+            _logger.i('Conversation mode for $senderId reset to persistent due to inactivity.');
+          }
+          state.lastActivityAt = DateTime.now();
+          await _stateBox.put(senderId, state);
+        } else {
+          await _stateBox.put(senderId, ConversationState(
+            contactId: senderId,
+            lastChangedBy: 'system',
+            lastChangedAt: DateTime.now(),
+            lastActivityAt: DateTime.now(),
+          ));
         }
 
         await _msgBox.put(message.id, message);
@@ -236,8 +312,8 @@ class ChatRepository {
         } else {
           final alias = _contactService.getContact(senderId)?.alias ?? 'Contact';
           _notificationService.showNotification(
-            title: alias,
-            body: type == MessageType.text ? (payload['text'] ?? 'New message') : 'Sent an attachment',
+            title: 'GhostRoom',
+            body: 'You received a message from $alias',
             payload: senderId,
           );
         }
@@ -346,6 +422,35 @@ class ChatRepository {
       metadata: metadata,
     );
     await _msgBox.put(message.id, message);
+  }
+
+  Future<void> updateConversationMode(String contactId, ConversationMode mode) async {
+    final identity = _idService.currentIdentity;
+    if (identity == null) return;
+
+    final state = _stateBox.get(contactId) ?? ConversationState(
+      contactId: contactId, 
+      lastChangedBy: identity.publicId, 
+      lastChangedAt: DateTime.now(), 
+      lastActivityAt: DateTime.now(),
+    );
+
+    state.mode = mode;
+    state.lastChangedBy = identity.publicId;
+    state.lastChangedAt = DateTime.now();
+    await _stateBox.put(contactId, state);
+
+    // Send synchronization message
+    await sendMessage(
+      recipientId: contactId,
+      text: '[MODE_CHANGE]',
+      type: MessageType.system,
+      metadata: {
+        'system_type': 'mode_change',
+        'mode': mode.index,
+      },
+    );
+    _logger.i('Sent conversation mode change to ${mode.name} for $contactId');
   }
 
   Future<void> sendConsumptionReceipt(String recipientId, String messageId) async {
