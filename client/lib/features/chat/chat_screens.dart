@@ -20,10 +20,6 @@ final conversationsProvider = Provider<List<Conversation>>((ref) {
   return ref.watch(conversationServiceProvider).getConversations();
 });
 
-final requestsProvider = Provider<List<Conversation>>((ref) {
-  return ref.watch(conversationServiceProvider).getRequests();
-});
-
 Widget _buildSubtitle(Conversation conv) {
   String text = conv.lastMessage?.plaintext ?? 'No messages';
   bool isSystem = conv.lastMessage?.type == MessageType.system;
@@ -65,7 +61,6 @@ class ChatsScreen extends ConsumerStatefulWidget {
 class _ChatsScreenState extends ConsumerState<ChatsScreen> with ContactActions {
   @override
   Widget build(BuildContext context) {
-    // Listen to all boxes that affect the conversation list
     return ListenableBuilder(
       listenable: Listenable.merge([
         Hive.box<Message>('messages').listenable(),
@@ -73,8 +68,8 @@ class _ChatsScreenState extends ConsumerState<ChatsScreen> with ContactActions {
         Hive.box<ConversationState>('conversation_states').listenable(),
       ]),
       builder: (context, _) {
-        final conversations = ref.watch(conversationsProvider);
-        final requests = ref.watch(requestsProvider);
+        final conversations = ref.read(conversationServiceProvider).getConversations();
+        final requests = ref.read(conversationServiceProvider).getRequests();
 
         return Scaffold(
           appBar: AppBar(
@@ -92,17 +87,13 @@ class _ChatsScreenState extends ConsumerState<ChatsScreen> with ContactActions {
                           MaterialPageRoute(builder: (_) => const RequestsScreen()),
                         );
                       },
-                      tooltip: 'Message Requests',
                     ),
                     Positioned(
                       right: 8,
                       top: 8,
                       child: Container(
                         padding: const EdgeInsets.all(2),
-                        decoration: BoxDecoration(
-                          color: Colors.red,
-                          borderRadius: BorderRadius.circular(6),
-                        ),
+                        decoration: BoxDecoration(color: Colors.red, borderRadius: BorderRadius.circular(6)),
                         constraints: const BoxConstraints(minWidth: 12, minHeight: 12),
                         child: Text(
                           requests.length.toString(),
@@ -130,10 +121,7 @@ class _ChatsScreenState extends ConsumerState<ChatsScreen> with ContactActions {
                   title: const Text('MESSAGE REQUESTS', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
                   trailing: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: Colors.orangeAccent,
-                      borderRadius: BorderRadius.circular(10),
-                    ),
+                    decoration: BoxDecoration(color: Colors.orangeAccent, borderRadius: BorderRadius.circular(10)),
                     child: Text(
                       requests.length.toString(),
                       style: const TextStyle(color: Colors.black, fontSize: 10, fontWeight: FontWeight.bold),
@@ -153,23 +141,24 @@ class _ChatsScreenState extends ConsumerState<ChatsScreen> with ContactActions {
                         itemCount: conversations.length,
                         itemBuilder: (context, index) {
                           final conv = conversations[index];
+                          final hasUnread = conv.unreadCount > 0;
 
                           return ListTile(
                             leading: CircleAvatar(
-                              backgroundColor: conv.unreadCount > 0 ? Colors.blueAccent.withAlpha(40) : Colors.white10,
+                              backgroundColor: hasUnread ? Colors.blueAccent.withAlpha(40) : Colors.white10,
                               child: Text(
                                 conv.alias.isNotEmpty ? conv.alias[0].toUpperCase() : '?',
                                 style: TextStyle(
-                                  color: conv.unreadCount > 0 ? Colors.blueAccent : Colors.white54,
-                                  fontWeight: conv.unreadCount > 0 ? FontWeight.bold : FontWeight.normal,
+                                  color: hasUnread ? Colors.blueAccent : Colors.white54,
+                                  fontWeight: hasUnread ? FontWeight.bold : FontWeight.normal,
                                 ),
                               ),
                             ),
                             title: Text(
                               conv.alias,
                               style: TextStyle(
-                                fontWeight: conv.unreadCount > 0 ? FontWeight.w900 : FontWeight.normal,
-                                color: conv.unreadCount > 0 ? Colors.white : Colors.white70,
+                                fontWeight: hasUnread ? FontWeight.w900 : FontWeight.normal,
+                                color: hasUnread ? Colors.white : Colors.white70,
                               ),
                             ),
                             subtitle: _buildSubtitle(conv),
@@ -182,32 +171,17 @@ class _ChatsScreenState extends ConsumerState<ChatsScreen> with ContactActions {
                                     DateFormat.Hm().format(conv.lastMessage!.timestamp),
                                     style: TextStyle(
                                       fontSize: 10, 
-                                      color: conv.unreadCount > 0 ? Colors.blueAccent : Colors.white24,
-                                      fontWeight: conv.unreadCount > 0 ? FontWeight.bold : FontWeight.normal,
+                                      color: hasUnread ? Colors.blueAccent : Colors.white24,
                                     ),
                                   ),
-                                if (conv.unreadCount > 0)
+                                if (hasUnread)
                                   Container(
                                     margin: const EdgeInsets.only(top: 4),
                                     padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                    decoration: BoxDecoration(
-                                      color: Colors.blueAccent,
-                                      borderRadius: BorderRadius.circular(10),
-                                      boxShadow: [
-                                        BoxShadow(
-                                          color: Colors.blueAccent.withAlpha(100),
-                                          blurRadius: 4,
-                                          spreadRadius: 1,
-                                        ),
-                                      ],
-                                    ),
+                                    decoration: BoxDecoration(color: Colors.blueAccent, borderRadius: BorderRadius.circular(10)),
                                     child: Text(
                                       conv.unreadCount > 9 ? '9+' : conv.unreadCount.toString(),
-                                      style: const TextStyle(
-                                        fontSize: 10, 
-                                        fontWeight: FontWeight.w900,
-                                        color: Colors.white,
-                                      ),
+                                      style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: Colors.white),
                                     ),
                                   ),
                               ],
@@ -240,13 +214,10 @@ class _ChatsScreenState extends ConsumerState<ChatsScreen> with ContactActions {
           SizedBox(height: 16),
           Text('Secure channel established.', style: TextStyle(color: Colors.white24)),
           SizedBox(height: 8),
-          Padding(
-            padding: EdgeInsets.symmetric(horizontal: 48),
-            child: Text(
-              'Messages in GhostRoom are end-to-end encrypted before they leave your device.',
-              textAlign: TextAlign.center,
-              style: TextStyle(color: Colors.white10, fontSize: 12),
-            ),
+          Text(
+            'Messages are end-to-end encrypted.',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: Colors.white10, fontSize: 12),
           ),
         ],
       ),
@@ -259,35 +230,18 @@ class RequestsScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    return ValueListenableBuilder(
-      valueListenable: Hive.box<Message>('messages').listenable(),
-      builder: (context, _, _) {
-        final requests = ref.watch(requestsProvider);
+    return ListenableBuilder(
+      listenable: Listenable.merge([
+        Hive.box<Message>('messages').listenable(),
+        Hive.box<ConversationState>('conversation_states').listenable(),
+      ]),
+      builder: (context, _) {
+        final requests = ref.read(conversationServiceProvider).getRequests();
 
         return Scaffold(
-          appBar: AppBar(
-            title: const Text('REQUESTS'),
-          ),
+          appBar: AppBar(title: const Text('MESSAGE REQUESTS')),
           body: requests.isEmpty
-              ? const Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(Icons.mail_lock_outlined, size: 64, color: Colors.white10),
-                      SizedBox(height: 16),
-                      Text('No pending requests.', style: TextStyle(color: Colors.white24)),
-                      SizedBox(height: 8),
-                      Padding(
-                        padding: EdgeInsets.symmetric(horizontal: 48),
-                        child: Text(
-                          'Unknown senders appear here before entering your inbox.',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(color: Colors.white10, fontSize: 12),
-                        ),
-                      ),
-                    ],
-                  ),
-                )
+              ? const Center(child: Text('No pending requests.', style: TextStyle(color: Colors.white24)))
               : ListView.builder(
                   itemCount: requests.length,
                   itemBuilder: (context, index) {
@@ -311,11 +265,15 @@ class RequestsScreen extends ConsumerWidget {
                           child: Icon(Icons.person_outline, color: Colors.white54),
                         ),
                         title: const Text('Unknown Sender'),
-                        subtitle: Text(
-                          req.lastMessage?.plaintext ?? '',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
+                        subtitle: _buildSubtitle(req),
+                        trailing: req.unreadCount > 0 ? Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(color: Colors.blueAccent, borderRadius: BorderRadius.circular(10)),
+                          child: Text(
+                            req.unreadCount > 9 ? '9+' : req.unreadCount.toString(),
+                            style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.white),
+                          ),
+                        ) : null,
                         onTap: () {
                           Navigator.push(
                             context,
@@ -348,17 +306,15 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
   final ScrollController _scrollController = ScrollController();
   final ImagePicker _picker = ImagePicker();
   
-  // Visual state for highlight
   DateTime? _lastRemoteChange;
   bool _showScrollButton = false;
+  bool _isInitialScroll = true;
 
   @override
   void initState() {
     super.initState();
+    ref.read(chatRepositoryProvider).setActiveConversation(widget.conversation.contactId);
     _scrollController.addListener(_onScroll);
-    Future.microtask(() {
-      ref.read(conversationServiceProvider).markAsRead(widget.conversation.contactId);
-    });
   }
 
   void _onScroll() {
@@ -371,6 +327,7 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
 
   @override
   void dispose() {
+    ref.read(chatRepositoryProvider).setActiveConversation(null);
     _scrollController.removeListener(_onScroll);
     final contactId = widget.conversation.contactId;
     Future.microtask(() => ref.read(chatRepositoryProvider).flushGhostMessages(contactId));
@@ -383,15 +340,12 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
     if (_controller.text.isEmpty) return;
     final text = _controller.text;
     _controller.clear();
-    
-    await ref.read(conversationServiceProvider).sendMessage(
-      widget.conversation.contactId, 
-      text,
-    );
+    await ref.read(conversationServiceProvider).sendMessage(widget.conversation.contactId, text);
   }
 
   void _pickMedia() async {
     final messenger = ScaffoldMessenger.of(context);
+    final navigator = Navigator.of(context);
     
     showModalBottomSheet(
       context: context,
@@ -403,17 +357,14 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
             leading: const Icon(Icons.image_outlined),
             title: const Text('PHOTO'),
             onTap: () async {
-              Navigator.pop(context);
+              navigator.pop();
               final XFile? image = await _picker.pickImage(source: ImageSource.gallery);
-              if (image == null || !mounted) return;
+              if (image == null) return;
               messenger.showSnackBar(const SnackBar(content: Text('Encrypting & Uploading...')));
               try {
-                await ref.read(conversationServiceProvider).sendImage(
-                  widget.conversation.contactId, 
-                  File(image.path),
-                );
+                await ref.read(conversationServiceProvider).sendImage(widget.conversation.contactId, File(image.path));
               } catch (e) {
-                if (mounted) messenger.showSnackBar(SnackBar(content: Text('Upload failed: $e')));
+                messenger.showSnackBar(SnackBar(content: Text('Upload failed: $e')));
               }
             },
           ),
@@ -421,17 +372,14 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
             leading: const Icon(Icons.video_library_outlined),
             title: const Text('VIDEO'),
             onTap: () async {
-              Navigator.pop(context);
+              navigator.pop();
               final XFile? video = await _picker.pickVideo(source: ImageSource.gallery);
-              if (video == null || !mounted) return;
+              if (video == null) return;
               messenger.showSnackBar(const SnackBar(content: Text('Compressing & Uploading...')));
               try {
-                await ref.read(conversationServiceProvider).sendVideo(
-                  widget.conversation.contactId, 
-                  File(video.path),
-                );
+                await ref.read(conversationServiceProvider).sendVideo(widget.conversation.contactId, File(video.path));
               } catch (e) {
-                if (mounted) messenger.showSnackBar(SnackBar(content: Text('Upload failed: $e')));
+                messenger.showSnackBar(SnackBar(content: Text('Upload failed: $e')));
               }
             },
           ),
@@ -447,8 +395,7 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
       builder: (context, Box<ConversationState> stateBox, _) {
         final state = stateBox.get(widget.conversation.contactId);
         final currentMode = state?.mode ?? ConversationMode.normal;
-        
-        // Detect remote change for highlight
+
         if (state != null && state.lastChangedBy != ref.read(chatRepositoryProvider).myPublicId) {
           if (_lastRemoteChange == null || state.lastChangedAt.isAfter(_lastRemoteChange!)) {
             _lastRemoteChange = state.lastChangedAt;
@@ -457,24 +404,22 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
 
         return ValueListenableBuilder(
           valueListenable: Hive.box<Message>('messages').listenable(),
-          builder: (context, _, _) {
-            final messages = ref.watch(chatRepositoryProvider).getMessagesForContact(widget.conversation.contactId, limit: 200);
-
-            // Auto-scroll logic
+          builder: (context, box, child) {
+            final messages = ref.read(chatRepositoryProvider).getMessagesForContact(widget.conversation.contactId, limit: 200);
+            
             WidgetsBinding.instance.addPostFrameCallback((_) {
               if (_scrollController.hasClients && messages.isNotEmpty) {
                 final pos = _scrollController.position;
                 final lastMsg = messages.last;
                 final isMe = lastMsg.senderId == ref.read(chatRepositoryProvider).myPublicId;
-                
                 final atBottom = pos.pixels >= pos.maxScrollExtent - 200;
-                
-                if (isMe || atBottom) {
-                  _scrollController.animateTo(
-                    pos.maxScrollExtent,
-                    duration: const Duration(milliseconds: 300),
-                    curve: Curves.easeOut,
-                  );
+
+                if (_isInitialScroll) {
+                  _isInitialScroll = false;
+                  _scrollController.jumpTo(pos.maxScrollExtent);
+                } else if (isMe || atBottom) {
+                  _scrollController.animateTo(pos.maxScrollExtent, duration: const Duration(milliseconds: 300), curve: Curves.easeOut);
+                  if (_showScrollButton) setState(() => _showScrollButton = false);
                 } else if (!isMe && !atBottom && !_showScrollButton) {
                   setState(() => _showScrollButton = true);
                 }
@@ -490,63 +435,51 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
               },
               child: Scaffold(
                 appBar: AppBar(
-                title: GestureDetector(
-                  onTap: () => _showSafetyNumbers(context),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(widget.conversation.alias),
-                      const Text(
-                        'TAP TO VERIFY IDENTITY',
-                        style: TextStyle(fontSize: 8, color: Colors.blueAccent, fontWeight: FontWeight.bold),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              floatingActionButton: _showScrollButton ? FloatingActionButton.extended(
-                backgroundColor: Colors.blueAccent,
-                label: const Text('NEW MESSAGES', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
-                icon: const Icon(Icons.arrow_downward, size: 16),
-                onPressed: () {
-                  _scrollController.animateTo(
-                    _scrollController.position.maxScrollExtent,
-                    duration: const Duration(milliseconds: 300),
-                    curve: Curves.easeOut,
-                  );
-                  setState(() => _showScrollButton = false);
-                },
-              ) : null,
-              floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
-              body: Column(
-                children: [
-                  Expanded(
-                    child: ListView.builder(
-                      controller: _scrollController,
-                      padding: const EdgeInsets.all(16),
-                      itemCount: messages.length,
-                      itemBuilder: (context, index) {
-                        final msg = messages[index];
-                        final isMe = msg.senderId == ref.read(chatRepositoryProvider).myPublicId;
-                        return _buildMessageBubble(msg, isMe);
-                      },
+                  title: GestureDetector(
+                    onTap: () => _showSafetyNumbers(context),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(widget.conversation.alias),
+                        const Text('TAP TO VERIFY IDENTITY', style: TextStyle(fontSize: 8, color: Colors.blueAccent, fontWeight: FontWeight.bold)),
+                      ],
                     ),
                   ),
-                  widget.isRequestMode ? _buildRequestActions() : _buildInput(currentMode, state),
-                ],
+                ),
+                floatingActionButton: _showScrollButton ? FloatingActionButton.extended(
+                  backgroundColor: Colors.blueAccent,
+                  label: const Text('NEW MESSAGES', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
+                  icon: const Icon(Icons.arrow_downward, size: 16),
+                  onPressed: () {
+                    _scrollController.animateTo(_scrollController.position.maxScrollExtent, duration: const Duration(milliseconds: 300), curve: Curves.easeOut);
+                    setState(() => _showScrollButton = false);
+                  },
+                ) : null,
+                floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
+                body: Column(
+                  children: [
+                    Expanded(
+                      child: ListView.builder(
+                        controller: _scrollController,
+                        padding: const EdgeInsets.all(16),
+                        itemCount: messages.length,
+                        itemBuilder: (context, index) => _buildMessageBubble(messages[index], messages[index].senderId == ref.read(chatRepositoryProvider).myPublicId),
+                      ),
+                    ),
+                    widget.isRequestMode ? _buildRequestActions() : _buildInput(currentMode, state),
+                  ],
+                ),
               ),
-            ),
-          );
-        },
-      );
-    },
-  );
-}
+            );
+          },
+        );
+      },
+    );
+  }
 
   void _showSafetyNumbers(BuildContext context) {
     final contact = widget.conversation.contact;
     if (contact == null) return;
-
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -554,67 +487,36 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Text(
-              'Verify these numbers with your contact to ensure no one is intercepting your messages.',
-              style: TextStyle(fontSize: 12, color: Colors.white54),
-            ),
+            const Text('Verify these numbers with your contact to ensure no interception.', style: TextStyle(fontSize: 12, color: Colors.white54)),
             const SizedBox(height: 24),
-            Container(
-              padding: const EdgeInsets.all(16),
-              color: Colors.white10,
-              child: Text(
-                contact.fingerprint,
-                textAlign: TextAlign.center,
-                style: const TextStyle(fontFamily: 'monospace', letterSpacing: 1, fontSize: 13),
-              ),
-            ),
+            Container(padding: const EdgeInsets.all(16), color: Colors.white10, child: Text(contact.fingerprint, textAlign: TextAlign.center, style: const TextStyle(fontFamily: 'monospace', letterSpacing: 1, fontSize: 13))),
           ],
         ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('CLOSE')),
-        ],
+        actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('CLOSE'))],
       ),
     );
   }
 
   Widget _buildRequestActions() {
+    final navigator = Navigator.of(context);
     return Container(
       padding: const EdgeInsets.all(16),
       color: Colors.white.withAlpha(10),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: [
-          TextButton(
-            onPressed: () async {
-              final scaffoldMessenger = ScaffoldMessenger.of(context);
-              final navigator = Navigator.of(context);
-              await ref.read(conversationServiceProvider).blockRequest(widget.conversation.contactId);
-              navigator.pop();
-              scaffoldMessenger.showSnackBar(const SnackBar(content: Text('Sender Blocked')));
-            },
-            child: const Text('BLOCK', style: TextStyle(color: Colors.red)),
-          ),
-          TextButton(
-            onPressed: () async {
-              final scaffoldMessenger = ScaffoldMessenger.of(context);
-              final navigator = Navigator.of(context);
-              await ref.read(conversationServiceProvider).rejectRequest(widget.conversation.contactId);
-              navigator.pop();
-              scaffoldMessenger.showSnackBar(const SnackBar(content: Text('Request Deleted')));
-            },
-            child: const Text('DELETE', style: TextStyle(color: Colors.grey)),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              final scaffoldMessenger = ScaffoldMessenger.of(context);
-              final navigator = Navigator.of(context);
-              await ref.read(conversationServiceProvider).acceptRequest(widget.conversation.contactId);
-              navigator.pop();
-              scaffoldMessenger.showSnackBar(const SnackBar(content: Text('Request Accepted')));
-            },
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
-            child: const Text('ACCEPT'),
-          ),
+          TextButton(onPressed: () async {
+            await ref.read(conversationServiceProvider).blockRequest(widget.conversation.contactId);
+            navigator.pop();
+          }, child: const Text('BLOCK', style: TextStyle(color: Colors.red))),
+          TextButton(onPressed: () async {
+            await ref.read(conversationServiceProvider).rejectRequest(widget.conversation.contactId);
+            navigator.pop();
+          }, child: const Text('DELETE', style: TextStyle(color: Colors.grey))),
+          ElevatedButton(onPressed: () async {
+            await ref.read(conversationServiceProvider).acceptRequest(widget.conversation.contactId);
+            navigator.pop();
+          }, style: ElevatedButton.styleFrom(backgroundColor: Colors.green), child: const Text('ACCEPT')),
         ],
       ),
     );
@@ -626,45 +528,19 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
       child: Container(
         margin: const EdgeInsets.symmetric(vertical: 4),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        decoration: BoxDecoration(
-          color: isMe ? Colors.white10 : Colors.white.withAlpha(13),
-          borderRadius: BorderRadius.circular(12),
-        ),
+        decoration: BoxDecoration(color: isMe ? Colors.white10 : Colors.white.withAlpha(13), borderRadius: BorderRadius.circular(12)),
         constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.75),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            if (msg.type == MessageType.image || msg.type == MessageType.video)
-              AttachmentWidget(message: msg)
-            else
-              Text(msg.plaintext),
+            if (msg.type == MessageType.image || msg.type == MessageType.video) AttachmentWidget(message: msg) else Text(msg.plaintext),
             const SizedBox(height: 4),
             Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text(
-                  DateFormat.Hm().format(msg.timestamp),
-                  style: const TextStyle(fontSize: 8, color: Colors.white24),
-                ),
-                if (msg.metadata?['is_ghost'] == true) ...[
-                  const SizedBox(width: 4),
-                  const Icon(
-                    Icons.visibility_off_outlined,
-                    size: 8,
-                    color: Colors.white24,
-                  ),
-                ],
-                if (msg.metadata?['consumed'] == true) ...[
-                  const SizedBox(width: 4),
-                  const Text(
-                    'CONSUMED',
-                    style: TextStyle(
-                      fontSize: 8, 
-                      color: Colors.blueAccent, 
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                ],
+                Text(DateFormat.Hm().format(msg.timestamp), style: const TextStyle(fontSize: 8, color: Colors.white24)),
+                if (msg.metadata?['is_ghost'] == true) ...[const SizedBox(width: 4), const Icon(Icons.visibility_off_outlined, size: 8, color: Colors.white24)],
+                if (msg.metadata?['consumed'] == true) ...[const SizedBox(width: 4), const Text('CONSUMED', style: TextStyle(fontSize: 8, color: Colors.blueAccent, fontWeight: FontWeight.w900))],
               ],
             ),
           ],
@@ -674,12 +550,10 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
   }
 
   Widget _buildInput(ConversationMode currentMode, ConversationState? state) {
+    final isGhost = currentMode == ConversationMode.ghost;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-      decoration: const BoxDecoration(
-        color: Color(0xFF080808),
-        border: Border(top: BorderSide(color: Colors.white10)),
-      ),
+      decoration: const BoxDecoration(color: Color(0xFF080808), border: Border(top: BorderSide(color: Colors.white10))),
       child: SafeArea(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -687,31 +561,20 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
             _buildModeSelector(currentMode, state),
             Row(
               children: [
-                IconButton(
-                  icon: const Icon(Icons.add_circle_outline, color: Colors.white54),
-                  onPressed: () => _showMediaOptions(context),
-                ),
+                IconButton(icon: const Icon(Icons.add_circle_outline, color: Colors.white54), onPressed: () => _showMediaOptions(context)),
                 Expanded(
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 16),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withAlpha(5),
-                      borderRadius: BorderRadius.circular(24),
-                    ),
+                    decoration: BoxDecoration(color: Colors.white.withAlpha(5), borderRadius: BorderRadius.circular(24)),
                     child: TextField(
                       controller: _controller,
                       maxLines: null,
-                      decoration: const InputDecoration(
-                        hintText: 'Type a message...',
-                        border: InputBorder.none,
-                      ),
+                      decoration: InputDecoration(hintText: isGhost ? 'Ghost Message' : 'Secure Message', hintStyle: const TextStyle(color: Colors.white24, fontSize: 13), border: InputBorder.none),
+                      onSubmitted: (_) => _sendMessage(),
                     ),
                   ),
                 ),
-                IconButton(
-                  icon: const Icon(Icons.send, color: Colors.blueAccent),
-                  onPressed: _sendMessage,
-                ),
+                IconButton(icon: const Icon(Icons.send, color: Colors.blueAccent), onPressed: _sendMessage),
               ],
             ),
           ],
@@ -721,17 +584,9 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
   }
 
   Widget _buildModeSelector(ConversationMode currentMode, ConversationState? state) {
-    debugPrint('GHOST_LOG: MODE_SELECTOR_REBUILT mode: ${currentMode.name}');
-    IconData icon = Icons.chat_bubble_outline;
-    String label = 'NORMAL';
-    if (currentMode == ConversationMode.ghost) {
-      icon = Icons.visibility_off_outlined;
-      label = 'GHOST';
-    }
-
-    final isRemoteChange = state != null && 
-                           state.lastChangedBy != ref.read(chatRepositoryProvider).myPublicId &&
-                           DateTime.now().difference(state.lastChangedAt).inSeconds < 10;
+    IconData icon = currentMode == ConversationMode.ghost ? Icons.visibility_off_outlined : Icons.chat_bubble_outline;
+    String label = currentMode == ConversationMode.ghost ? 'GHOST' : 'NORMAL';
+    final isRemoteChange = state != null && state.lastChangedBy != ref.read(chatRepositoryProvider).myPublicId && DateTime.now().difference(state.lastChangedAt).inSeconds < 10;
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 8.0),
@@ -740,26 +595,14 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 500),
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-          decoration: BoxDecoration(
-            color: isRemoteChange ? Colors.blueAccent.withAlpha(40) : Colors.transparent,
-            borderRadius: BorderRadius.circular(12),
-            border: isRemoteChange ? Border.all(color: Colors.blueAccent.withAlpha(100)) : null,
-          ),
+          decoration: BoxDecoration(color: isRemoteChange ? Colors.blueAccent.withAlpha(40) : Colors.transparent, borderRadius: BorderRadius.circular(12), border: isRemoteChange ? Border.all(color: Colors.blueAccent.withAlpha(100)) : null),
           child: Row(
             mainAxisSize: MainAxisSize.min,
-            mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Icon(icon, size: 12, color: isRemoteChange ? Colors.blueAccent : Colors.white24),
               const SizedBox(width: 4),
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: 10, 
-                  color: isRemoteChange ? Colors.white : Colors.white24, 
-                  fontWeight: FontWeight.bold
-                ),
-              ),
-              Icon(Icons.arrow_drop_down, size: 12, color: isRemoteChange ? Colors.blueAccent : Colors.white24),
+              Text(label, style: TextStyle(fontSize: 10, color: isRemoteChange ? Colors.white : Colors.white24, fontWeight: FontWeight.bold)),
+              const Icon(Icons.arrow_drop_down, size: 12, color: Colors.white24),
             ],
           ),
         ),
@@ -768,32 +611,21 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
   }
 
   void _showModeOptions() {
+    final navigator = Navigator.of(context);
     showModalBottomSheet(
       context: context,
       backgroundColor: const Color(0xFF121212),
       builder: (context) => Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          ListTile(
-            leading: const Icon(Icons.chat_bubble_outline),
-            title: const Text('NORMAL'),
-            subtitle: const Text('Standard encrypted chat'),
-            onTap: () async {
-              await ref.read(conversationServiceProvider).setConversationMode(widget.conversation.contactId, ConversationMode.normal);
-              if (!context.mounted) return;
-              Navigator.pop(context);
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.visibility_off_outlined),
-            title: const Text('GHOST'),
-            subtitle: const Text('Messages vanish when chat is closed'),
-            onTap: () async {
-              await ref.read(conversationServiceProvider).setConversationMode(widget.conversation.contactId, ConversationMode.ghost);
-              if (!context.mounted) return;
-              Navigator.pop(context);
-            },
-          ),
+          ListTile(leading: const Icon(Icons.chat_bubble_outline), title: const Text('NORMAL'), subtitle: const Text('Standard encrypted chat'), onTap: () async {
+            await ref.read(conversationServiceProvider).setConversationMode(widget.conversation.contactId, ConversationMode.normal);
+            navigator.pop();
+          }),
+          ListTile(leading: const Icon(Icons.visibility_off_outlined), title: const Text('GHOST'), subtitle: const Text('Messages vanish when chat is closed'), onTap: () async {
+            await ref.read(conversationServiceProvider).setConversationMode(widget.conversation.contactId, ConversationMode.ghost);
+            navigator.pop();
+          }),
           const SizedBox(height: 16),
         ],
       ),
@@ -801,28 +633,21 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
   }
 
   void _showMediaOptions(BuildContext context) {
+    final navigator = Navigator.of(context);
     showModalBottomSheet(
       context: context,
       backgroundColor: const Color(0xFF121212),
       builder: (context) => Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          ListTile(
-            leading: const Icon(Icons.image_outlined),
-            title: const Text('SEND PHOTO'),
-            onTap: () {
-              Navigator.pop(context);
-              _pickMedia();
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.video_library_outlined),
-            title: const Text('SEND VIDEO'),
-            onTap: () {
-              Navigator.pop(context);
-              _pickMedia();
-            },
-          ),
+          ListTile(leading: const Icon(Icons.image_outlined), title: const Text('PHOTO'), onTap: () async {
+            navigator.pop();
+            _pickMedia();
+          }),
+          ListTile(leading: const Icon(Icons.video_library_outlined), title: const Text('VIDEO'), onTap: () async {
+            navigator.pop();
+            _pickMedia();
+          }),
           const SizedBox(height: 16),
         ],
       ),
@@ -854,13 +679,11 @@ class _AttachmentWidgetState extends ConsumerState<AttachmentWidget> {
     try {
       final envelope = AttachmentEnvelope.fromJson(widget.message.metadata!);
       final relay = await ref.read(activeRelayProvider.future);
-      final idService = ref.read(identityServiceProvider);
       if (relay == null) return;
-
       final data = await ref.read(mediaServiceProvider).downloadMedia(
         envelope: envelope,
         relay: relay,
-        myXidKeyPair: idService.currentIdentity!.x25519KeyPair,
+        myXidKeyPair: ref.read(identityServiceProvider).currentIdentity!.x25519KeyPair,
         isThumbnail: true,
       );
       if (mounted) setState(() => _thumbData = data);
@@ -870,49 +693,28 @@ class _AttachmentWidgetState extends ConsumerState<AttachmentWidget> {
   void _download() async {
     if (widget.message.metadata == null) return;
     setState(() => _isDownloading = true);
-    
+    final messenger = ScaffoldMessenger.of(context);
     try {
       final envelope = AttachmentEnvelope.fromJson(widget.message.metadata!);
       final relay = await ref.read(activeRelayProvider.future);
-      final idService = ref.read(identityServiceProvider);
-      
       if (relay == null) throw Exception('No active relay');
-      
       final data = await ref.read(mediaServiceProvider).downloadMedia(
         envelope: envelope,
         relay: relay,
-        myXidKeyPair: idService.currentIdentity!.x25519KeyPair,
+        myXidKeyPair: ref.read(identityServiceProvider).currentIdentity!.x25519KeyPair,
       );
-      
-      if (mounted) {
-        setState(() {
-          _decryptedData = data;
-          _isDownloading = false;
-        });
-      }
+      if (mounted) setState(() { _decryptedData = data; _isDownloading = false; });
     } catch (e) {
-      if (mounted) {
-        setState(() => _isDownloading = false);
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Download failed: $e')));
-      }
+      if (mounted) { setState(() => _isDownloading = false); messenger.showSnackBar(SnackBar(content: Text('Download failed: $e'))); }
     }
   }
 
   @override
   Widget build(BuildContext context) {
     if (_decryptedData != null) {
-      if (widget.message.type == MessageType.video) {
-        return _VideoPreview(data: _decryptedData!);
-      }
-      return GestureDetector(
-        onTap: () => _showFullScreen(),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(8),
-          child: Image.memory(_decryptedData!, fit: BoxFit.cover),
-        ),
-      );
+      if (widget.message.type == MessageType.video) return _VideoPreview(data: _decryptedData!);
+      return GestureDetector(onTap: _showFullScreen, child: ClipRRect(borderRadius: BorderRadius.circular(8), child: Image.memory(_decryptedData!, fit: BoxFit.cover)));
     }
-
     final meta = widget.message.metadata;
     final sizeStr = meta?['size'] != null ? '${((meta!['size'] as int) / 1024 / 1024).toStringAsFixed(1)} MB' : '';
     final isGhost = meta?['is_ghost'] == true;
@@ -920,82 +722,33 @@ class _AttachmentWidgetState extends ConsumerState<AttachmentWidget> {
     return Container(
       width: 200,
       height: 150,
-      decoration: BoxDecoration(
-        color: Colors.black26,
-        borderRadius: BorderRadius.circular(8),
-        image: _thumbData != null ? DecorationImage(
-          image: MemoryImage(_thumbData!),
-          fit: BoxFit.cover,
-          opacity: isGhost ? 0.1 : 0.3,
-        ) : null,
-      ),
+      decoration: BoxDecoration(color: Colors.black26, borderRadius: BorderRadius.circular(8), image: _thumbData != null ? DecorationImage(image: MemoryImage(_thumbData!), fit: BoxFit.cover, opacity: isGhost ? 0.1 : 0.3) : null),
       child: Stack(
         children: [
           Center(
-            child: _isDownloading
-                ? const CircularProgressIndicator(strokeWidth: 2)
-                : Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      if (isGhost)
-                        const Padding(
-                          padding: EdgeInsets.only(bottom: 8.0),
-                          child: Icon(Icons.visibility_off_outlined, color: Colors.amber, size: 24),
-                        ),
-                      IconButton(
-                        icon: Icon(
-                          widget.message.type == MessageType.video 
-                            ? Icons.play_circle_outline 
-                            : Icons.download_for_offline_outlined, 
-                          color: isGhost ? Colors.amber : Colors.white70,
-                          size: 32,
-                        ),
-                        onPressed: _download,
-                      ),
-                      Text(
-                        '${isGhost ? 'GHOST ' : ''}${widget.message.type.name.toUpperCase()} $sizeStr',
-                        style: TextStyle(
-                          color: isGhost ? Colors.amber.withAlpha(100) : Colors.white30, 
-                          fontSize: 9, 
-                          fontWeight: FontWeight.bold
-                        ),
-                      ),
-                    ],
-                  ),
-          ),
-          if (widget.message.type == MessageType.video)
-            Positioned(
-              bottom: 8,
-              right: 8,
-              child: Icon(Icons.videocam_outlined, size: 16, color: isGhost ? Colors.amber.withAlpha(100) : Colors.white24),
+            child: _isDownloading ? const CircularProgressIndicator(strokeWidth: 2) : Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                if (isGhost) const Padding(padding: EdgeInsets.only(bottom: 8.0), child: Icon(Icons.visibility_off_outlined, color: Colors.amber, size: 24)),
+                IconButton(icon: Icon(widget.message.type == MessageType.video ? Icons.play_circle_outline : Icons.download_for_offline_outlined, color: isGhost ? Colors.amber : Colors.white70, size: 32), onPressed: _download),
+                Text('${isGhost ? 'GHOST ' : ''}${widget.message.type.name.toUpperCase()} $sizeStr', style: TextStyle(color: isGhost ? Colors.amber.withAlpha(100) : Colors.white30, fontSize: 9, fontWeight: FontWeight.bold)),
+              ],
             ),
+          ),
+          if (widget.message.type == MessageType.video) const Positioned(bottom: 8, right: 8, child: Icon(Icons.videocam_outlined, size: 16, color: Colors.white24)),
         ],
       ),
     );
   }
 
   void _showFullScreen() {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => Scaffold(
-          appBar: AppBar(backgroundColor: Colors.black),
-          backgroundColor: Colors.black,
-          body: Center(
-            child: InteractiveViewer(
-              child: Image.memory(_decryptedData!),
-            ),
-          ),
-        ),
-      ),
-    );
+    Navigator.push(context, MaterialPageRoute(builder: (_) => Scaffold(appBar: AppBar(backgroundColor: Colors.black), backgroundColor: Colors.black, body: Center(child: InteractiveViewer(child: Image.memory(_decryptedData!))))));
   }
 }
 
 class _VideoPreview extends StatefulWidget {
   final Uint8List data;
   const _VideoPreview({required this.data});
-
   @override
   State<_VideoPreview> createState() => _VideoPreviewState();
 }
@@ -1015,34 +768,17 @@ class _VideoPreviewState extends State<_VideoPreview> {
     try {
       final tempDir = await getTemporaryDirectory();
       if (!mounted) return;
-
       final tempFile = File('${tempDir.path}/${DateTime.now().microsecondsSinceEpoch}.mp4');
       _tempFile = tempFile;
       await tempFile.writeAsBytes(widget.data);
-      if (!mounted) {
-        _tempFile?.delete().catchError((_) => File(''));
-        return;
-      }
-
+      if (!mounted) return;
       final controller = VideoPlayerController.file(tempFile);
       _controller = controller;
       await controller.initialize();
-      if (!mounted) {
-        controller.dispose();
-        _tempFile?.delete().catchError((_) => File(''));
-        return;
-      }
-
-      _chewieController = ChewieController(
-        videoPlayerController: controller,
-        autoPlay: true,
-        looping: false,
-        aspectRatio: controller.value.aspectRatio,
-      );
+      if (!mounted) { controller.dispose(); return; }
+      _chewieController = ChewieController(videoPlayerController: controller, autoPlay: true, looping: false, aspectRatio: controller.value.aspectRatio);
       if (mounted) setState(() {});
-    } catch (e) {
-      debugPrint('GHOST_ERROR: _VideoPreview _initPlayer failed: $e');
-    }
+    } catch (e) { debugPrint('GHOST_ERROR: _VideoPreview failed: $e'); }
   }
 
   @override
@@ -1056,9 +792,6 @@ class _VideoPreviewState extends State<_VideoPreview> {
   @override
   Widget build(BuildContext context) {
     if (_chewieController == null) return const SizedBox(height: 200, child: Center(child: CircularProgressIndicator()));
-    return Container(
-      constraints: const BoxConstraints(maxHeight: 400),
-      child: Chewie(controller: _chewieController!),
-    );
+    return Container(constraints: const BoxConstraints(maxHeight: 400), child: Chewie(controller: _chewieController!));
   }
 }

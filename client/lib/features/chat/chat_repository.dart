@@ -18,6 +18,7 @@ class ChatRepository {
   final ContactService _contactService;
   final WebSocketService _wsService;
   final NotificationService _notificationService;
+  String? _activeConversationId;
   final Logger _logger = Logger(
     level: kReleaseMode ? Level.warning : Level.info,
     printer: PrettyPrinter(
@@ -44,6 +45,13 @@ class ChatRepository {
   );
 
   String get myPublicId => _idService.currentIdentity?.publicId ?? '';
+
+  void setActiveConversation(String? contactId) {
+    _activeConversationId = contactId;
+    if (contactId != null) {
+      markConversationAsRead(contactId);
+    }
+  }
 
   Future<void> init() async {
     StabilityTracker.logMemory('ChatRepo_Init_Start');
@@ -257,18 +265,6 @@ class ChatRepository {
               _logger.i('GHOST_LOG: MODE_CHANGE_RECEIVED');
               _logger.i('GHOST_LOG: MODE_CHANGE_APPLIED');
             }
-          } else if (systemType == 'ghost_flush') {
-            final keysToDelete = <dynamic>[];
-            for (final key in _msgBox.keys) {
-              final m = _msgBox.get(key);
-              if (m != null && m.metadata?['is_ghost'] == true && (m.senderId == senderId || m.recipientId == senderId)) {
-                keysToDelete.add(key);
-              }
-            }
-            if (keysToDelete.isNotEmpty) {
-              await _msgBox.deleteAll(keysToDelete);
-              _logger.i('Flushed ghost messages for $senderId upon remote exit.');
-            }
           }
           // Do not save system messages to the box
           await _markProcessed(envelope.id, actualTimestamp);
@@ -276,8 +272,9 @@ class ChatRepository {
           continue;
         }
 
-        // UPDATE INACTIVITY TRACKER
-        final state = _stateBox.get(senderId);
+        // UPDATE CONVERSATION STATE & UNREAD COUNT
+        var state = _stateBox.get(senderId);
+        final isCurrentlyActive = senderId == _activeConversationId;
         if (state != null) {
           // Check for 18-hour inactivity reset
           final inactivity = DateTime.now().difference(state.lastActivityAt);
@@ -288,14 +285,21 @@ class ChatRepository {
             _logger.i('Conversation mode for $senderId reset to normal due to inactivity.');
           }
           state.lastActivityAt = DateTime.now();
+          if (!isCurrentlyActive) {
+            state.unreadCount = (state.unreadCount ?? 0) + 1;
+          }
+          state.lastMessageId = message.id;
           await _stateBox.put(senderId, state);
         } else {
-          await _stateBox.put(senderId, ConversationState(
+          state = ConversationState(
             contactId: senderId,
             lastChangedBy: 'system',
             lastChangedAt: DateTime.now(),
             lastActivityAt: DateTime.now(),
-          ));
+            unreadCount: isCurrentlyActive ? 0 : 1,
+            lastMessageId: message.id,
+          );
+          await _stateBox.put(senderId, state);
         }
 
         await _msgBox.put(message.id, message);
@@ -421,6 +425,9 @@ class ChatRepository {
       lastActivityAt: DateTime.now(),
     );
     state.lastActivityAt = DateTime.now();
+    if (type != MessageType.system) {
+      state.lastMessageId = envelope.id;
+    }
     await _stateBox.put(recipientId, state);
 
     if (type != MessageType.system) {
@@ -466,17 +473,6 @@ class ChatRepository {
     );
   }
 
-  Future<void> sendGhostFlush(String recipientId) async {
-    await sendMessage(
-      recipientId: recipientId,
-      text: '[FLUSH]',
-      type: MessageType.system,
-      metadata: {
-        'system_type': 'ghost_flush',
-      },
-    );
-  }
-
   Future<void> flushGhostMessages(String contactId) async {
     final messages = getMessagesForContact(contactId, limit: 1000);
     bool didDeleteGhost = false;
@@ -487,8 +483,16 @@ class ChatRepository {
       }
     }
     if (didDeleteGhost) {
-      await sendGhostFlush(contactId);
       _logger.i('GHOST_LOG: Local ghost messages flushed for $contactId');
+    }
+  }
+
+  Future<void> markConversationAsRead(String contactId) async {
+    final state = _stateBox.get(contactId);
+    if (state != null && (state.unreadCount ?? 0) > 0) {
+      state.unreadCount = 0;
+      await _stateBox.put(contactId, state);
+      _logger.i('Conversation with $contactId marked as read.');
     }
   }
 

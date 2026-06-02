@@ -60,6 +60,7 @@ class ConversationService {
 
     for (final state in _chatRepository.getAllConversationStates()) {
       lastActivities[state.contactId] = state.lastActivityAt;
+      unreadCounts[state.contactId] = state.effectiveUnreadCount;
     }
 
     for (final msg in _chatRepository.getAllMessages()) {
@@ -75,11 +76,6 @@ class ConversationService {
 
       if (!lastActivities.containsKey(otherId) || msg.timestamp.isAfter(lastActivities[otherId]!)) {
         lastActivities[otherId] = msg.timestamp;
-      }
-
-      // Update unread count (only count incoming messages)
-      if (!msg.isRead && msg.senderId != myId) {
-        unreadCounts[otherId] = (unreadCounts[otherId] ?? 0) + 1;
       }
     }
 
@@ -108,8 +104,12 @@ class ConversationService {
 
   List<Conversation> getRequests() {
     final Map<String, Message> lastMessages = {};
-    final Map<String, int> counts = {};
+    final Map<String, int> unreadCounts = {};
     final myId = _chatRepository.myPublicId;
+
+    for (final state in _chatRepository.getAllConversationStates()) {
+      unreadCounts[state.contactId] = state.effectiveUnreadCount;
+    }
 
     for (final msg in _chatRepository.getAllMessages()) {
       if (!msg.isRequest) continue;
@@ -120,7 +120,6 @@ class ConversationService {
       if (existingLast == null || msg.timestamp.isAfter(existingLast.timestamp)) {
         lastMessages[otherId] = msg;
       }
-      counts[otherId] = (counts[otherId] ?? 0) + 1;
     }
 
     return lastMessages.entries.map((entry) {
@@ -132,7 +131,7 @@ class ConversationService {
         alias: _contactResolver.resolveAlias(contactId),
         messages: [], 
         lastMessage: entry.value,
-        unreadCount: counts[contactId] ?? 0, 
+        unreadCount: unreadCounts[contactId] ?? 0, 
         lastActivityAt: entry.value.timestamp,
         mode: ConversationMode.normal,
       );
@@ -277,7 +276,9 @@ class ConversationService {
   }
 
   Future<void> markAsRead(String contactId) async {
-    // Only fetch recent messages for marking as read
+    await _chatRepository.markConversationAsRead(contactId);
+    
+    // Also mark individual messages as read for local UI consistency
     final messages = _chatRepository.getMessagesForContact(contactId, limit: 100);
     for (final msg in messages) {
       if (!msg.isRead && msg.senderId == contactId) {

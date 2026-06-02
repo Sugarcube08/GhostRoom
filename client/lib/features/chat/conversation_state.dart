@@ -27,11 +27,21 @@ class ConversationState extends HiveObject {
   @HiveField(4)
   DateTime lastActivityAt;
 
+  @HiveField(5)
+  int? unreadCount;
+
+  @HiveField(6)
+  String? lastMessageId;
+
   ConversationState({
     required this.contactId,
     this.mode = ConversationMode.normal,
     required this.lastChangedBy,
     required this.lastChangedAt,
     required this.lastActivityAt,
+    this.unreadCount = 0,
+    this.lastMessageId,
   });
+
+  int get effectiveUnreadCount => unreadCount ?? 0;
 }
