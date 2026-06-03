@@ -11,6 +11,7 @@ class AttachmentEnvelope {
   final String encryptedKey;
   final String hash; // SHA256 of plaintext
   final String? name;
+  final String? relayUrl; // Federation hint
   final Map<String, dynamic>? meta;
 
   AttachmentEnvelope({
@@ -19,6 +20,7 @@ class AttachmentEnvelope {
     required this.encryptedKey,
     required this.hash,
     this.name,
+    this.relayUrl,
     this.meta,
   });
 
@@ -28,6 +30,7 @@ class AttachmentEnvelope {
     'key': encryptedKey,
     'hash': hash,
     if (name != null) 'name': name,
+    if (relayUrl != null) 'relay_url': relayUrl,
     if (meta != null) 'meta': meta,
   };
 
@@ -37,6 +40,7 @@ class AttachmentEnvelope {
     encryptedKey: json['key'],
     hash: json['hash'],
     name: json['name'],
+    relayUrl: json['relay_url'],
     meta: json['meta'] != null ? Map<String, dynamic>.from(json['meta']) : null,
   );
 }

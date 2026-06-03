@@ -64,6 +64,8 @@ dependencies:
   flutter_local_notifications: ^17.1.2
   photo_manager: ^3.9.0
   wechat_assets_picker: ^10.1.2
+  record: ^6.2.1
+  audioplayers: ^6.7.0
 
 
 dev_dependencies:

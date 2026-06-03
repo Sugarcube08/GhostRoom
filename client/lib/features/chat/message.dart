@@ -14,18 +14,20 @@ enum MessageType {
   file,
   @HiveField(4)
   system,
+  @HiveField(5)
+  voice,
 }
 
 @HiveType(typeId: 1)
 class Message extends HiveObject {
   @HiveField(0)
-  final String id; // UUID v7
+  final String id;
 
   @HiveField(1)
-  final String senderId; // Public ID
+  final String senderId;
 
   @HiveField(2)
-  final String recipientId; // Public ID (Me)
+  final String recipientId;
 
   @HiveField(3)
   final String plaintext;
@@ -40,10 +42,13 @@ class Message extends HiveObject {
   final MessageType type;
 
   @HiveField(7)
-  final Map<String, dynamic>? metadata; // For media URLs, sizes, etc.
+  final Map<String, dynamic>? metadata;
 
   @HiveField(8)
   bool isRequest;
+
+  @HiveField(9)
+  final String? groupId;
 
   Message({
     required this.id,
@@ -55,5 +60,7 @@ class Message extends HiveObject {
     this.type = MessageType.text,
     this.metadata,
     this.isRequest = false,
+    this.groupId,
   });
 }
+

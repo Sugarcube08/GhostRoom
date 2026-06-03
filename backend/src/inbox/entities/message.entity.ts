@@ -8,6 +8,9 @@ export class MessageEntity {
   @Column("varchar")
   recipient_id: string;
 
+  @Column("varchar", { nullable: true })
+  recipient_device_id: string | null;
+
   @Column("jsonb")
   envelope: Record<string, any>;
 

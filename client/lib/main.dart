@@ -11,7 +11,8 @@ import 'core/app_initializer.dart';
 import 'core/stability_tracker.dart';
 import 'dart:async';
 import 'dart:io';
-import 'features/chat/chat_screens.dart';
+import 'features/chat/requests_screen.dart';
+import 'features/chat/conversation_screen.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:app_links/app_links.dart';
 import 'dart:convert';
@@ -203,11 +204,14 @@ class _GhostAppState extends ConsumerState<GhostApp> with WidgetsBindingObserver
 
   @override
   Widget build(BuildContext context) {
+    final themeMode = ref.watch(themeModeProvider);
     return MaterialApp(
       navigatorKey: navigatorKey,
       debugShowCheckedModeBanner: false,
       title: 'Ghost Room',
-      theme: GhostTheme.darkTheme,
+      theme: GhostTheme.lightTheme,
+      darkTheme: GhostTheme.darkTheme,
+      themeMode: themeMode,
       builder: (context, child) {
         if (child == null) return const SizedBox.shrink();
         

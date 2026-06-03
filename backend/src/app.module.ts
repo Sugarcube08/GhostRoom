@@ -7,6 +7,8 @@ import { RelayModule } from "./relay/relay.module";
 import { InboxModule } from "./inbox/inbox.module";
 import { MediaModule } from "./media/media.module";
 import { AuditModule } from "./audit/audit.module";
+import { FederationModule } from "./federation/federation.module";
+import { GroupsModule } from "./groups/groups.module";
 import { AppController } from "./app.controller";
 
 import { ThrottlerModule } from "@nestjs/throttler";
@@ -48,6 +50,8 @@ import { ThrottlerModule } from "@nestjs/throttler";
     InboxModule,
     MediaModule,
     AuditModule,
+    FederationModule,
+    GroupsModule,
   ],
   controllers: [AppController],
 })

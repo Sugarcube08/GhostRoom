@@ -249,6 +249,7 @@ class ChatRepository {
             'sender_xid': payload['sender_xid'],
           },
           isRequest: isRequest,
+          groupId: data['group_id'] as String?,
         );
 
         // HANDLE SYSTEM MESSAGES
@@ -378,6 +379,7 @@ class ChatRepository {
     switch (type) {
       case 'image': return MessageType.image;
       case 'video': return MessageType.video;
+      case 'voice': return MessageType.voice;
       case 'file': return MessageType.file;
       case 'system': return MessageType.system;
       default: return MessageType.text;
@@ -450,23 +452,62 @@ class ChatRepository {
     );
     _logger.i('GHOST_LOG: SEND_ENCRYPT_SUCCESS');
 
-    final Map<String, dynamic> msgPayload = {
-      ...envelope.toJson(),
-      'retention': retention,
-    };
-    if (type == MessageType.image || type == MessageType.video) {
-      if (metadata != null && metadata['media_id'] != null) {
-        msgPayload['media_id'] = metadata['media_id'];
+    // MULTI-DEVICE FAN-OUT
+    try {
+      final recipientDevices = await _wsService.getDevices(recipientId);
+      final myDevices = await _wsService.getDevices(identity.publicId);
+
+      _logger.i('GHOST_LOG: FAN_OUT_START rec=${recipientDevices.length} self=${myDevices.length}');
+
+      final List<Map<String, dynamic>> targets = [];
+      
+      // Target Recipient Devices
+      if (recipientDevices.isEmpty) {
+        // Fallback for V1/Legacy
+        targets.add({'device_id': null, 'relay_url': null});
+      } else {
+        for (final d in recipientDevices) {
+          targets.add({'device_id': d['device_id'], 'relay_url': d['relay_url']});
+        }
       }
+
+      // Target Self Devices (Sync)
+      for (final d in myDevices) {
+        if (d['device_id'] != identity.deviceId) {
+          targets.add({'device_id': d['device_id'], 'relay_url': d['relay_url']});
+        }
+      }
+
+      for (final target in targets) {
+        final Map<String, dynamic> msgPayload = {
+          ...envelope.toJson(),
+          'retention': retention,
+          'target_device_id': target['device_id'],
+        };
+        if (type == MessageType.image || type == MessageType.video || type == MessageType.voice) {
+          if (metadata != null && metadata['media_id'] != null) {
+            msgPayload['media_id'] = metadata['media_id'];
+          }
+        }
+
+        // TODO: Handle remote relay delivery explicitly if relay_url is different
+        // For now, our Home Relay handles S2S forwarding automatically
+        _wsService.sendMessage(recipientId, msgPayload, version: 2, ack: (ackData) {
+          _logger.i('GHOST_LOG: SEND_ACK_RECEIVED for device ${target['device_id']}');
+        });
+      }
+
+    } catch (e) {
+      _logger.e('GHOST_LOG: FAN_OUT_FAILED error: $e');
+      // Fallback to single delivery if fan-out lookup fails
+      final Map<String, dynamic> msgPayload = {
+        ...envelope.toJson(),
+        'retention': retention,
+      };
+      _wsService.sendMessage(recipientId, msgPayload, version: 2);
     }
 
-    _wsService.sendMessage(recipientId, msgPayload, version: 2, ack: (ackData) {
-      _logger.i('GHOST_LOG: SEND_ACK_RECEIVED');
-      if (type == MessageType.image || type == MessageType.video) {
-        _logger.i('GHOST_LOG: MEDIA_MESSAGE_SENT');
-      }
-    });
-    _logger.i('GHOST_LOG: SEND_SOCKET_EMIT');
+    _logger.i('GHOST_LOG: SEND_SOCKET_EMIT_COMPLETE');
     _logger.i("MESSAGE_SENT");
 
     // Update Activity

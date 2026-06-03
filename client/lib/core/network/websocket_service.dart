@@ -4,6 +4,7 @@ import 'package:logger/logger.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers.dart';
 import 'dart:convert';
+import 'dart:async';
 import '../stability_tracker.dart';
 
 class WebSocketService {
@@ -117,6 +118,7 @@ class WebSocketService {
           'public_id': identity.publicId,
           'public_key': base64Encode(identity.ed25519KeyPair.publicKey),
           'signature': signature,
+          'device_id': identity.deviceId,
         });
       } catch (e) {
         _logger.e('Failed to solve identity challenge: $e');
@@ -253,5 +255,21 @@ class WebSocketService {
     _socket?.dispose();
     _socket = null;
     _isAuthenticated = false;
+  }
+
+  Future<List<Map<String, dynamic>>> getDevices(String publicId) async {
+    if (!_isAuthenticated) return [];
+    
+    final completer = Completer<List<Map<String, dynamic>>>();
+    _socket?.emitWithAck('identity.devices', {'public_id': publicId}, ack: (response) {
+      if (response != null && response['status'] == 'ok') {
+        final devices = List<Map<String, dynamic>>.from(response['devices'] ?? []);
+        completer.complete(devices);
+      } else {
+        completer.complete([]);
+      }
+    });
+    
+    return completer.future.timeout(const Duration(seconds: 5), onTimeout: () => []);
   }
 }

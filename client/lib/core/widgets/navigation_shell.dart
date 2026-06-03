@@ -4,6 +4,8 @@ import '../../features/chat/chat_screens.dart';
 import '../../features/spaces/anonymous_rooms_screen.dart';
 import '../../features/settings/identity_vault_screen.dart';
 import '../../features/contacts/contact_list_screen.dart';
+import '../../design_system/colors.dart';
+import '../../design_system/components/components.dart';
 
 class NavigationShell extends ConsumerStatefulWidget {
   const NavigationShell({super.key});
@@ -15,6 +17,29 @@ class NavigationShell extends ConsumerStatefulWidget {
 class _NavigationShellState extends ConsumerState<NavigationShell> {
   int _currentIndex = 0;
 
+  final List<GhostNavItem> _navItems = const [
+    GhostNavItem(
+      outlineIcon: Icons.chat_bubble_outline,
+      solidIcon: Icons.chat_bubble,
+      label: 'Messages',
+    ),
+    GhostNavItem(
+      outlineIcon: Icons.people_outline,
+      solidIcon: Icons.people,
+      label: 'Contacts',
+    ),
+    GhostNavItem(
+      outlineIcon: Icons.blur_on_outlined,
+      solidIcon: Icons.blur_on,
+      label: 'Spaces',
+    ),
+    GhostNavItem(
+      outlineIcon: Icons.shield_outlined,
+      solidIcon: Icons.shield,
+      label: 'Vault',
+    ),
+  ];
+
   final List<Widget> _screens = [
     const ChatsScreen(),
     const ContactListScreen(),
@@ -24,40 +49,44 @@ class _NavigationShellState extends ConsumerState<NavigationShell> {
 
   @override
   Widget build(BuildContext context) {
+    final colors = AppColors.of(context);
+    final bool isDesktop = MediaQuery.of(context).size.width > 600;
+
     return Scaffold(
-      body: IndexedStack(
-        index: _currentIndex,
-        children: _screens,
-      ),
-      bottomNavigationBar: BottomNavigationBar(
-        currentIndex: _currentIndex,
-        onTap: (index) => setState(() => _currentIndex = index),
-        type: BottomNavigationBarType.fixed,
-        backgroundColor: const Color(0xFF080808),
-        selectedItemColor: Colors.white,
-        unselectedItemColor: Colors.white24,
-        selectedFontSize: 10,
-        unselectedFontSize: 10,
-        items: const [
-          BottomNavigationBarItem(
-            icon: Icon(Icons.chat_bubble_outline),
-            activeIcon: Icon(Icons.chat_bubble),
-            label: 'MESSAGES',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.people_outline),
-            activeIcon: Icon(Icons.people),
-            label: 'CONTACTS',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.blur_on_outlined),
-            activeIcon: Icon(Icons.blur_on),
-            label: 'SPACES',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.shield_outlined),
-            activeIcon: Icon(Icons.shield),
-            label: 'VAULT',
+      backgroundColor: colors.primaryBackground,
+      body: Row(
+        children: [
+          if (isDesktop)
+            GhostNavigationRail(
+              items: _navItems,
+              currentIndex: _currentIndex,
+              onTap: (index) => setState(() => _currentIndex = index),
+            ),
+          Expanded(
+            child: Stack(
+              children: [
+                Positioned.fill(
+                  child: IndexedStack(
+                    index: _currentIndex,
+                    children: _screens,
+                  ),
+                ),
+                if (!isDesktop)
+                  Positioned(
+                    left: 24,
+                    right: 24,
+                    bottom: 24,
+                    child: SafeArea(
+                      bottom: true,
+                      child: GhostNavigationBar(
+                        items: _navItems,
+                        currentIndex: _currentIndex,
+                        onTap: (index) => setState(() => _currentIndex = index),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
           ),
         ],
       ),

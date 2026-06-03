@@ -49,10 +49,15 @@ export class InboxService {
     publicId: string,
     payload: any,
     senderId?: string,
+    recipientDeviceId?: string,
   ): Promise<MessageEnvelope> {
-    // Enforcement 1: Global Inbox Cap
+    // Enforcement 1: Global Inbox Cap (Device Specific)
     const pendingCount = await this.deliveryRepo.count({
-      where: { recipient_id: publicId, status: "PENDING" },
+      where: { 
+        recipient_id: publicId, 
+        recipient_device_id: recipientDeviceId || IsNull(),
+        status: "PENDING" 
+      },
     });
     if (pendingCount >= this.INBOX_MAX_MESSAGES) {
       throw new Error("capacity_exceeded: Recipient inbox is full");
@@ -63,6 +68,7 @@ export class InboxService {
       const pairCount = await this.deliveryRepo.count({
         where: {
           recipient_id: publicId,
+          recipient_device_id: recipientDeviceId || IsNull(),
           sender_id: senderId,
           status: "PENDING",
         },
@@ -95,7 +101,6 @@ export class InboxService {
     } else if (retentionMode === "VIEW_ONCE") {
       expiresAt = new Date(timestamp + 24 * 60 * 60 * 1000); // 24h fallback
     }
-    // PERSISTENT mode now has null expiresAt (unlimited)
 
     const mediaId = payload.media_id || null;
 
@@ -103,6 +108,7 @@ export class InboxService {
       const msgEntity = this.messageRepo.create({
         id: messageId,
         recipient_id: publicId,
+        recipient_device_id: recipientDeviceId || null,
         envelope: envelope,
         retention_mode: retentionMode,
         created_at: new Date(timestamp),
@@ -122,21 +128,22 @@ export class InboxService {
       const deliveryEntity = this.deliveryRepo.create({
         message_id: messageId,
         recipient_id: publicId,
+        recipient_device_id: recipientDeviceId || null,
         sender_id: senderId,
         status: "PENDING",
       });
       await this.deliveryRepo.save(deliveryEntity);
 
       this.logger.log(
-        `Audit: Message ${messageId} queued for ${publicId} (Mode: ${retentionMode}, Media: ${mediaId})`,
+        `Audit: Message ${messageId} queued for ${publicId} device ${recipientDeviceId || 'default'}`,
       );
     } catch (e: any) {
       this.logger.error(`Failed to save message to Postgres: ${e?.message}`);
       throw e;
     }
 
-    // Cache in Redis
-    const inboxKey = `inbox:${publicId}`;
+    // Cache in Redis (Device Specific)
+    const inboxKey = recipientDeviceId ? `inbox:${publicId}:${recipientDeviceId}` : `inbox:${publicId}`;
     const msgKey = `msg:${messageId}`;
 
     const pipeline = this.redis.pipeline();
@@ -152,23 +159,26 @@ export class InboxService {
   async fetchMessages(
     publicId: string,
     since: number = 0,
+    deviceId?: string,
   ): Promise<MessageEnvelope[]> {
     try {
       const messages = await this.messageRepo.find({
         where: [
           {
             recipient_id: publicId,
+            recipient_device_id: deviceId || IsNull(),
             delivered_at: IsNull(),
           },
           {
             recipient_id: publicId,
+            recipient_device_id: deviceId || IsNull(),
             created_at: MoreThan(new Date(since)),
           },
         ],
         order: {
           created_at: "ASC",
         },
-        take: 500, // Limit to prevent OOM on client
+        take: 500,
       });
 
       if (messages.length > 0) {
@@ -181,32 +191,19 @@ export class InboxService {
     return [];
   }
 
-  async acknowledgeMessage(publicId: string, messageId: string): Promise<void> {
+  async acknowledgeMessage(publicId: string, messageId: string, deviceId?: string): Promise<void> {
     try {
       const message = await this.messageRepo.findOne({
         where: { id: messageId },
       });
       if (!message) return;
 
-      if (message.retention_mode === "VIEW_ONCE") {
-        if (message.media_id) {
-          try {
-            await this.mediaService.decrementReferenceCount(message.media_id);
-          } catch (err: any) {
-            this.logger.error(`Failed to decrement media reference count: ${err?.message}`);
-          }
-        }
-        // Immediate deletion
-        await this.messageRepo.delete(messageId);
-      } else {
-        // Mark as delivered
-        message.delivered_at = new Date();
-        if (message.retention_mode === "EPHEMERAL") {
-          // Update expiry to 30 days from now if not already set or shorter
-          message.expires_at = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
-        }
-        await this.messageRepo.save(message);
+      // Mark as delivered
+      message.delivered_at = new Date();
+      if (message.retention_mode === "EPHEMERAL") {
+        message.expires_at = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
       }
+      await this.messageRepo.save(message);
 
       await this.deliveryRepo.update(
         { message_id: messageId },
@@ -217,7 +214,7 @@ export class InboxService {
     }
 
     // Remove from Redis cache
-    const inboxKey = `inbox:${publicId}`;
+    const inboxKey = deviceId ? `inbox:${publicId}:${deviceId}` : `inbox:${publicId}`;
     const msgKey = `msg:${messageId}`;
 
     const pipeline = this.redis.pipeline();

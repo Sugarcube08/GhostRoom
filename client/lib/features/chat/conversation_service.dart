@@ -53,7 +53,7 @@ class ConversationService {
   );
 
   ConversationService(
-    this._chatRepository, 
+    this._chatRepository,
     this._contactResolver,
     this._contactService,
     this._idService,
@@ -65,7 +65,7 @@ class ConversationService {
     final Map<String, Message> lastMessages = {};
     final Map<String, int> unreadCounts = {};
     final Map<String, DateTime> lastActivities = {};
-    
+
     final myId = _chatRepository.myPublicId;
 
     for (final state in _chatRepository.getAllConversationStates()) {
@@ -75,16 +75,18 @@ class ConversationService {
 
     for (final msg in _chatRepository.getAllMessages()) {
       if (msg.isRequest) continue;
-      
+
       final otherId = msg.senderId == myId ? msg.recipientId : msg.senderId;
-      
+
       // Update last message
       final existingLast = lastMessages[otherId];
-      if (existingLast == null || msg.timestamp.isAfter(existingLast.timestamp)) {
+      if (existingLast == null ||
+          msg.timestamp.isAfter(existingLast.timestamp)) {
         lastMessages[otherId] = msg;
       }
 
-      if (!lastActivities.containsKey(otherId) || msg.timestamp.isAfter(lastActivities[otherId]!)) {
+      if (!lastActivities.containsKey(otherId) ||
+          msg.timestamp.isAfter(lastActivities[otherId]!)) {
         lastActivities[otherId] = msg.timestamp;
       }
     }
@@ -98,7 +100,7 @@ class ConversationService {
     return validContactIds.map((contactId) {
       final lastMsg = lastMessages[contactId];
       final activity = lastActivities[contactId] ?? DateTime(0);
-      
+
       return Conversation(
         contact: _contactResolver.resolveContact(contactId),
         contactId: contactId,
@@ -123,25 +125,26 @@ class ConversationService {
 
     for (final msg in _chatRepository.getAllMessages()) {
       if (!msg.isRequest) continue;
-      
+
       final otherId = msg.senderId == myId ? msg.recipientId : msg.senderId;
-      
+
       final existingLast = lastMessages[otherId];
-      if (existingLast == null || msg.timestamp.isAfter(existingLast.timestamp)) {
+      if (existingLast == null ||
+          msg.timestamp.isAfter(existingLast.timestamp)) {
         lastMessages[otherId] = msg;
       }
     }
 
     return lastMessages.entries.map((entry) {
       final contactId = entry.key;
-      
+
       return Conversation(
         contact: null,
         contactId: contactId,
         alias: _contactResolver.resolveAlias(contactId),
-        messages: [], 
+        messages: [],
         lastMessage: entry.value,
-        unreadCount: unreadCounts[contactId] ?? 0, 
+        unreadCount: unreadCounts[contactId] ?? 0,
         lastActivityAt: entry.value.timestamp,
         mode: ConversationMode.normal,
       );
@@ -149,7 +152,10 @@ class ConversationService {
   }
 
   Future<void> acceptRequest(String publicId) async {
-    final msgs = _chatRepository.getAllMessages().where((m) => m.senderId == publicId && m.isRequest).toList();
+    final msgs = _chatRepository
+        .getAllMessages()
+        .where((m) => m.senderId == publicId && m.isRequest)
+        .toList();
     if (msgs.isEmpty) return;
 
     final firstMsg = msgs.first;
@@ -158,7 +164,7 @@ class ConversationService {
 
     if (senderEid != null && senderXid != null) {
       final fingerprint = _idService.calculateFingerprint(
-        base64Decode(senderEid), 
+        base64Decode(senderEid),
         base64Decode(senderXid),
       );
 
@@ -170,7 +176,7 @@ class ConversationService {
         fingerprint: fingerprint,
         createdAt: DateTime.now(),
       );
-      
+
       await _contactService.saveContact(newContact);
 
       for (final msg in msgs) {
@@ -181,7 +187,10 @@ class ConversationService {
   }
 
   Future<void> rejectRequest(String publicId) async {
-    final msgs = _chatRepository.getAllMessages().where((m) => m.senderId == publicId && m.isRequest).toList();
+    final msgs = _chatRepository
+        .getAllMessages()
+        .where((m) => m.senderId == publicId && m.isRequest)
+        .toList();
     for (final msg in msgs) {
       await msg.delete();
     }
@@ -196,8 +205,8 @@ class ConversationService {
     final mode = getConversationMode(recipientId);
     final isGhost = mode == ConversationMode.ghost;
     await _chatRepository.sendMessage(
-      recipientId: recipientId, 
-      text: text, 
+      recipientId: recipientId,
+      text: text,
       retention: isGhost ? 'EPHEMERAL' : 'PERSISTENT',
       metadata: {'is_ghost': isGhost},
     );
@@ -222,14 +231,20 @@ class ConversationService {
       plaintext: '[Image]',
       timestamp: DateTime.now(),
       type: MessageType.image,
-      metadata: {'status': 'COMPRESSING', 'is_ghost': isGhost, 'size': file.lengthSync()},
+      metadata: {
+        'status': 'COMPRESSING',
+        'is_ghost': isGhost,
+        'size': file.lengthSync(),
+      },
     );
     await _chatRepository.saveMessage(placeholder);
 
     try {
       // 2. Compress
       final compressed = await _mediaService.compressImage(file);
-      await _chatRepository.updateMessageMetadata(placeholderId, {'status': 'ENCRYPTING'});
+      await _chatRepository.updateMessageMetadata(placeholderId, {
+        'status': 'ENCRYPTING',
+      });
 
       // 3. Upload (includes encryption)
       final (envelope, thumbnailBytes) = await _mediaService.uploadMedia(
@@ -243,24 +258,31 @@ class ConversationService {
         originalFile: compressed,
         thumbnailBytes: thumbnailBytes,
       );
-      await _chatRepository.updateMessageMetadata(placeholderId, {'status': 'SENDING'});
+      await _chatRepository.updateMessageMetadata(placeholderId, {
+        'status': 'SENDING',
+      });
 
-      // 4. Send Message
+      // 3. Send Message
       await _chatRepository.sendMessage(
         recipientId: recipientId,
-        text: '[Image]',
-        type: MessageType.image,
+        text: '[Video]',
+        type: MessageType.video,
         existingId: placeholderId,
         retention: isGhost ? 'EPHEMERAL' : 'PERSISTENT',
         metadata: {
           ...envelope.toJson(),
+          'relay_url': activeRelay.apiUrl,
           'is_ghost': isGhost,
           'status': 'SENT',
         },
       );
+
       _logger.i('GHOST_LOG: MEDIA_ENVELOPE_SENT id: ${envelope.mediaId}');
     } catch (e) {
-      await _chatRepository.updateMessageMetadata(placeholderId, {'status': 'FAILED', 'error': e.toString()});
+      await _chatRepository.updateMessageMetadata(placeholderId, {
+        'status': 'FAILED',
+        'error': e.toString(),
+      });
       rethrow;
     }
   }
@@ -284,15 +306,23 @@ class ConversationService {
       plaintext: '[Video]',
       timestamp: DateTime.now(),
       type: MessageType.video,
-      metadata: {'status': 'COMPRESSING', 'is_ghost': isGhost, 'size': file.lengthSync()},
+      metadata: {
+        'status': 'COMPRESSING',
+        'is_ghost': isGhost,
+        'size': file.lengthSync(),
+      },
     );
     await _chatRepository.saveMessage(placeholder);
 
     try {
       // 2. Compress
-      await _chatRepository.updateMessageMetadata(placeholderId, {'status': 'COMPRESSING'});
+      await _chatRepository.updateMessageMetadata(placeholderId, {
+        'status': 'COMPRESSING',
+      });
       final compressed = await _mediaService.compressVideo(file);
-      await _chatRepository.updateMessageMetadata(placeholderId, {'status': 'ENCRYPTING'});
+      await _chatRepository.updateMessageMetadata(placeholderId, {
+        'status': 'ENCRYPTING',
+      });
 
       // 3. Upload
       final (envelope, thumbnailBytes) = await _mediaService.uploadMedia(
@@ -306,9 +336,11 @@ class ConversationService {
         originalFile: compressed,
         thumbnailBytes: thumbnailBytes,
       );
-      await _chatRepository.updateMessageMetadata(placeholderId, {'status': 'SENDING'});
+      await _chatRepository.updateMessageMetadata(placeholderId, {
+        'status': 'SENDING',
+      });
 
-      // 4. Send Message
+      // 3. Send Message
       await _chatRepository.sendMessage(
         recipientId: recipientId,
         text: '[Video]',
@@ -317,19 +349,95 @@ class ConversationService {
         retention: isGhost ? 'EPHEMERAL' : 'PERSISTENT',
         metadata: {
           ...envelope.toJson(),
+          'relay_url': activeRelay.apiUrl,
           'is_ghost': isGhost,
           'status': 'SENT',
         },
       );
+
       _logger.i('GHOST_LOG: MEDIA_ENVELOPE_SENT id: ${envelope.mediaId}');
     } catch (e) {
-      await _chatRepository.updateMessageMetadata(placeholderId, {'status': 'FAILED', 'error': e.toString()});
+      await _chatRepository.updateMessageMetadata(placeholderId, {
+        'status': 'FAILED',
+        'error': e.toString(),
+      });
+      rethrow;
+    }
+  }
+
+  Future<void> sendVoiceNote(
+    String recipientId,
+    File file, {
+    int durationMs = 0,
+  }) async {
+    final contact = _contactService.getContact(recipientId);
+    if (contact == null) throw Exception('Contact not found');
+
+    final activeRelay = await _relayManager.getActiveRelay();
+    if (activeRelay == null) throw Exception('No active relay');
+
+    final mode = getConversationMode(recipientId);
+    final isGhost = mode == ConversationMode.ghost;
+
+    // 1. Create Placeholder
+    final placeholderId = 'pending_${DateTime.now().microsecondsSinceEpoch}';
+    final placeholder = Message(
+      id: placeholderId,
+      senderId: _chatRepository.myPublicId,
+      recipientId: recipientId,
+      plaintext: '[Voice Note]',
+      timestamp: DateTime.now(),
+      type: MessageType.voice,
+      metadata: {
+        'status': 'ENCRYPTING',
+        'is_ghost': isGhost,
+        'size': file.lengthSync(),
+        'duration_ms': durationMs,
+      },
+    );
+    await _chatRepository.saveMessage(placeholder);
+
+    try {
+      // 2. Upload (includes encryption)
+      final (envelope, _) = await _mediaService.uploadMedia(
+        file: file,
+        kind: AttachmentKind.voice,
+        relay: activeRelay,
+        recipientXid: base64Decode(contact.xid),
+      );
+
+      await _chatRepository.updateMessageMetadata(placeholderId, {
+        'status': 'SENDING',
+      });
+
+      // 3. Send Message
+      await _chatRepository.sendMessage(
+        recipientId: recipientId,
+        text: '[Voice Note]',
+        type: MessageType.voice,
+        existingId: placeholderId,
+        retention: isGhost ? 'EPHEMERAL' : 'PERSISTENT',
+        metadata: {
+          ...envelope.toJson(),
+          'relay_url': activeRelay.apiUrl,
+          'is_ghost': isGhost,
+          'status': 'SENT',
+        },
+      );
+      _logger.i('GHOST_LOG: VOICE_ENVELOPE_SENT id: ${envelope.mediaId}');
+    } catch (e) {
+      await _chatRepository.updateMessageMetadata(placeholderId, {
+        'status': 'FAILED',
+        'error': e.toString(),
+      });
       rethrow;
     }
   }
 
   ConversationMode getConversationMode(String contactId) {
-    final state = Hive.box<ConversationState>('conversation_states').get(contactId);
+    final state = Hive.box<ConversationState>(
+      'conversation_states',
+    ).get(contactId);
     if (state == null) return ConversationMode.normal;
 
     // Check for 18-hour inactivity reset
@@ -340,19 +448,25 @@ class ConversationService {
       state.lastChangedAt = DateTime.now();
       state.save();
     }
-    
+
     return state.mode;
   }
 
-  Future<void> setConversationMode(String contactId, ConversationMode mode) async {
+  Future<void> setConversationMode(
+    String contactId,
+    ConversationMode mode,
+  ) async {
     await _chatRepository.updateConversationMode(contactId, mode);
   }
 
   Future<void> markAsRead(String contactId) async {
     await _chatRepository.markConversationAsRead(contactId);
-    
+
     // Also mark individual messages as read for local UI consistency
-    final messages = _chatRepository.getMessagesForContact(contactId, limit: 100);
+    final messages = _chatRepository.getMessagesForContact(
+      contactId,
+      limit: 100,
+    );
     for (final msg in messages) {
       if (!msg.isRead && msg.senderId == contactId) {
         msg.isRead = true;
