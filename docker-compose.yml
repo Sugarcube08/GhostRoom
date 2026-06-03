@@ -10,19 +10,19 @@ services:
     ports:
       - "4000:4000"
     environment:
-      - NODE_ENV=development
-      - REDIS_URL=redis://redis:6379
-      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/ghostroom
-      - POSTGRES_HOST=postgres
-      - POSTGRES_PORT=5432
-      - POSTGRES_DB=ghostroom
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=postgres
-      - R2_ACCOUNT_ID=minioadmin
-      - R2_ACCESS_KEY_ID=minioadmin
-      - R2_SECRET_ACCESS_KEY=minioadmin
-      - R2_BUCKET_NAME=ghostroom-media
-      - R2_ENDPOINT=http://minio:9000
+      - NODE_ENV=${NODE_ENV:-development}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379}
+      - DATABASE_URL=${DATABASE_URL:-postgresql://postgres:postgres@postgres:5432/ghostroom}
+      - POSTGRES_HOST=${POSTGRES_HOST:-postgres}
+      - POSTGRES_PORT=${POSTGRES_PORT:-5432}
+      - POSTGRES_DB=${POSTGRES_DB:-ghostroom}
+      - POSTGRES_USER=${POSTGRES_USER:-postgres}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
+      - R2_ACCOUNT_ID=${R2_ACCOUNT_ID:-minioadmin}
+      - R2_ACCESS_KEY_ID=${R2_ACCESS_KEY_ID:-minioadmin}
+      - R2_SECRET_ACCESS_KEY=${R2_SECRET_ACCESS_KEY:-minioadmin}
+      - R2_BUCKET_NAME=${R2_BUCKET_NAME:-ghostroom-media}
+      - R2_ENDPOINT=${R2_ENDPOINT:-http://minio:9000}
       - R2_PUBLIC_ENDPOINT=${R2_PUBLIC_ENDPOINT:-http://localhost:9000}
     command: npm run start:dev
     depends_on:

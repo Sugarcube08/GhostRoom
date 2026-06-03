@@ -198,6 +198,7 @@ class ConversationService {
     await _chatRepository.sendMessage(
       recipientId: recipientId, 
       text: text, 
+      retention: isGhost ? 'EPHEMERAL' : 'PERSISTENT',
       metadata: {'is_ghost': isGhost},
     );
   }
@@ -231,11 +232,16 @@ class ConversationService {
       await _chatRepository.updateMessageMetadata(placeholderId, {'status': 'ENCRYPTING'});
 
       // 3. Upload (includes encryption)
-      final envelope = await _mediaService.uploadMedia(
+      final (envelope, thumbnailBytes) = await _mediaService.uploadMedia(
         file: compressed,
         kind: AttachmentKind.image,
         relay: activeRelay,
         recipientXid: base64Decode(contact.xid),
+      );
+      await _chatRepository.mediaManager.cacheSentMedia(
+        mediaId: envelope.mediaId,
+        originalFile: compressed,
+        thumbnailBytes: thumbnailBytes,
       );
       await _chatRepository.updateMessageMetadata(placeholderId, {'status': 'SENDING'});
 
@@ -245,6 +251,7 @@ class ConversationService {
         text: '[Image]',
         type: MessageType.image,
         existingId: placeholderId,
+        retention: isGhost ? 'EPHEMERAL' : 'PERSISTENT',
         metadata: {
           ...envelope.toJson(),
           'is_ghost': isGhost,
@@ -288,11 +295,16 @@ class ConversationService {
       await _chatRepository.updateMessageMetadata(placeholderId, {'status': 'ENCRYPTING'});
 
       // 3. Upload
-      final envelope = await _mediaService.uploadMedia(
+      final (envelope, thumbnailBytes) = await _mediaService.uploadMedia(
         file: compressed,
         kind: AttachmentKind.video,
         relay: activeRelay,
         recipientXid: base64Decode(contact.xid),
+      );
+      await _chatRepository.mediaManager.cacheSentMedia(
+        mediaId: envelope.mediaId,
+        originalFile: compressed,
+        thumbnailBytes: thumbnailBytes,
       );
       await _chatRepository.updateMessageMetadata(placeholderId, {'status': 'SENDING'});
 
@@ -302,6 +314,7 @@ class ConversationService {
         text: '[Video]',
         type: MessageType.video,
         existingId: placeholderId,
+        retention: isGhost ? 'EPHEMERAL' : 'PERSISTENT',
         metadata: {
           ...envelope.toJson(),
           'is_ghost': isGhost,

@@ -28,4 +28,7 @@ export class MediaEntity {
     nullable: true,
   })
   expires_at: Date | null;
+
+  @Column("integer", { default: 0 })
+  reference_count: number;
 }

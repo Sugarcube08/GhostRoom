@@ -85,6 +85,9 @@ class MediaManager {
   final StreamController<MediaStateUpdate> _stateController = StreamController<MediaStateUpdate>.broadcast();
   late final ThumbnailQueue _thumbnailQueue;
 
+  final Completer<void> _initCompleter = Completer<void>();
+  bool _isInitializing = false;
+
   final Logger _logger = Logger(
     level: kReleaseMode ? Level.warning : Level.info,
     printer: PrettyPrinter(
@@ -104,20 +107,41 @@ class MediaManager {
   Stream<MediaStateUpdate> get stateStream => _stateController.stream;
 
   Future<void> init() async {
-    final docsDir = await getApplicationDocumentsDirectory();
-    _originalsDir = Directory(p.join(docsDir.path, 'media', 'originals'));
-    _thumbsDir = Directory(p.join(docsDir.path, 'media', 'thumbs'));
-    _tempDir = Directory(p.join(docsDir.path, 'media', 'temp'));
+    if (_isInitializing) return _initCompleter.future;
+    _isInitializing = true;
+    try {
+      final docsDir = await getApplicationDocumentsDirectory();
+      _originalsDir = Directory(p.join(docsDir.path, 'media', 'originals'));
+      _thumbsDir = Directory(p.join(docsDir.path, 'media', 'thumbs'));
+      _tempDir = Directory(p.join(docsDir.path, 'media', 'temp'));
 
-    await _originalsDir.create(recursive: true);
-    await _thumbsDir.create(recursive: true);
-    await _tempDir.create(recursive: true);
+      await _originalsDir.create(recursive: true);
+      await _thumbsDir.create(recursive: true);
+      await _tempDir.create(recursive: true);
 
-    _cacheIndex = await Hive.openBox<dynamic>('media_cache_index');
-    _logger.i('GHOST_LOG: MediaManager initialized. Directories and Cache Index ready.');
+      _cacheIndex = await Hive.openBox<dynamic>('media_cache_index');
+      _logger.i('GHOST_LOG: MediaManager initialized. Directories and Cache Index ready.');
+      if (!_initCompleter.isCompleted) {
+        _initCompleter.complete();
+      }
+    } catch (e, stackTrace) {
+      if (!_initCompleter.isCompleted) {
+        _initCompleter.completeError(e, stackTrace);
+      }
+      rethrow;
+    }
+  }
+
+  Future<void> _ensureInitialized() async {
+    if (!_initCompleter.isCompleted) {
+      await init();
+    }
   }
 
   MediaState getMediaState(String mediaId, {bool isThumbnail = false}) {
+    if (!_initCompleter.isCompleted) {
+      return MediaState.notDownloaded;
+    }
     final state = isThumbnail ? _thumbStates[mediaId] : _states[mediaId];
     if (state != null) return state;
 
@@ -133,6 +157,7 @@ class MediaManager {
   }
 
   Future<bool> isThumbnailCached(String mediaId) async {
+    await _ensureInitialized();
     final key = '${mediaId}_thumb';
     final cached = _cacheIndex.get(key);
     if (cached != null) {
@@ -143,6 +168,7 @@ class MediaManager {
   }
 
   Future<void> saveThumbnailDirectly(String mediaId, Uint8List thumbBytes) async {
+    await _ensureInitialized();
     final extension = '.jpg';
     final targetPath = p.join(_thumbsDir.path, '$mediaId$extension');
     
@@ -186,6 +212,7 @@ class MediaManager {
     
     // Check active downloads (Critical Rule #1)
     return _activeDownloads.putIfAbsent(key, () async {
+      await _ensureInitialized();
       try {
         // Local cache lookup (Critical Rule #2 & #3)
         final cached = _cacheIndex.get(key);
@@ -385,7 +412,47 @@ class MediaManager {
     }
   }
 
+  Future<void> cacheSentMedia({
+    required String mediaId,
+    required File originalFile,
+    required Uint8List? thumbnailBytes,
+  }) async {
+    await _ensureInitialized();
+    
+    // 1. Copy original file to originals directory to prevent it from being deleted if it's in temp or elsewhere
+    final extension = p.extension(originalFile.path).toLowerCase();
+    final targetOriginalPath = p.join(_originalsDir.path, '$mediaId$extension');
+    final finalOriginalFile = File(targetOriginalPath);
+    
+    if (originalFile.path != finalOriginalFile.path) {
+      if (await originalFile.exists()) {
+        try {
+          await originalFile.copy(finalOriginalFile.path);
+        } catch (e) {
+          _logger.w('Failed to copy original file to cache: $e');
+        }
+      }
+    }
+    
+    final originalEntry = CachedMedia(
+      mediaId: mediaId,
+      localPath: finalOriginalFile.path,
+      checksum: '', // Hash is optional for cache hits
+      size: await finalOriginalFile.exists() ? await finalOriginalFile.length() : 0,
+      downloadedAt: DateTime.now(),
+      isThumbnail: false,
+    );
+    await _cacheIndex.put('${mediaId}_original', originalEntry.toMap());
+    _updateState(mediaId, MediaState.ready, isThumbnail: false);
+    
+    // 2. If thumbnail bytes are present, save them
+    if (thumbnailBytes != null) {
+      await saveThumbnailDirectly(mediaId, thumbnailBytes);
+    }
+  }
+
   Future<void> clearCache() async {
+    await _ensureInitialized();
     await _originalsDir.delete(recursive: true);
     await _thumbsDir.delete(recursive: true);
     await _tempDir.delete(recursive: true);
@@ -396,6 +463,40 @@ class MediaManager {
     _states.clear();
     _thumbStates.clear();
     _logger.i('GHOST_LOG: Media cache cleared.');
+  }
+
+  Future<void> deleteMedia(String mediaId) async {
+    await _ensureInitialized();
+    final origKey = '${mediaId}_original';
+    final thumbKey = '${mediaId}_thumb';
+    
+    final origCached = _cacheIndex.get(origKey);
+    if (origCached != null) {
+      final cachedMedia = CachedMedia.fromMap(origCached as Map);
+      final file = File(cachedMedia.localPath);
+      if (await file.exists()) {
+        try {
+          await file.delete();
+        } catch (_) {}
+      }
+      await _cacheIndex.delete(origKey);
+    }
+
+    final thumbCached = _cacheIndex.get(thumbKey);
+    if (thumbCached != null) {
+      final cachedMedia = CachedMedia.fromMap(thumbCached as Map);
+      final file = File(cachedMedia.localPath);
+      if (await file.exists()) {
+        try {
+          await file.delete();
+        } catch (_) {}
+      }
+      await _cacheIndex.delete(thumbKey);
+    }
+    
+    _states.remove(mediaId);
+    _thumbStates.remove(mediaId);
+    _logger.i('GHOST_LOG: Local media deleted for $mediaId');
   }
 }
 

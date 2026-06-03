@@ -165,7 +165,7 @@ class MediaService {
     return decrypted;
   }
 
-  Future<AttachmentEnvelope> uploadMedia({
+  Future<(AttachmentEnvelope, Uint8List?)> uploadMedia({
     required File file,
     required AttachmentKind kind,
     required RelayProfile relay,
@@ -214,12 +214,14 @@ class MediaService {
 
     // 3. Handle Thumbnail
     String? thumbNonceBase64;
+    Uint8List? thumbnailBytes;
     if (kind == AttachmentKind.image || kind == AttachmentKind.video) {
       _logger.i('GHOST_LOG: MEDIA_UPLOAD_STEP_THUMB_START');
       final thumbBytes = kind == AttachmentKind.image 
         ? await generateImageThumbnail(file)
         : await generateVideoThumbnail(file);
         
+      thumbnailBytes = thumbBytes;
       _logger.i('GHOST_LOG: MEDIA_THUMBNAIL_SUCCESS');
       final encryptedThumb = await encryptMedia(thumbBytes, messageKey);
       await _retryHttp(() => http.put(Uri.parse(thumbUrl), body: encryptedThumb['ciphertext']));
@@ -245,7 +247,7 @@ class MediaService {
 
     _logger.i('GHOST_LOG: MEDIA_UPLOAD_SUCCESS');
 
-    return AttachmentEnvelope(
+    final envelope = AttachmentEnvelope(
       kind: kind,
       mediaId: mediaId,
       encryptedKey: base64Encode(wrappedKey),
@@ -253,6 +255,8 @@ class MediaService {
       name: p.basename(file.path),
       meta: meta,
     );
+
+    return (envelope, thumbnailBytes);
   }
 
   Future<http.Response> _retryHttp(Future<http.Response> Function() call, {int maxAttempts = 3}) async {

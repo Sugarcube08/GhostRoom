@@ -10,6 +10,7 @@ import '../../core/notification_service.dart';
 import '../contacts/contact_service.dart';
 import 'dart:convert';
 import 'package:logger/logger.dart';
+import '../media/media_manager.dart';
 import '../../core/stability_tracker.dart';
 
 class ChatRepository {
@@ -18,6 +19,7 @@ class ChatRepository {
   final ContactService _contactService;
   final WebSocketService _wsService;
   final NotificationService _notificationService;
+  final MediaManager _mediaManager;
   String? _activeConversationId;
   final Logger _logger = Logger(
     level: kReleaseMode ? Level.warning : Level.info,
@@ -43,9 +45,11 @@ class ChatRepository {
     this._contactService, 
     this._wsService,
     this._notificationService,
+    this._mediaManager,
   );
 
   String get myPublicId => _idService.currentIdentity?.publicId ?? '';
+  MediaManager get mediaManager => _mediaManager;
 
   void setActiveConversation(String? contactId) {
     _activeConversationId = contactId;
@@ -446,14 +450,17 @@ class ChatRepository {
     );
     _logger.i('GHOST_LOG: SEND_ENCRYPT_SUCCESS');
 
-    // If we have an existing placeholder ID, we might need to handle ID collision or mapping.
-    // However, the DMEnvelope generates its own v7 UUID.
-    // For simplicity, we will replace the placeholder with the final envelope ID if they differ.
-
-    _wsService.sendMessage(recipientId, {
+    final Map<String, dynamic> msgPayload = {
       ...envelope.toJson(),
       'retention': retention,
-    }, version: 2, ack: (ackData) {
+    };
+    if (type == MessageType.image || type == MessageType.video) {
+      if (metadata != null && metadata['media_id'] != null) {
+        msgPayload['media_id'] = metadata['media_id'];
+      }
+    }
+
+    _wsService.sendMessage(recipientId, msgPayload, version: 2, ack: (ackData) {
       _logger.i('GHOST_LOG: SEND_ACK_RECEIVED');
       if (type == MessageType.image || type == MessageType.video) {
         _logger.i('GHOST_LOG: MEDIA_MESSAGE_SENT');
@@ -524,30 +531,50 @@ class ChatRepository {
 
   Future<void> flushGhostMessages(String contactId) async {
     final messages = getMessagesForContact(contactId, limit: 1000);
-    bool didDeleteGhost = false;
+    final List<String> deletedIds = [];
     for (final msg in messages) {
       if (msg.metadata?['is_ghost'] == true) {
         await msg.delete();
-        didDeleteGhost = true;
+        deletedIds.add(msg.id);
+        
+        if (msg.type == MessageType.image || msg.type == MessageType.video) {
+          final mediaId = msg.metadata?['media_id'] as String?;
+          if (mediaId != null) {
+            await _mediaManager.deleteMedia(mediaId);
+          }
+        }
       }
     }
-    if (didDeleteGhost) {
-      _logger.i('GHOST_LOG: Local ghost messages flushed for $contactId');
+    if (deletedIds.isNotEmpty) {
+      _logger.i('GHOST_LOG: Local ghost messages flushed for $contactId: $deletedIds');
+      _wsService.socket?.emit('message.delete', {
+        'message_ids': deletedIds,
+      });
     }
   }
 
   Future<void> flushAllGhosts() async {
     _logger.i('GHOST_LOG: Global ghost flush starting...');
-    int count = 0;
+    final List<String> deletedIds = [];
     final messages = _msgBox.values;
     for (final msg in messages) {
       if (msg.metadata?['is_ghost'] == true) {
         await msg.delete();
-        count++;
+        deletedIds.add(msg.id);
+        
+        if (msg.type == MessageType.image || msg.type == MessageType.video) {
+          final mediaId = msg.metadata?['media_id'] as String?;
+          if (mediaId != null) {
+            await _mediaManager.deleteMedia(mediaId);
+          }
+        }
       }
     }
-    if (count > 0) {
-      _logger.i('GHOST_LOG: Global ghost flush complete. Pruned $count messages.');
+    if (deletedIds.isNotEmpty) {
+      _logger.i('GHOST_LOG: Global ghost flush complete. Pruned ${deletedIds.length} messages.');
+      _wsService.socket?.emit('message.delete', {
+        'message_ids': deletedIds,
+      });
     }
   }
 

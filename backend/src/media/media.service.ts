@@ -39,6 +39,17 @@ export class MediaService {
     this.bucketName =
       this.configService.get<string>("R2_BUCKET_NAME") || "ghostroom-media";
 
+    const clientEndpoint = endpoint || (accountId ? `https://${accountId}.r2.cloudflarestorage.com` : "");
+    this.logger.log(`STORAGE_ENDPOINT=${clientEndpoint}`);
+    this.logger.log(`STORAGE_BUCKET=${this.bucketName}`);
+
+    if (
+      this.configService.get<string>("NODE_ENV") === "production" &&
+      clientEndpoint.includes("localhost")
+    ) {
+      throw new Error("Invalid storage endpoint: localhost");
+    }
+
     this.BYTES_LIMIT = parseInt(
       this.configService.get<string>("MEDIA_DAILY_BYTES_LIMIT") || "104857600",
     );
@@ -48,7 +59,7 @@ export class MediaService {
 
     this.s3Client = new S3Client({
       region: "auto",
-      endpoint: endpoint || `https://${accountId}.r2.cloudflarestorage.com`,
+      endpoint: clientEndpoint || undefined,
       forcePathStyle: !!endpoint, // Mandatory for MinIO
       credentials: {
         accessKeyId: accessKeyId || "",
@@ -172,7 +183,7 @@ export class MediaService {
       throw new Error("Forbidden: Not the media owner");
     }
 
-    metadata.state = "UPLOADED";
+    metadata.state = metadata.reference_count > 0 ? "REFERENCED" : "UPLOADED";
     await this.mediaRepo.save(metadata);
     await this.auditService.log("media_upload_confirmed", {
       media_id: mediaId,
@@ -284,7 +295,53 @@ export class MediaService {
     return this.s3Client;
   }
 
+  async incrementReferenceCount(mediaId: string): Promise<void> {
+    const metadata = await this.mediaRepo.findOne({ where: { id: mediaId } });
+    if (!metadata) {
+      this.logger.warn(`incrementReferenceCount: Media ${mediaId} not found`);
+      return;
+    }
+
+    metadata.reference_count = (metadata.reference_count || 0) + 1;
+    
+    // If state is UPLOADED, ORPHANED or PENDING_DELETE, move it to REFERENCED
+    if (metadata.state === "UPLOADED" || metadata.state === "ORPHANED" || metadata.state === "PENDING_DELETE") {
+      metadata.state = "REFERENCED";
+    }
+    
+    // Clear expiration if it was scheduled for deletion
+    metadata.expires_at = null;
+
+    await this.mediaRepo.save(metadata);
+    this.logger.log(`GHOST_LOG: MEDIA_REFERENCE_INCREMENTED: ${mediaId} (refcount=${metadata.reference_count})`);
+  }
+
+  async decrementReferenceCount(mediaId: string): Promise<void> {
+    const metadata = await this.mediaRepo.findOne({ where: { id: mediaId } });
+    if (!metadata) {
+      this.logger.warn(`decrementReferenceCount: Media ${mediaId} not found`);
+      return;
+    }
+
+    metadata.reference_count = Math.max(0, (metadata.reference_count || 0) - 1);
+
+    if (metadata.reference_count === 0) {
+      metadata.state = "ORPHANED";
+      // Schedule deletion in 1 hour
+      const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
+      metadata.expires_at = expiresAt;
+
+      await this.auditService.log("MEDIA_ORPHANED", { media_id: mediaId });
+      await this.auditService.log("MEDIA_DELETE_SCHEDULED", { media_id: mediaId, delete_after: expiresAt });
+      this.logger.log(`GHOST_LOG: MEDIA_ORPHANED: ${mediaId} (Expires at: ${expiresAt.toISOString()})`);
+    }
+
+    await this.mediaRepo.save(metadata);
+    this.logger.log(`GHOST_LOG: MEDIA_REFERENCE_DECREMENTED: ${mediaId} (refcount=${metadata.reference_count})`);
+  }
+
   async deleteMedia(mediaId: string) {
+    this.logger.log(`GHOST_LOG: MEDIA_DELETE_START: ${mediaId}`);
     try {
       await this.s3Client.send(
         new DeleteObjectCommand({
@@ -298,32 +355,53 @@ export class MediaService {
           Key: `thumbs/${mediaId}`,
         }),
       );
+      await this.auditService.log("media_r2_delete_success", {
+        media_id: mediaId,
+      });
+      await this.auditService.log("MEDIA_R2_DELETE_SUCCESS", {
+        media_id: mediaId,
+      });
+      this.logger.log(`GHOST_LOG: MEDIA_R2_DELETE_SUCCESS: ${mediaId}`);
     } catch (e: any) {
       this.logger.error(
         `Failed to delete media ${mediaId} from R2: ${e?.message || e}`,
       );
     }
 
-    await this.mediaRepo.delete(mediaId);
+    try {
+      await this.mediaRepo.delete(mediaId);
+      await this.auditService.log("media_metadata_delete_success", {
+        media_id: mediaId,
+      });
+      await this.auditService.log("MEDIA_METADATA_DELETE_SUCCESS", {
+        media_id: mediaId,
+      });
+      this.logger.log(`GHOST_LOG: MEDIA_METADATA_DELETE_SUCCESS: ${mediaId}`);
+    } catch (e: any) {
+      this.logger.error(
+        `Failed to delete media metadata ${mediaId} from Postgres: ${e?.message || e}`,
+      );
+    }
   }
 
   async cleanup() {
     this.logger.log("Starting media cleanup worker...");
     const now = new Date();
 
-    // 1. Find expired media
-    const expiredMedia = await this.mediaRepo.find({
-      where: {
-        expires_at: LessThan(now),
-      },
+    // 1. Find expired or orphaned media that has reached its delete schedule
+    const expiredOrOrphanedMedia = await this.mediaRepo.find({
+      where: [
+        { expires_at: LessThan(now) },
+        { state: "ORPHANED", expires_at: LessThan(now) }
+      ],
     });
 
-    for (const media of expiredMedia) {
-      this.logger.log(`Pruning expired media: ${media.id}`);
+    for (const media of expiredOrOrphanedMedia) {
+      this.logger.log(`Pruning expired/orphaned media: ${media.id} (State: ${media.state})`);
       await this.deleteMedia(media.id);
       await this.auditService.log("media_pruned", {
         media_id: media.id,
-        reason: "expired",
+        reason: media.state === "ORPHANED" ? "orphaned_expired" : "expired",
       });
     }
 

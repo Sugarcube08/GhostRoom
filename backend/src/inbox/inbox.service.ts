@@ -7,6 +7,7 @@ import Redis from "ioredis";
 import { v4 as uuidv4 } from "uuid";
 import { MessageEntity } from "./entities/message.entity";
 import { DeliveryEntity } from "./entities/delivery.entity";
+import { MediaService } from "../media/media.service";
 
 export interface MessageEnvelope {
   id: string;
@@ -34,6 +35,7 @@ export class InboxService {
     private readonly messageRepo: Repository<MessageEntity>,
     @InjectRepository(DeliveryEntity)
     private readonly deliveryRepo: Repository<DeliveryEntity>,
+    private readonly mediaService: MediaService,
   ) {
     this.INBOX_MAX_MESSAGES = parseInt(
       this.configService.get<string>("INBOX_MAX_MESSAGES") || "5000",
@@ -95,6 +97,8 @@ export class InboxService {
     }
     // PERSISTENT mode now has null expiresAt (unlimited)
 
+    const mediaId = payload.media_id || null;
+
     try {
       const msgEntity = this.messageRepo.create({
         id: messageId,
@@ -103,8 +107,17 @@ export class InboxService {
         retention_mode: retentionMode,
         created_at: new Date(timestamp),
         expires_at: expiresAt,
+        media_id: mediaId,
       });
       await this.messageRepo.save(msgEntity);
+
+      if (mediaId) {
+        try {
+          await this.mediaService.incrementReferenceCount(mediaId);
+        } catch (err: any) {
+          this.logger.error(`Failed to increment media reference count for ${mediaId}: ${err?.message}`);
+        }
+      }
 
       const deliveryEntity = this.deliveryRepo.create({
         message_id: messageId,
@@ -115,7 +128,7 @@ export class InboxService {
       await this.deliveryRepo.save(deliveryEntity);
 
       this.logger.log(
-        `Audit: Message ${messageId} queued for ${publicId} (Mode: ${retentionMode})`,
+        `Audit: Message ${messageId} queued for ${publicId} (Mode: ${retentionMode}, Media: ${mediaId})`,
       );
     } catch (e: any) {
       this.logger.error(`Failed to save message to Postgres: ${e?.message}`);
@@ -176,6 +189,13 @@ export class InboxService {
       if (!message) return;
 
       if (message.retention_mode === "VIEW_ONCE") {
+        if (message.media_id) {
+          try {
+            await this.mediaService.decrementReferenceCount(message.media_id);
+          } catch (err: any) {
+            this.logger.error(`Failed to decrement media reference count: ${err?.message}`);
+          }
+        }
         // Immediate deletion
         await this.messageRepo.delete(messageId);
       } else {
@@ -223,14 +243,64 @@ export class InboxService {
   async cleanupExpiredMessages(): Promise<void> {
     const now = new Date();
     try {
-      const result = await this.messageRepo.delete({
-        expires_at: LessThan(now),
+      const expiredMessages = await this.messageRepo.find({
+        where: { expires_at: LessThan(now) },
       });
-      if (result.affected && result.affected > 0) {
-        this.logger.log(`Pruned ${result.affected} expired messages.`);
+
+      for (const msg of expiredMessages) {
+        if (msg.media_id) {
+          try {
+            await this.mediaService.decrementReferenceCount(msg.media_id);
+          } catch (e: any) {
+            this.logger.error(`Failed to decrement media refcount on expiry: ${e?.message}`);
+          }
+        }
+      }
+
+      if (expiredMessages.length > 0) {
+        const ids = expiredMessages.map((m) => m.id);
+        const result = await this.messageRepo.delete(ids);
+        if (result.affected && result.affected > 0) {
+          this.logger.log(`Pruned ${result.affected} expired messages.`);
+        }
       }
     } catch (e: any) {
       this.logger.error(`Failed to prune expired messages: ${e?.message}`);
+    }
+  }
+
+  async deleteMessages(publicId: string, messageIds: string[]): Promise<void> {
+    try {
+      const messages = await this.messageRepo.find({
+        where: messageIds.map((id) => ({ id })),
+      });
+
+      for (const msg of messages) {
+        const isRecipient = msg.recipient_id === publicId;
+
+        if (isRecipient) {
+          if (msg.media_id) {
+            try {
+              await this.mediaService.decrementReferenceCount(msg.media_id);
+            } catch (e: any) {
+              this.logger.error(`Failed to decrement media refcount on delete: ${e?.message}`);
+            }
+          }
+
+          await this.messageRepo.delete(msg.id);
+          await this.deliveryRepo.delete({ message_id: msg.id });
+
+          // Also remove from Redis cache for recipient
+          const pipeline = this.redis.pipeline();
+          pipeline.zrem(`inbox:${msg.recipient_id}`, msg.id);
+          pipeline.del(`msg:${msg.id}`);
+          await pipeline.exec();
+
+          this.logger.log(`GHOST_LOG: Message ${msg.id} deleted by recipient ${publicId}`);
+        }
+      }
+    } catch (e: any) {
+      this.logger.error(`Failed to delete messages: ${e?.message}`);
     }
   }
 }

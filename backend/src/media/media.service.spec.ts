@@ -119,4 +119,47 @@ describe("MediaService", () => {
       );
     });
   });
+
+  describe("reference counts", () => {
+    it("should increment reference count and reset state to REFERENCED", async () => {
+      const mockMeta = {
+        id: "media-id",
+        reference_count: 1,
+        state: "UPLOADED",
+        expires_at: new Date(),
+      };
+      mockMediaRepo.findOne.mockResolvedValue(mockMeta);
+
+      await service.incrementReferenceCount("media-id");
+
+      expect(mockMeta.reference_count).toBe(2);
+      expect(mockMeta.state).toBe("REFERENCED");
+      expect(mockMeta.expires_at).toBeNull();
+      expect(mockMediaRepo.save).toHaveBeenCalledWith(mockMeta);
+    });
+
+    it("should decrement reference count and mark as ORPHANED when hitting 0", async () => {
+      const mockMeta = {
+        id: "media-id",
+        reference_count: 1,
+        state: "REFERENCED",
+        expires_at: null,
+      };
+      mockMediaRepo.findOne.mockResolvedValue(mockMeta);
+
+      await service.decrementReferenceCount("media-id");
+
+      expect(mockMeta.reference_count).toBe(0);
+      expect(mockMeta.state).toBe("ORPHANED");
+      expect(mockMeta.expires_at).toBeInstanceOf(Date);
+      expect(mockAuditService.log).toHaveBeenCalledWith("MEDIA_ORPHANED", {
+        media_id: "media-id",
+      });
+      expect(mockAuditService.log).toHaveBeenCalledWith(
+        "MEDIA_DELETE_SCHEDULED",
+        expect.any(Object),
+      );
+      expect(mockMediaRepo.save).toHaveBeenCalledWith(mockMeta);
+    });
+  });
 });

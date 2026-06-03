@@ -21,6 +21,7 @@ class WebSocketService {
 
   bool get isConnected => _socket?.connected ?? false;
   bool get isAuthenticated => _isAuthenticated;
+  io.Socket? get socket => _socket;
 
   DateTime? _lastConnectAttempt;
   static const _minConnectInterval = Duration(seconds: 3);

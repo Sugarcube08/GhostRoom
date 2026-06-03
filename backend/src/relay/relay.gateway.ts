@@ -147,6 +147,21 @@ export class RelayGateway implements OnGatewayConnection, OnGatewayDisconnect {
     this.metricsService.messagesAcked.inc();
   }
 
+  @SubscribeMessage("message.delete")
+  async handleMessageDelete(
+    client: Socket,
+    payload: { message_ids: string[] },
+  ) {
+    const publicId = client.data.publicId;
+    if (!publicId) return;
+
+    this.logger.log(
+      `GHOST_LOG: Received message.delete event from ${publicId} for: ${payload.message_ids}`,
+    );
+    await this.inboxService.deleteMessages(publicId, payload.message_ids);
+    return { status: "success" };
+  }
+
   @SubscribeMessage("media.viewed")
   async handleMediaViewed(client: Socket, payload: { media_id: string }) {
     const publicId = client.data.publicId;
@@ -285,6 +300,7 @@ export class RelayGateway implements OnGatewayConnection, OnGatewayDisconnect {
             k: (payload as any).k || (payload as any).encryptedKey,
             s: (payload as any).s || (payload as any).signature,
             retention: payload.retention,
+            media_id: (payload as any).media_id,
           },
           senderPublicId,
         );

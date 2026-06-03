@@ -4,6 +4,7 @@ import { ConfigService } from "@nestjs/config";
 import { getRepositoryToken } from "@nestjs/typeorm";
 import { MessageEntity } from "./entities/message.entity";
 import { DeliveryEntity } from "./entities/delivery.entity";
+import { MediaService } from "../media/media.service";
 import { describe, expect, it, jest, beforeEach } from "@jest/globals";
 
 describe("InboxService", () => {
@@ -69,6 +70,13 @@ describe("InboxService", () => {
         {
           provide: getRepositoryToken(DeliveryEntity),
           useValue: mockDeliveryRepo,
+        },
+        {
+          provide: MediaService,
+          useValue: {
+            incrementReferenceCount: jest.fn().mockImplementation(async () => {}),
+            decrementReferenceCount: jest.fn().mockImplementation(async () => {}),
+          },
         },
       ],
     }).compile();

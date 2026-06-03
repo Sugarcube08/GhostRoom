@@ -40,4 +40,7 @@ export class MessageEntity {
     nullable: true,
   })
   expires_at: Date | null;
+
+  @Column("varchar", { nullable: true })
+  media_id: string | null;
 }

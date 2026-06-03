@@ -55,6 +55,7 @@ final chatRepositoryProvider = Provider<ChatRepository>((ref) {
     ref.watch(contactServiceProvider),
     ref.watch(webSocketServiceProvider),
     ref.watch(notificationServiceProvider),
+    ref.watch(mediaManagerProvider),
   );
 });
 

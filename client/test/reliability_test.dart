@@ -8,10 +8,19 @@ import 'package:ghostroom/features/contacts/contact_service.dart';
 import 'package:ghostroom/features/contacts/contact.dart';
 import 'package:ghostroom/core/network/websocket_service.dart';
 import 'package:ghostroom/core/notification_service.dart';
+import 'package:ghostroom/features/media/media_manager.dart';
 import 'dart:convert';
 import 'dart:typed_data';
 import 'package:bip39/bip39.dart' as bip39;
 import 'package:hive/hive.dart';
+
+class ManualMockMediaManager implements MediaManager {
+  @override
+  Future<void> deleteMedia(String mediaId) async {}
+  
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
 
 class ManualMockNotificationService implements NotificationService {
   @override
@@ -118,6 +127,7 @@ void main() {
     final mockWs = ManualMockWebSocketService();
     final mockContacts = ManualMockContactService();
     final mockNotifications = ManualMockNotificationService();
+    final mockMedia = ManualMockMediaManager();
     
     final bobContact = Contact(
       publicId: bobIdentity.publicId,
@@ -129,7 +139,7 @@ void main() {
     );
     mockContacts.contacts.add(bobContact);
 
-    final repo = ChatRepository(idService, dmService, mockContacts, mockWs, mockNotifications);
+    final repo = ChatRepository(idService, dmService, mockContacts, mockWs, mockNotifications, mockMedia);
     await repo.init();
     await repo.dangerouslyClearAll();
 
