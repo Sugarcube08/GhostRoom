@@ -208,6 +208,9 @@ class MediaManager {
     MediaState state, {
     bool isThumbnail = false,
   }) {
+    final currentState = isThumbnail ? _thumbStates[mediaId] : _states[mediaId];
+    if (currentState == state) return;
+
     if (isThumbnail) {
       _thumbStates[mediaId] = state;
     } else {

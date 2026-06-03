@@ -52,43 +52,44 @@ class _NavigationShellState extends ConsumerState<NavigationShell> {
     final colors = AppColors.of(context);
     final bool isDesktop = MediaQuery.of(context).size.width > 600;
 
-    return Scaffold(
-      backgroundColor: colors.primaryBackground,
-      body: Row(
-        children: [
-          if (isDesktop)
+    if (isDesktop) {
+      return Scaffold(
+        backgroundColor: colors.primaryBackground,
+        body: Row(
+          children: [
             GhostNavigationRail(
               items: _navItems,
               currentIndex: _currentIndex,
               onTap: (index) => setState(() => _currentIndex = index),
             ),
-          Expanded(
-            child: Stack(
-              children: [
-                Positioned.fill(
-                  child: IndexedStack(
-                    index: _currentIndex,
-                    children: _screens,
-                  ),
-                ),
-                if (!isDesktop)
-                  Positioned(
-                    left: 24,
-                    right: 24,
-                    bottom: 24,
-                    child: SafeArea(
-                      bottom: true,
-                      child: GhostNavigationBar(
-                        items: _navItems,
-                        currentIndex: _currentIndex,
-                        onTap: (index) => setState(() => _currentIndex = index),
-                      ),
-                    ),
-                  ),
-              ],
+            Expanded(
+              child: IndexedStack(
+                index: _currentIndex,
+                children: _screens,
+              ),
             ),
+          ],
+        ),
+      );
+    }
+
+    return Scaffold(
+      backgroundColor: colors.primaryBackground,
+      extendBody: true, // Pushes content behind the bottom nav bar
+      body: IndexedStack(
+        index: _currentIndex,
+        children: _screens,
+      ),
+      bottomNavigationBar: SafeArea(
+        bottom: true,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+          child: GhostNavigationBar(
+            items: _navItems,
+            currentIndex: _currentIndex,
+            onTap: (index) => setState(() => _currentIndex = index),
           ),
-        ],
+        ),
       ),
     );
   }

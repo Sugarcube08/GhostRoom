@@ -83,32 +83,31 @@ class _ChatsScreenState extends ConsumerState<ChatsScreen> with ContactActions {
                     child: _buildEmptyState(context),
                   )
                 else
-                  SliverPadding(
-                    padding: EdgeInsets.only(bottom: isWide ? 20 : 120),
-                    sliver: SliverList(
-                      delegate: SliverChildBuilderDelegate(
-                        (context, index) {
-                          final conv = conversations[index];
-                          return ConversationListItem(
-                            conversation: conv,
-                            onTap: () {
-                              if (isWide) {
-                                setState(() => _selectedConversation = conv);
-                              } else {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) => ConversationScreen(conversation: conv),
-                                  ),
-                                );
-                              }
-                            },
-                          );
-                        },
-                        childCount: conversations.length,
-                      ),
+                  SliverList(
+                    delegate: SliverChildBuilderDelegate(
+                      (context, index) {
+                        final conv = conversations[index];
+                        return ConversationListItem(
+                          conversation: conv,
+                          onTap: () {
+                            if (isWide) {
+                              setState(() => _selectedConversation = conv);
+                            } else {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => ConversationScreen(conversation: conv),
+                                ),
+                              );
+                            }
+                          },
+                        );
+                      },
+                      childCount: conversations.length,
                     ),
                   ),
+                // Add spacer to prevent hiding behind nav bar
+                const SliverToBoxAdapter(child: SizedBox(height: 120)),
               ],
             ),
           ),

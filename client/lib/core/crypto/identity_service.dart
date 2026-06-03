@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:typed_data';
 import 'dart:io';
 import 'package:sodium/sodium_sumo.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -9,6 +8,11 @@ import 'package:path_provider/path_provider.dart';
 import '../network/relay_manager.dart';
 import '../stability_tracker.dart';
 import 'package:logger/logger.dart';
+import 'package:flutter/foundation.dart';
+
+Uint8List _deriveSeedBackground(String mnemonic) {
+  return bip39.mnemonicToSeed(mnemonic);
+}
 
 class IdentityPackage {
   final int version;
@@ -233,7 +237,7 @@ class IdentityService {
         throw Exception('Invalid mnemonic seed phrase');
       }
 
-      final seed = bip39.mnemonicToSeed(sanitizedMnemonic);
+      final seed = await compute(_deriveSeedBackground, sanitizedMnemonic);
       final ed25519SeedBytes = seed.sublist(0, 32);
       final ed25519Seed = SecureKey.fromList(sodium, ed25519SeedBytes);
       

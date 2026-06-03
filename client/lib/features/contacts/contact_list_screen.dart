@@ -26,7 +26,7 @@ class _ContactListScreenState extends ConsumerState<ContactListScreen>
   @override
   Widget build(BuildContext context) {
     final colors = AppColors.of(context);
-    
+
     return ValueListenableBuilder(
       valueListenable: Hive.box<Contact>('contacts').listenable(),
       builder: (context, _, _) {
@@ -58,7 +58,9 @@ class _ContactListScreenState extends ConsumerState<ContactListScreen>
                       onTap: () {
                         Navigator.push(
                           context,
-                          MaterialPageRoute(builder: (_) => const MyPassportScreen()),
+                          MaterialPageRoute(
+                            builder: (_) => const MyPassportScreen(),
+                          ),
                         );
                       },
                     ),
@@ -97,7 +99,12 @@ class _ContactListScreenState extends ConsumerState<ContactListScreen>
                 ),
                 SliverToBoxAdapter(
                   child: Padding(
-                    padding: const EdgeInsets.fromLTRB(AppSpacing.l, AppSpacing.l, AppSpacing.l, AppSpacing.s),
+                    padding: const EdgeInsets.fromLTRB(
+                      AppSpacing.l,
+                      AppSpacing.l,
+                      AppSpacing.l,
+                      AppSpacing.s,
+                    ),
                     child: Text(
                       'YOUR NETWORK',
                       style: AppTypography.caption(context).copyWith(
@@ -114,36 +121,27 @@ class _ContactListScreenState extends ConsumerState<ContactListScreen>
                     child: _buildEmptyState(context),
                   )
                 else
-                  SliverPadding(
-                    padding: const EdgeInsets.only(bottom: 120),
-                    sliver: SliverList(
-                      delegate: SliverChildBuilderDelegate(
-                        (context, index) {
-                          final contact = contacts[index];
-                          return ContactListItem(
-                            contact: contact,
-                            onTap: () {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (_) => ContactDetailScreen(contact: contact),
-                                ),
-                              );
-                            },
+                  SliverList(
+                    delegate: SliverChildBuilderDelegate((context, index) {
+                      final contact = contacts[index];
+                      return ContactListItem(
+                        contact: contact,
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) =>
+                                  ContactDetailScreen(contact: contact),
+                            ),
                           );
                         },
-                        childCount: contacts.length,
-                      ),
-                    ),
+                      );
+                    }, childCount: contacts.length),
                   ),
+                // Add a small spacer at the bottom to account for the floating FAB and Nav
+                const SliverToBoxAdapter(child: SizedBox(height: 120)),
               ],
             ),
-          ),
-          floatingActionButton: FloatingActionButton(
-            backgroundColor: colors.ghostAccent,
-            foregroundColor: Colors.white,
-            onPressed: () => showAddOptions(context),
-            child: const Icon(Icons.person_add_alt_1),
           ),
         );
       },

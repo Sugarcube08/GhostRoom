@@ -22,6 +22,7 @@ import '../../design_system/components/components.dart';
 import '../../design_system/haptics.dart';
 import 'widgets/voice_recorder.dart';
 import 'widgets/voice_message_bubble.dart';
+import 'package:logger/logger.dart';
 
 class ConversationScreen extends ConsumerStatefulWidget {
   final Conversation conversation;
@@ -107,6 +108,7 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
   bool _isInitialScroll = true;
   bool _isRecording = false;
   late final ChatRepository _chatRepository;
+  final Logger _logger = Logger();
 
   @override
   void initState() {
@@ -142,9 +144,6 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
     _controller.clear();
     await ref.read(conversationServiceProvider).sendMessage(widget.conversation.contactId, text);
   }
-
-  // Media picking logic omitted for brevity in this step, assume it stays same as V3.4
-  // ... (keeping internal logic same)
 
   @override
   Widget build(BuildContext context) {
@@ -392,7 +391,6 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
     );
   }
 
-  // Same bubble logic as before but with slightly better padding and radius
   Widget _buildMessageBubble(Message msg, bool isMe) {
     final colors = AppColors.of(context);
     return Align(
@@ -499,31 +497,291 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
     );
   }
 
-  // ... (keeping other helper methods like _showGalleryBottomSheet, _pickCamera, etc. same as before)
-  // ... (Full implementation of those would follow, but I'll skip for brevity as I already implemented them in V3.4)
-
   void _pickCamera() async {
+    _logger.i('GHOST_LOG: MEDIA_BUTTON_TAPPED camera');
     final messenger = ScaffoldMessenger.of(context);
     final convService = ref.read(conversationServiceProvider);
     final contactId = widget.conversation.contactId;
     try {
+      _logger.i('GHOST_LOG: MEDIA_PICKER_OPEN_START camera');
       final XFile? photo = await _picker.pickImage(source: ImageSource.camera);
-      if (photo == null) return;
+      if (photo == null) {
+        _logger.i('GHOST_LOG: MEDIA_PICKER_CANCELLED camera');
+        return;
+      }
+      _logger.i('GHOST_LOG: MEDIA_PICKER_RETURNED camera path=${photo.path}');
       _sessionPickedPaths.insert(0, photo.path);
+      
       messenger.showSnackBar(const SnackBar(content: Text('Encrypting & Uploading Image...')));
       await convService.sendImage(contactId, File(photo.path));
     } catch (e) {
+      _logger.e('GHOST_LOG: MEDIA_PICKER_ERROR camera: $e');
       if (mounted) messenger.showSnackBar(SnackBar(content: Text('Camera capture failed: $e')));
     }
   }
 
+  void _confirmAndSendRecentMedia(RecentMediaItem item) async {
+    _logger.i('GHOST_LOG: RECENT_MEDIA_SELECTED');
+    final scaffoldMessenger = ScaffoldMessenger.of(context);
+    final file = await item.filePromise;
+    if (file == null) {
+      _logger.e('GHOST_LOG: RECENT_MEDIA_FILE_NULL');
+      scaffoldMessenger.showSnackBar(const SnackBar(content: Text('Failed to load media file.')));
+      return;
+    }
+    if (!mounted) return;
+    
+    final isVideo = item.isVideo;
+    final convService = ref.read(conversationServiceProvider);
+    final contactId = widget.conversation.contactId;
+    
+    _logger.i('GHOST_LOG: SHOWING_CONFIRMATION_DIALOG isVideo=$isVideo');
+    showDialog(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: const Color(0xFF1A1A1A),
+        title: Text(isVideo ? 'Send Video?' : 'Send Image?'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: SizedBox(
+                height: 180,
+                width: 240,
+                child: isVideo
+                  ? const Center(child: Icon(Icons.play_circle_outline, color: Colors.blueAccent, size: 48))
+                  : item.buildThumbnail(context),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              Navigator.pop(dialogContext);
+              if (isVideo) {
+                scaffoldMessenger.showSnackBar(const SnackBar(content: Text('Compressing & Uploading Video...')));
+                await convService.sendVideo(contactId, file);
+              } else {
+                scaffoldMessenger.showSnackBar(const SnackBar(content: Text('Encrypting & Uploading Image...')));
+                await convService.sendImage(contactId, file);
+              }
+            },
+            child: const Text('Send'),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _showGalleryBottomSheet() {
-    // Re-use logic from V3.4
+    _logger.i('GHOST_LOG: MEDIA_BUTTON_TAPPED gallery_sheet');
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppColors.of(context).primaryBackground,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      builder: (context) {
+        return DraggableScrollableSheet(
+          initialChildSize: 0.6,
+          minChildSize: 0.4,
+          maxChildSize: 0.9,
+          expand: false,
+          builder: (context, scrollController) {
+            return StatefulBuilder(
+              builder: (context, setSheetState) {
+                return FutureBuilder<List<RecentMediaItem>>(
+                  future: _getRecentMedia(),
+                  builder: (context, snapshot) {
+                    final items = snapshot.data ?? [];
+                    final colors = AppColors.of(context);
+                    
+                    return Column(
+                      children: [
+                        Container(
+                          margin: const EdgeInsets.symmetric(vertical: 10), 
+                          width: 40, 
+                          height: 4, 
+                          decoration: BoxDecoration(color: colors.hairline, borderRadius: BorderRadius.circular(2))
+                        ),
+                        const Divider(height: 1),
+                        Expanded(
+                          child: items.isEmpty
+                              ? const Center(child: Icon(Icons.photo_library_outlined, size: 48, color: Colors.white10))
+                              : GridView.builder(
+                                  controller: scrollController,
+                                  padding: EdgeInsets.zero,
+                                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                                    crossAxisCount: 3, 
+                                    crossAxisSpacing: 1, 
+                                    mainAxisSpacing: 1
+                                  ),
+                                  itemCount: items.length,
+                                  itemBuilder: (context, index) {
+                                    final item = items[index];
+                                    return InkWell(
+                                      onTap: () {
+                                        Navigator.pop(context);
+                                        _confirmAndSendRecentMedia(item);
+                                      },
+                                      child: Stack(
+                                        fit: StackFit.expand, 
+                                        children: [
+                                          item.buildThumbnail(context),
+                                          if (item.isVideo) 
+                                            Container(
+                                              color: Colors.black38, 
+                                              child: const Center(child: Icon(Icons.play_circle_outline, color: Colors.white70, size: 28))
+                                            ),
+                                        ]
+                                      ),
+                                    );
+                                  },
+                                ),
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.only(left: 16, right: 16, bottom: 24, top: 12),
+                          child: Row(
+                            children: [
+                              _buildActionItem(context, Icons.camera_alt_outlined, 'Camera', Colors.pinkAccent, _pickCamera),
+                              const SizedBox(width: 8),
+                              _buildActionItem(context, Icons.photo_library_outlined, 'Gallery', Colors.blueAccent, _pickMedia),
+                            ],
+                          ),
+                        ),
+                      ],
+                    );
+                  },
+                );
+              },
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _pickMedia() async {
+    _logger.i('GHOST_LOG: MEDIA_BUTTON_TAPPED native_picker');
+    final messenger = ScaffoldMessenger.of(context);
+    final convService = ref.read(conversationServiceProvider);
+    final contactId = widget.conversation.contactId;
+    
+    try {
+      _logger.i('GHOST_LOG: MEDIA_PICKER_OPEN_START native_picker');
+      final List<AssetEntity>? result = await AssetPicker.pickAssets(
+        context,
+        pickerConfig: const AssetPickerConfig(
+          maxAssets: 1,
+          requestType: RequestType.common,
+        ),
+      );
+      
+      if (result == null || result.isEmpty) {
+        _logger.i('GHOST_LOG: MEDIA_PICKER_CANCELLED native_picker');
+        return;
+      }
+      
+      final file = await result.first.file;
+      if (file == null) {
+        _logger.e('GHOST_LOG: MEDIA_PICKER_FILE_NULL native_picker');
+        return;
+      }
+      
+      _logger.i('GHOST_LOG: MEDIA_PICKER_RETURNED native_picker path=${file.path}');
+      _sessionPickedPaths.insert(0, file.path);
+
+      final path = file.path.toLowerCase();
+      final isVideo = path.endsWith('.mp4') || path.endsWith('.mov') || path.endsWith('.avi') || path.endsWith('.mkv');
+      
+      if (isVideo) {
+        messenger.showSnackBar(const SnackBar(content: Text('Compressing & Uploading Video...')));
+        await convService.sendVideo(contactId, file);
+      } else {
+        messenger.showSnackBar(const SnackBar(content: Text('Encrypting & Uploading Image...')));
+        await convService.sendImage(contactId, file);
+      }
+    } catch (e) {
+      _logger.e('GHOST_LOG: MEDIA_PICKER_ERROR native_picker: $e');
+      if (mounted) {
+        messenger.showSnackBar(SnackBar(content: Text('Media selection/upload failed: $e')));
+      }
+    }
+  }
+
+  Future<List<RecentMediaItem>> _getRecentMedia() async {
+    final List<RecentMediaItem> result = [];
+    
+    // Add session picked paths first
+    for (final path in _sessionPickedPaths) {
+      final file = File(path);
+      if (file.existsSync()) {
+        result.add(RecentMediaItem(file: file));
+      }
+    }
+    
+    try {
+      final PermissionState ps = await PhotoManager.requestPermissionExtend();
+      if (ps == PermissionState.authorized || ps == PermissionState.limited) {
+        final List<AssetPathEntity> paths = await PhotoManager.getAssetPathList(
+          type: RequestType.common,
+          filterOption: FilterOptionGroup(
+            orders: [
+              const OrderOption(type: OrderOptionType.createDate, asc: false),
+            ],
+          ),
+        );
+        
+        if (paths.isNotEmpty) {
+          final List<AssetEntity> assets = await paths.first.getAssetListRange(start: 0, end: 30);
+          for (final asset in assets) {
+            result.add(RecentMediaItem(asset: asset));
+          }
+        }
+      }
+    } catch (e) {
+      _logger.w('GHOST_LOG: Error getting recent media: $e');
+    }
+    
+    return result;
+  }
+
+  Widget _buildActionItem(BuildContext context, IconData icon, String label, Color color, VoidCallback onTap) {
+    final colors = AppColors.of(context);
+    return Expanded(
+      child: InkWell(
+        onTap: () {
+          Navigator.pop(context);
+          onTap();
+        },
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          decoration: BoxDecoration(
+            color: colors.elevatedSurface, 
+            borderRadius: BorderRadius.circular(12), 
+            border: Border.all(color: colors.hairline)
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, color: color),
+              const SizedBox(height: 6),
+              Text(
+                label, 
+                style: AppTypography.caption(context).copyWith(fontWeight: FontWeight.bold)
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
-
-// AttachmentWidget, FullScreenMediaViewer, _VideoPreview classes same as V3.4
-// ...
 
 class AttachmentWidget extends ConsumerStatefulWidget {
   final Message message;
