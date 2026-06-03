@@ -34,6 +34,7 @@ class ChatRepository {
   static const String _msgBoxName = 'messages';
   static const String _syncBoxName = 'sync_metadata';
   static const String _processedBoxName = 'processed_envelopes';
+  static const String _thumbCacheName = 'thumbnail_cache';
   static const String _lastSyncKey = 'last_sync_t';
 
   ChatRepository(
@@ -49,6 +50,7 @@ class ChatRepository {
   void setActiveConversation(String? contactId) {
     _activeConversationId = contactId;
     if (contactId != null) {
+      // Immediate sync to prevent drift
       markConversationAsRead(contactId);
     }
   }
@@ -90,6 +92,9 @@ class ChatRepository {
     _wsService.onMessage(_handleNewMessage);
     _wsService.onInboxMessages(_handleInboxMessages);
     
+    // Global Cleanup
+    await flushAllGhosts();
+
     _logger.i('GHOST_LOG: ChatRepository initialized and listeners registered.');
     StabilityTracker.logMemory('ChatRepo_Init_End');
   }
@@ -113,6 +118,10 @@ class ChatRepository {
   Box<ConversationState> get _stateBox => Hive.box<ConversationState>('conversation_states');
   Box get _syncBox => Hive.box(_syncBoxName);
   Box get _processedBox => Hive.box(_processedBoxName);
+  Box<Uint8List> get _thumbBox => Hive.box<Uint8List>(_thumbCacheName);
+
+  Uint8List? getCachedThumbnail(String mediaId) => _thumbBox.get(mediaId);
+  Future<void> cacheThumbnail(String mediaId, Uint8List data) => _thumbBox.put(mediaId, data);
 
   int get lastSyncTimestamp => _syncBox.get(_lastSyncKey, defaultValue: 0);
   
@@ -198,6 +207,10 @@ class ChatRepository {
         final senderId = _idService.derivePublicId(senderEid);
         final actualTimestamp = envelope.timestamp;
         final type = _mapType(payload['type']);
+
+        if (type == MessageType.image || type == MessageType.video) {
+          _logger.i('GHOST_LOG: MEDIA_RECEIVED id: ${envelope.id}');
+        }
 
         // TRUST LAYER ENFORCEMENT
         final isKnownContact = _contactService.getContact(senderId) != null;
@@ -367,12 +380,37 @@ class ChatRepository {
     }
   }
 
+  Future<void> saveMessage(Message message) async {
+    await _msgBox.put(message.id, message);
+  }
+
+  Future<void> updateMessageMetadata(String messageId, Map<String, dynamic> metadata) async {
+    final message = _msgBox.get(messageId);
+    if (message != null) {
+      final newMetadata = Map<String, dynamic>.from(message.metadata ?? {});
+      newMetadata.addAll(metadata);
+      final updatedMessage = Message(
+        id: message.id,
+        senderId: message.senderId,
+        recipientId: message.recipientId,
+        plaintext: message.plaintext,
+        timestamp: message.timestamp,
+        isRead: message.isRead,
+        type: message.type,
+        metadata: newMetadata,
+        isRequest: message.isRequest,
+      );
+      await _msgBox.put(messageId, updatedMessage);
+    }
+  }
+
   Future<void> sendMessage({
     required String recipientId,
     required String text,
     MessageType type = MessageType.text,
     String retention = 'PERSISTENT',
     Map<String, dynamic>? metadata,
+    String? existingId,
   }) async {
     _logger.i('GHOST_LOG: SEND_START for recipient: $recipientId');
     
@@ -408,11 +446,18 @@ class ChatRepository {
     );
     _logger.i('GHOST_LOG: SEND_ENCRYPT_SUCCESS');
 
+    // If we have an existing placeholder ID, we might need to handle ID collision or mapping.
+    // However, the DMEnvelope generates its own v7 UUID.
+    // For simplicity, we will replace the placeholder with the final envelope ID if they differ.
+
     _wsService.sendMessage(recipientId, {
       ...envelope.toJson(),
       'retention': retention,
     }, version: 2, ack: (ackData) {
       _logger.i('GHOST_LOG: SEND_ACK_RECEIVED');
+      if (type == MessageType.image || type == MessageType.video) {
+        _logger.i('GHOST_LOG: MEDIA_MESSAGE_SENT');
+      }
     });
     _logger.i('GHOST_LOG: SEND_SOCKET_EMIT');
     _logger.i("MESSAGE_SENT");
@@ -441,6 +486,10 @@ class ChatRepository {
         type: type,
         metadata: metadata,
       );
+      
+      if (existingId != null && existingId != envelope.id) {
+        await _msgBox.delete(existingId);
+      }
       await _msgBox.put(message.id, message);
     }
   }
@@ -484,6 +533,21 @@ class ChatRepository {
     }
     if (didDeleteGhost) {
       _logger.i('GHOST_LOG: Local ghost messages flushed for $contactId');
+    }
+  }
+
+  Future<void> flushAllGhosts() async {
+    _logger.i('GHOST_LOG: Global ghost flush starting...');
+    int count = 0;
+    final messages = _msgBox.values;
+    for (final msg in messages) {
+      if (msg.metadata?['is_ghost'] == true) {
+        await msg.delete();
+        count++;
+      }
+    }
+    if (count > 0) {
+      _logger.i('GHOST_LOG: Global ghost flush complete. Pruned $count messages.');
     }
   }
 

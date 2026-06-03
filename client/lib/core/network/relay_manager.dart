@@ -14,9 +14,27 @@ class RelayProfile {
     required this.id,
     required this.label,
     required this.websocketUrl,
-    required this.apiUrl,
+    required String apiUrl,
     this.token,
-  });
+  }) : apiUrl = _normalizeApiUrl(websocketUrl, apiUrl);
+
+  static String _normalizeApiUrl(String wsUrl, String api) {
+    final cleanedApi = api.trim();
+    if (cleanedApi.isNotEmpty && cleanedApi != '/') return cleanedApi;
+    
+    // Derive from websocketUrl
+    final ws = wsUrl.trim();
+    if (ws.startsWith('wss://')) {
+      return ws.replaceFirst('wss://', 'https://');
+    } else if (ws.startsWith('ws://')) {
+      return ws.replaceFirst('ws://', 'http://');
+    } else if (ws.startsWith('https://') || ws.startsWith('http://')) {
+      return ws;
+    } else if (ws.isNotEmpty) {
+      return 'https://$ws';
+    }
+    return '';
+  }
 
   Map<String, dynamic> toJson() => {
     'id': id,
@@ -27,10 +45,10 @@ class RelayProfile {
   };
 
   factory RelayProfile.fromJson(Map<String, dynamic> json) => RelayProfile(
-    id: json['id'],
-    label: json['label'],
-    websocketUrl: json['websocketUrl'],
-    apiUrl: json['apiUrl'],
+    id: json['id'] ?? '',
+    label: json['label'] ?? '',
+    websocketUrl: json['websocketUrl'] ?? '',
+    apiUrl: json['apiUrl'] ?? '',
     token: json['token'],
   );
 }

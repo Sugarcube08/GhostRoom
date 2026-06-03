@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:hive_flutter/hive_flutter.dart';
+import 'package:logger/logger.dart';
 import 'message.dart';
 import 'chat_repository.dart';
 import '../contacts/contact_resolver.dart';
@@ -41,6 +42,15 @@ class ConversationService {
   final IdentityService _idService;
   final MediaService _mediaService;
   final RelayManager _relayManager;
+  final Logger _logger = Logger(
+    level: Level.info,
+    printer: PrettyPrinter(
+      methodCount: 0,
+      errorMethodCount: 5,
+      colors: true,
+      printEmojis: true,
+    ),
+  );
 
   ConversationService(
     this._chatRepository, 
@@ -199,27 +209,53 @@ class ConversationService {
     final activeRelay = await _relayManager.getActiveRelay();
     if (activeRelay == null) throw Exception('No active relay');
 
-    final compressed = await _mediaService.compressImage(file);
-
-    final envelope = await _mediaService.uploadMedia(
-      file: compressed,
-      kind: AttachmentKind.image,
-      relay: activeRelay,
-      recipientXid: base64Decode(contact.xid),
-    );
-
     final mode = getConversationMode(recipientId);
     final isGhost = mode == ConversationMode.ghost;
 
-    await _chatRepository.sendMessage(
+    // 1. Create Placeholder
+    final placeholderId = 'pending_${DateTime.now().microsecondsSinceEpoch}';
+    final placeholder = Message(
+      id: placeholderId,
+      senderId: _chatRepository.myPublicId,
       recipientId: recipientId,
-      text: '[Image]',
+      plaintext: '[Image]',
+      timestamp: DateTime.now(),
       type: MessageType.image,
-      metadata: {
-        ...envelope.toJson(),
-        'is_ghost': isGhost,
-      },
+      metadata: {'status': 'COMPRESSING', 'is_ghost': isGhost, 'size': file.lengthSync()},
     );
+    await _chatRepository.saveMessage(placeholder);
+
+    try {
+      // 2. Compress
+      final compressed = await _mediaService.compressImage(file);
+      await _chatRepository.updateMessageMetadata(placeholderId, {'status': 'ENCRYPTING'});
+
+      // 3. Upload (includes encryption)
+      final envelope = await _mediaService.uploadMedia(
+        file: compressed,
+        kind: AttachmentKind.image,
+        relay: activeRelay,
+        recipientXid: base64Decode(contact.xid),
+      );
+      await _chatRepository.updateMessageMetadata(placeholderId, {'status': 'SENDING'});
+
+      // 4. Send Message
+      await _chatRepository.sendMessage(
+        recipientId: recipientId,
+        text: '[Image]',
+        type: MessageType.image,
+        existingId: placeholderId,
+        metadata: {
+          ...envelope.toJson(),
+          'is_ghost': isGhost,
+          'status': 'SENT',
+        },
+      );
+      _logger.i('GHOST_LOG: MEDIA_ENVELOPE_SENT id: ${envelope.mediaId}');
+    } catch (e) {
+      await _chatRepository.updateMessageMetadata(placeholderId, {'status': 'FAILED', 'error': e.toString()});
+      rethrow;
+    }
   }
 
   Future<void> sendVideo(String recipientId, File file) async {
@@ -229,30 +265,54 @@ class ConversationService {
     final activeRelay = await _relayManager.getActiveRelay();
     if (activeRelay == null) throw Exception('No active relay');
 
-    // 1. Compress
-    final compressed = await _mediaService.compressVideo(file);
-
-    // 2. Upload
-    final envelope = await _mediaService.uploadMedia(
-      file: compressed,
-      kind: AttachmentKind.video,
-      relay: activeRelay,
-      recipientXid: base64Decode(contact.xid),
-    );
-
     final mode = getConversationMode(recipientId);
     final isGhost = mode == ConversationMode.ghost;
 
-    // 3. Send Message
-    await _chatRepository.sendMessage(
+    // 1. Create Placeholder
+    final placeholderId = 'pending_${DateTime.now().microsecondsSinceEpoch}';
+    final placeholder = Message(
+      id: placeholderId,
+      senderId: _chatRepository.myPublicId,
       recipientId: recipientId,
-      text: '[Video]',
+      plaintext: '[Video]',
+      timestamp: DateTime.now(),
       type: MessageType.video,
-      metadata: {
-        ...envelope.toJson(),
-        'is_ghost': isGhost,
-      },
+      metadata: {'status': 'COMPRESSING', 'is_ghost': isGhost, 'size': file.lengthSync()},
     );
+    await _chatRepository.saveMessage(placeholder);
+
+    try {
+      // 2. Compress
+      await _chatRepository.updateMessageMetadata(placeholderId, {'status': 'COMPRESSING'});
+      final compressed = await _mediaService.compressVideo(file);
+      await _chatRepository.updateMessageMetadata(placeholderId, {'status': 'ENCRYPTING'});
+
+      // 3. Upload
+      final envelope = await _mediaService.uploadMedia(
+        file: compressed,
+        kind: AttachmentKind.video,
+        relay: activeRelay,
+        recipientXid: base64Decode(contact.xid),
+      );
+      await _chatRepository.updateMessageMetadata(placeholderId, {'status': 'SENDING'});
+
+      // 4. Send Message
+      await _chatRepository.sendMessage(
+        recipientId: recipientId,
+        text: '[Video]',
+        type: MessageType.video,
+        existingId: placeholderId,
+        metadata: {
+          ...envelope.toJson(),
+          'is_ghost': isGhost,
+          'status': 'SENT',
+        },
+      );
+      _logger.i('GHOST_LOG: MEDIA_ENVELOPE_SENT id: ${envelope.mediaId}');
+    } catch (e) {
+      await _chatRepository.updateMessageMetadata(placeholderId, {'status': 'FAILED', 'error': e.toString()});
+      rethrow;
+    }
   }
 
   ConversationMode getConversationMode(String contactId) {

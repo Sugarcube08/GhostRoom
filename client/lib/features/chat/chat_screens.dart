@@ -2,8 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:wechat_assets_picker/wechat_assets_picker.dart';
 import 'package:video_player/video_player.dart';
 import 'package:chewie/chewie.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:path/path.dart' as p;
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:path_provider/path_provider.dart';
@@ -305,6 +308,7 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
   final TextEditingController _controller = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   final ImagePicker _picker = ImagePicker();
+  static final List<String> _sessionPickedPaths = [];
   
   DateTime? _lastRemoteChange;
   bool _showScrollButton = false;
@@ -314,6 +318,8 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
   void initState() {
     super.initState();
     ref.read(chatRepositoryProvider).setActiveConversation(widget.conversation.contactId);
+    // Safety sync: ensure count is cleared even if setActiveConversation timing is tight
+    ref.read(chatRepositoryProvider).markConversationAsRead(widget.conversation.contactId);
     _scrollController.addListener(_onScroll);
   }
 
@@ -343,49 +349,205 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
     await ref.read(conversationServiceProvider).sendMessage(widget.conversation.contactId, text);
   }
 
-  void _pickMedia() async {
-    final messenger = ScaffoldMessenger.of(context);
-    final navigator = Navigator.of(context);
+  Future<List<File>> _scanRecentMedia() async {
+    final List<File> files = [];
+    final List<String> pathsToScan = [];
     
-    showModalBottomSheet(
+    try {
+      if (Platform.isLinux) {
+        final home = Platform.environment['HOME'];
+        if (home != null) {
+          pathsToScan.add('$home/Pictures');
+          pathsToScan.add('$home/Downloads');
+        }
+        pathsToScan.add('/tmp');
+      } else if (Platform.isAndroid) {
+        pathsToScan.add('/storage/emulated/0/DCIM/Camera');
+        pathsToScan.add('/storage/emulated/0/Pictures');
+        pathsToScan.add('/storage/emulated/0/Download');
+      }
+      
+      for (final path in pathsToScan) {
+        final dir = Directory(path);
+        if (await dir.exists()) {
+          final List<FileSystemEntity> entities = await dir.list(recursive: false, followLinks: false).toList();
+          for (final entity in entities) {
+            if (entity is File) {
+              final pLower = entity.path.toLowerCase();
+              if (pLower.endsWith('.jpg') || pLower.endsWith('.jpeg') || pLower.endsWith('.png') || pLower.endsWith('.webp') || pLower.endsWith('.mp4') || pLower.endsWith('.mov')) {
+                files.add(entity);
+              }
+            }
+          }
+        }
+      }
+      
+      files.sort((a, b) {
+        try {
+          return b.lastModifiedSync().compareTo(a.lastModifiedSync());
+        } catch (_) {
+          return 0;
+        }
+      });
+    } catch (e) {
+      debugPrint('GHOST_LOG: Error scanning recent media: $e');
+    }
+    
+    return files;
+  }
+
+  Future<List<File>> _getRecentMedia() async {
+    final List<File> result = [];
+    
+    // Add session picked paths first
+    for (final path in _sessionPickedPaths) {
+      final file = File(path);
+      if (file.existsSync()) {
+        result.add(file);
+      }
+    }
+    
+    // Add scanned files
+    final scanned = await _scanRecentMedia();
+    for (final file in scanned) {
+      if (!result.any((f) => f.path == file.path)) {
+        result.add(file);
+      }
+    }
+    
+    return result.take(18).toList();
+  }
+
+  void _confirmAndSendRecentMedia(File file) {
+    final path = file.path.toLowerCase();
+    final isVideo = path.endsWith('.mp4') || path.endsWith('.mov') || path.endsWith('.avi') || path.endsWith('.mkv');
+    final convService = ref.read(conversationServiceProvider);
+    final contactId = widget.conversation.contactId;
+    final scaffoldMessenger = ScaffoldMessenger.of(context);
+    
+    showDialog(
       context: context,
-      backgroundColor: Colors.black,
-      builder: (context) => Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          ListTile(
-            leading: const Icon(Icons.image_outlined),
-            title: const Text('PHOTO'),
-            onTap: () async {
-              navigator.pop();
-              final XFile? image = await _picker.pickImage(source: ImageSource.gallery);
-              if (image == null) return;
-              messenger.showSnackBar(const SnackBar(content: Text('Encrypting & Uploading...')));
-              try {
-                await ref.read(conversationServiceProvider).sendImage(widget.conversation.contactId, File(image.path));
-              } catch (e) {
-                messenger.showSnackBar(SnackBar(content: Text('Upload failed: $e')));
-              }
-            },
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: const Color(0xFF1A1A1A),
+        title: Text(isVideo ? 'Send Video?' : 'Send Image?', style: const TextStyle(color: Colors.white)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: SizedBox(
+                height: 180,
+                width: 240,
+                child: isVideo
+                  ? const Center(child: Icon(Icons.play_circle_outline, color: Colors.blueAccent, size: 48))
+                  : Image.file(file, fit: BoxFit.cover, errorBuilder: (context, error, stackTrace) => const Icon(Icons.broken_image, size: 48)),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(p.basename(file.path), style: const TextStyle(color: Colors.white54, fontSize: 11), maxLines: 1, overflow: TextOverflow.ellipsis),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Cancel', style: TextStyle(color: Colors.white30)),
           ),
-          ListTile(
-            leading: const Icon(Icons.video_library_outlined),
-            title: const Text('VIDEO'),
-            onTap: () async {
-              navigator.pop();
-              final XFile? video = await _picker.pickVideo(source: ImageSource.gallery);
-              if (video == null) return;
-              messenger.showSnackBar(const SnackBar(content: Text('Compressing & Uploading...')));
-              try {
-                await ref.read(conversationServiceProvider).sendVideo(widget.conversation.contactId, File(video.path));
-              } catch (e) {
-                messenger.showSnackBar(SnackBar(content: Text('Upload failed: $e')));
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.blueAccent),
+            onPressed: () async {
+              Navigator.pop(dialogContext);
+              debugPrint('GHOST_LOG: MEDIA_PICKED filepath: ${file.path}');
+              if (isVideo) {
+                scaffoldMessenger.showSnackBar(const SnackBar(content: Text('Compressing & Uploading Video...')));
+                await convService.sendVideo(contactId, file);
+              } else {
+                scaffoldMessenger.showSnackBar(const SnackBar(content: Text('Encrypting & Uploading Image...')));
+                await convService.sendImage(contactId, file);
               }
             },
+            child: const Text('Send'),
           ),
         ],
       ),
     );
+  }
+
+  void _pickMedia() async {
+    final messenger = ScaffoldMessenger.of(context);
+    final convService = ref.read(conversationServiceProvider);
+    final contactId = widget.conversation.contactId;
+    
+    try {
+      File? pickedFile;
+      
+      if (Platform.isAndroid || Platform.isIOS) {
+        final PermissionState ps = await PhotoManager.requestPermissionExtend();
+        if (ps != PermissionState.authorized && ps != PermissionState.limited) {
+          messenger.showSnackBar(const SnackBar(
+            content: Text('GhostRoom needs gallery permissions to select photos and videos. Please enable it in Settings.'),
+          ));
+          await PhotoManager.openSetting();
+          return;
+        }
+
+        if (!mounted) return;
+
+        final List<AssetEntity>? result = await AssetPicker.pickAssets(
+          context,
+          pickerConfig: const AssetPickerConfig(
+            maxAssets: 1,
+            requestType: RequestType.common,
+          ),
+        );
+        if (result == null || result.isEmpty) return;
+        final file = await result.first.file;
+        if (file == null) return;
+        pickedFile = file;
+      } else {
+        final XFile? media = await _picker.pickMedia();
+        if (media == null) return;
+        pickedFile = File(media.path);
+      }
+
+      debugPrint('GHOST_LOG: MEDIA_PICKED filepath: ${pickedFile.path}');
+      _sessionPickedPaths.insert(0, pickedFile.path);
+
+      final path = pickedFile.path.toLowerCase();
+      final isVideo = path.endsWith('.mp4') || path.endsWith('.mov') || path.endsWith('.avi') || path.endsWith('.mkv');
+      
+      if (isVideo) {
+        messenger.showSnackBar(const SnackBar(content: Text('Compressing & Uploading Video...')));
+        await convService.sendVideo(contactId, pickedFile);
+      } else {
+        messenger.showSnackBar(const SnackBar(content: Text('Encrypting & Uploading Image...')));
+        await convService.sendImage(contactId, pickedFile);
+      }
+    } catch (e) {
+      if (mounted) {
+        messenger.showSnackBar(SnackBar(content: Text('Media selection/upload failed: $e')));
+      }
+    }
+  }
+
+  void _pickCamera() async {
+    final messenger = ScaffoldMessenger.of(context);
+    final convService = ref.read(conversationServiceProvider);
+    final contactId = widget.conversation.contactId;
+    
+    try {
+      final XFile? photo = await _picker.pickImage(source: ImageSource.camera);
+      if (photo == null) return;
+      
+      debugPrint('GHOST_LOG: MEDIA_PICKED filepath: ${photo.path}');
+      _sessionPickedPaths.insert(0, photo.path);
+      
+      messenger.showSnackBar(const SnackBar(content: Text('Encrypting & Uploading Image...')));
+      await convService.sendImage(contactId, File(photo.path));
+    } catch (e) {
+      if (mounted) {
+        messenger.showSnackBar(SnackBar(content: Text('Camera capture failed: $e')));
+      }
+    }
   }
 
   @override
@@ -549,10 +711,222 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
     );
   }
 
+  void _pickFile() async {
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final result = await FilePicker.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['pdf', 'zip', 'doc', 'docx', 'txt'],
+      );
+      if (result == null || result.files.single.path == null) return;
+      
+      messenger.showSnackBar(const SnackBar(
+        content: Text('Document attachments (.pdf, .zip, .doc, .txt) will be supported in a future update.'),
+      ));
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text('File selection failed: $e')));
+    }
+  }
+
+  void _showGalleryBottomSheet() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF121212),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) {
+        return DraggableScrollableSheet(
+          initialChildSize: 0.6,
+          minChildSize: 0.4,
+          maxChildSize: 0.9,
+          expand: false,
+          builder: (context, scrollController) {
+            return FutureBuilder<List<File>>(
+              future: _getRecentMedia(),
+              builder: (context, snapshot) {
+                final files = snapshot.data ?? [];
+                
+                return Column(
+                  children: [
+                    // Handlebar
+                    Container(
+                      margin: const EdgeInsets.symmetric(vertical: 10),
+                      width: 40,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: Colors.white24,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                    
+                    const Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          'RECENT MEDIA',
+                          style: TextStyle(
+                            color: Colors.white54,
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: 1.5,
+                          ),
+                        ),
+                      ),
+                    ),
+                    
+                    // Recent Media Grid
+                    Expanded(
+                      child: files.isEmpty
+                          ? Center(
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: const [
+                                  Icon(Icons.photo_library_outlined, color: Colors.white24, size: 48),
+                                  SizedBox(height: 12),
+                                  Text(
+                                    'No recent media found',
+                                    style: TextStyle(color: Colors.white30, fontSize: 13),
+                                  ),
+                                ],
+                              ),
+                            )
+                          : GridView.builder(
+                              controller: scrollController,
+                              padding: const EdgeInsets.symmetric(horizontal: 16),
+                              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                                crossAxisCount: 3,
+                                crossAxisSpacing: 8,
+                                mainAxisSpacing: 8,
+                                childAspectRatio: 1.0,
+                              ),
+                              itemCount: files.length,
+                              itemBuilder: (context, index) {
+                                final file = files[index];
+                                final isVideo = file.path.toLowerCase().endsWith('.mp4') || file.path.toLowerCase().endsWith('.mov');
+                                
+                                return InkWell(
+                                  onTap: () {
+                                    Navigator.pop(context);
+                                    _confirmAndSendRecentMedia(file);
+                                  },
+                                  child: ClipRRect(
+                                    borderRadius: BorderRadius.circular(8),
+                                    child: Stack(
+                                      fit: StackFit.expand,
+                                      children: [
+                                        Image.file(
+                                          file,
+                                          fit: BoxFit.cover,
+                                          errorBuilder: (context, error, stackTrace) {
+                                            return Container(
+                                              color: Colors.white10,
+                                              child: const Icon(Icons.image, color: Colors.white24),
+                                            );
+                                          },
+                                        ),
+                                        if (isVideo)
+                                          Container(
+                                            color: Colors.black38,
+                                            child: const Center(
+                                              child: Icon(Icons.play_circle_outline, color: Colors.white70, size: 28),
+                                            ),
+                                          ),
+                                      ],
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                    ),
+                    
+                    // Action Buttons (Gallery, Files)
+                    Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: InkWell(
+                              onTap: () {
+                                Navigator.pop(context);
+                                _pickMedia();
+                              },
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(vertical: 16),
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withAlpha(8),
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(color: Colors.white10),
+                                ),
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: const [
+                                    Icon(Icons.photo_library_outlined, color: Colors.blueAccent),
+                                    SizedBox(height: 8),
+                                    Text(
+                                      'Gallery',
+                                      style: TextStyle(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 13,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: InkWell(
+                              onTap: () {
+                                Navigator.pop(context);
+                                _pickFile();
+                              },
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(vertical: 16),
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withAlpha(8),
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(color: Colors.white10),
+                                ),
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: const [
+                                    Icon(Icons.insert_drive_file_outlined, color: Colors.amber),
+                                    SizedBox(height: 8),
+                                    Text(
+                                      'Files',
+                                      style: TextStyle(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 13,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                );
+              },
+            );
+          },
+        );
+      },
+    );
+  }
+
   Widget _buildInput(ConversationMode currentMode, ConversationState? state) {
     final isGhost = currentMode == ConversationMode.ghost;
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
       decoration: const BoxDecoration(color: Color(0xFF080808), border: Border(top: BorderSide(color: Colors.white10))),
       child: SafeArea(
         child: Column(
@@ -561,7 +935,8 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
             _buildModeSelector(currentMode, state),
             Row(
               children: [
-                IconButton(icon: const Icon(Icons.add_circle_outline, color: Colors.white54), onPressed: () => _showMediaOptions(context)),
+                IconButton(icon: const Icon(Icons.add, color: Colors.white54, size: 22), onPressed: _showGalleryBottomSheet),
+                IconButton(icon: const Icon(Icons.camera_alt_outlined, color: Colors.white54, size: 22), onPressed: _pickCamera),
                 Expanded(
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -631,28 +1006,6 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
       ),
     );
   }
-
-  void _showMediaOptions(BuildContext context) {
-    final navigator = Navigator.of(context);
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: const Color(0xFF121212),
-      builder: (context) => Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          ListTile(leading: const Icon(Icons.image_outlined), title: const Text('PHOTO'), onTap: () async {
-            navigator.pop();
-            _pickMedia();
-          }),
-          ListTile(leading: const Icon(Icons.video_library_outlined), title: const Text('VIDEO'), onTap: () async {
-            navigator.pop();
-            _pickMedia();
-          }),
-          const SizedBox(height: 16),
-        ],
-      ),
-    );
-  }
 }
 
 class AttachmentWidget extends ConsumerStatefulWidget {
@@ -667,6 +1020,7 @@ class _AttachmentWidgetState extends ConsumerState<AttachmentWidget> {
   Uint8List? _decryptedData;
   Uint8List? _thumbData;
   bool _isDownloading = false;
+  bool _hasLoggedRender = false;
 
   @override
   void initState() {
@@ -676,16 +1030,36 @@ class _AttachmentWidgetState extends ConsumerState<AttachmentWidget> {
 
   void _loadThumb() async {
     if (widget.message.metadata == null) return;
+    final repo = ref.read(chatRepositoryProvider);
+    final mediaService = ref.read(mediaServiceProvider);
+    final identityService = ref.read(identityServiceProvider);
+    
     try {
       final envelope = AttachmentEnvelope.fromJson(widget.message.metadata!);
+      
+      // Check Cache First
+      final cached = repo.getCachedThumbnail(envelope.mediaId);
+      if (cached != null) {
+        if (mounted) setState(() => _thumbData = cached);
+        return;
+      }
+
       final relay = await ref.read(activeRelayProvider.future);
       if (relay == null) return;
-      final data = await ref.read(mediaServiceProvider).downloadMedia(
+      
+      final identity = identityService.currentIdentity;
+      if (identity == null) return;
+      
+      final data = await mediaService.downloadMedia(
         envelope: envelope,
         relay: relay,
-        myXidKeyPair: ref.read(identityServiceProvider).currentIdentity!.x25519KeyPair,
+        myXidKeyPair: identity.x25519KeyPair,
         isThumbnail: true,
       );
+      
+      // Save to Cache
+      await repo.cacheThumbnail(envelope.mediaId, data);
+      
       if (mounted) setState(() => _thumbData = data);
     } catch (_) {}
   }
@@ -694,16 +1068,26 @@ class _AttachmentWidgetState extends ConsumerState<AttachmentWidget> {
     if (widget.message.metadata == null) return;
     setState(() => _isDownloading = true);
     final messenger = ScaffoldMessenger.of(context);
+    final mediaService = ref.read(mediaServiceProvider);
+    final identityService = ref.read(identityServiceProvider);
+    
     try {
       final envelope = AttachmentEnvelope.fromJson(widget.message.metadata!);
       final relay = await ref.read(activeRelayProvider.future);
       if (relay == null) throw Exception('No active relay');
-      final data = await ref.read(mediaServiceProvider).downloadMedia(
+      
+      final identity = identityService.currentIdentity;
+      if (identity == null) throw Exception('No current identity');
+      
+      final data = await mediaService.downloadMedia(
         envelope: envelope,
         relay: relay,
-        myXidKeyPair: ref.read(identityServiceProvider).currentIdentity!.x25519KeyPair,
+        myXidKeyPair: identity.x25519KeyPair,
       );
-      if (mounted) setState(() { _decryptedData = data; _isDownloading = false; });
+      if (mounted) {
+        setState(() { _decryptedData = data; _isDownloading = false; });
+        _showFullScreen();
+      }
     } catch (e) {
       if (mounted) { setState(() => _isDownloading = false); messenger.showSnackBar(SnackBar(content: Text('Download failed: $e'))); }
     }
@@ -711,38 +1095,79 @@ class _AttachmentWidgetState extends ConsumerState<AttachmentWidget> {
 
   @override
   Widget build(BuildContext context) {
-    if (_decryptedData != null) {
-      if (widget.message.type == MessageType.video) return _VideoPreview(data: _decryptedData!);
-      return GestureDetector(onTap: _showFullScreen, child: ClipRRect(borderRadius: BorderRadius.circular(8), child: Image.memory(_decryptedData!, fit: BoxFit.cover)));
-    }
     final meta = widget.message.metadata;
     final sizeStr = meta?['size'] != null ? '${((meta!['size'] as int) / 1024 / 1024).toStringAsFixed(1)} MB' : '';
     final isGhost = meta?['is_ghost'] == true;
+    final status = meta?['status'] as String?;
+    final isPending = status != null && status != 'SENT';
+    final isFailed = status == 'FAILED';
 
-    return Container(
-      width: 200,
-      height: 150,
-      decoration: BoxDecoration(color: Colors.black26, borderRadius: BorderRadius.circular(8), image: _thumbData != null ? DecorationImage(image: MemoryImage(_thumbData!), fit: BoxFit.cover, opacity: isGhost ? 0.1 : 0.3) : null),
-      child: Stack(
-        children: [
-          Center(
-            child: _isDownloading ? const CircularProgressIndicator(strokeWidth: 2) : Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                if (isGhost) const Padding(padding: EdgeInsets.only(bottom: 8.0), child: Icon(Icons.visibility_off_outlined, color: Colors.amber, size: 24)),
-                IconButton(icon: Icon(widget.message.type == MessageType.video ? Icons.play_circle_outline : Icons.download_for_offline_outlined, color: isGhost ? Colors.amber : Colors.white70, size: 32), onPressed: _download),
-                Text('${isGhost ? 'GHOST ' : ''}${widget.message.type.name.toUpperCase()} $sizeStr', style: TextStyle(color: isGhost ? Colors.amber.withAlpha(100) : Colors.white30, fontSize: 9, fontWeight: FontWeight.bold)),
-              ],
+    if (!_hasLoggedRender && (_thumbData != null || _decryptedData != null)) {
+      _hasLoggedRender = true;
+      debugPrint('GHOST_LOG: MEDIA_RENDERED type: ${widget.message.type.name} id: ${widget.message.id}');
+    }
+
+    return GestureDetector(
+      onTap: (!isPending && _decryptedData != null) ? _showFullScreen : (!isPending ? _download : null),
+      child: Container(
+        width: 200,
+        height: 150,
+        decoration: BoxDecoration(color: Colors.black26, borderRadius: BorderRadius.circular(8), image: _thumbData != null ? DecorationImage(image: MemoryImage(_thumbData!), fit: BoxFit.cover, opacity: isGhost ? 0.2 : 0.5) : null),
+        child: Stack(
+          children: [
+            Center(
+              child: (_isDownloading || (isPending && !isFailed)) ? Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const CircularProgressIndicator(strokeWidth: 2),
+                  const SizedBox(height: 12),
+                  Text(status ?? 'DOWNLOADING', style: const TextStyle(color: Colors.white30, fontSize: 8, fontWeight: FontWeight.bold, letterSpacing: 1)),
+                ],
+              ) : Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  if (isGhost) const Padding(padding: EdgeInsets.only(bottom: 8.0), child: Icon(Icons.visibility_off_outlined, color: Colors.amber, size: 24)),
+                  Icon(
+                    isFailed ? Icons.error_outline : (widget.message.type == MessageType.video ? Icons.play_circle_outline : Icons.download_for_offline_outlined), 
+                    color: isFailed ? Colors.redAccent : (isGhost ? Colors.amber : Colors.white70), 
+                    size: 32
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    isFailed ? 'UPLOAD FAILED' : '${isGhost ? 'GHOST ' : ''}${widget.message.type.name.toUpperCase()} $sizeStr', 
+                    style: TextStyle(color: isFailed ? Colors.redAccent : (isGhost ? Colors.amber.withAlpha(100) : Colors.white30), fontSize: 9, fontWeight: FontWeight.bold)
+                  ),
+                ],
+              ),
             ),
-          ),
-          if (widget.message.type == MessageType.video) const Positioned(bottom: 8, right: 8, child: Icon(Icons.videocam_outlined, size: 16, color: Colors.white24)),
-        ],
+            if (widget.message.type == MessageType.video && !isPending) const Positioned(bottom: 8, right: 8, child: Icon(Icons.videocam_outlined, size: 16, color: Colors.white24)),
+          ],
+        ),
       ),
     );
   }
 
   void _showFullScreen() {
-    Navigator.push(context, MaterialPageRoute(builder: (_) => Scaffold(appBar: AppBar(backgroundColor: Colors.black), backgroundColor: Colors.black, body: Center(child: InteractiveViewer(child: Image.memory(_decryptedData!))))));
+    if (_decryptedData == null) return;
+    Navigator.push(context, MaterialPageRoute(builder: (_) => FullScreenMediaViewer(data: _decryptedData!, type: widget.message.type)));
+  }
+}
+
+class FullScreenMediaViewer extends StatelessWidget {
+  final Uint8List data;
+  final MessageType type;
+  const FullScreenMediaViewer({super.key, required this.data, required this.type});
+
+  @override
+  Widget build(BuildContext context) {
+    debugPrint('GHOST_LOG: MEDIA_RENDERED type: ${type.name} fullscreen: true');
+    return Scaffold(
+      backgroundColor: Colors.black,
+      appBar: AppBar(backgroundColor: Colors.transparent, elevation: 0, leading: IconButton(icon: const Icon(Icons.close, color: Colors.white), onPressed: () => Navigator.pop(context))),
+      body: Center(
+        child: type == MessageType.video ? _VideoPreview(data: data) : InteractiveViewer(minScale: 0.5, maxScale: 4.0, child: Image.memory(data, fit: BoxFit.contain)),
+      ),
+    );
   }
 }
 

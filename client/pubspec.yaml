@@ -62,6 +62,8 @@ dependencies:
   file_picker: ^11.0.2
   permission_handler: ^11.3.1
   flutter_local_notifications: ^17.1.2
+  photo_manager: ^3.9.0
+  wechat_assets_picker: ^10.1.2
 
 
 dev_dependencies:

@@ -116,16 +116,21 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
 
   void _sendMessage() async {
     if (_controller.text.isEmpty) return;
-
     final plaintext = _controller.text;
-    final encrypted = ref.read(spaceServiceProvider).encryptMessage(
+    final spaceService = ref.read(spaceServiceProvider);
+    final cryptoService = ref.read(cryptoServiceProvider);
+    final wsService = ref.read(webSocketServiceProvider);
+    final roomKey = widget.config.roomKey;
+    final roomId = widget.config.roomId;
+
+    final encrypted = spaceService.encryptMessage(
       plaintext,
-      widget.config.roomKey,
+      roomKey,
     );
 
-    final deviceId = await ref.read(cryptoServiceProvider).getDeviceId();
+    final deviceId = await cryptoService.getDeviceId();
 
-    ref.read(webSocketServiceProvider).sendMessage(widget.config.roomId, {
+    wsService.sendMessage(roomId, {
       'ciphertext': base64Encode(encrypted),
       'expiry': 300, // 5 minutes message TTL
       'senderId': deviceId,

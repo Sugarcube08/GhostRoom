@@ -204,21 +204,25 @@ class AnonymousRoomsScreen extends ConsumerWidget {
   }
 
   void _createSpace(BuildContext context, WidgetRef ref, int seconds) async {
-    final relay = await ref.read(activeRelayProvider.future);
+    final activeRelayFuture = ref.read(activeRelayProvider.future);
+    final spaceService = ref.read(spaceServiceProvider);
+    final relayManager = ref.read(relayManagerProvider);
+
+    final relay = await activeRelayFuture;
     if (relay == null) return;
 
     try {
-      final config = await ref.read(spaceServiceProvider).createSpace(relay, expirySeconds: seconds);
+      final config = await spaceService.createSpace(relay, expirySeconds: seconds);
       
       // Save to recent
-      await ref.read(relayManagerProvider).addRecentRoom(
+      await relayManager.addRecentRoom(
         config.roomId,
         base64Encode(config.roomKey.extractBytes()),
         relay.label,
       );
-      ref.invalidate(recentRoomsProvider);
-
+      
       if (context.mounted) {
+        ref.invalidate(recentRoomsProvider);
         _showSpaceCreatedOptions(context, config);
       }
     } catch (e) {
@@ -366,15 +370,16 @@ class AnonymousRoomsScreen extends ConsumerWidget {
       SecureKey.fromList(sodium, keyBytes);
 
       final activeRelay = ref.read(activeRelayProvider).value;
-      await ref.read(relayManagerProvider).addRecentRoom(
+      final relayManager = ref.read(relayManagerProvider);
+      
+      await relayManager.addRecentRoom(
         roomId,
         keyBase64,
         activeRelay?.label ?? 'Joined Relay',
       );
       
-      ref.invalidate(recentRoomsProvider);
-
       if (context.mounted) {
+        ref.invalidate(recentRoomsProvider);
         _handleManualJoin(context, ref, roomId, keyBase64);
       }
     } catch (e) {

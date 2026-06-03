@@ -508,11 +508,14 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
       }
 
       // Auto-connect to relay if available
-      final relay = await ref.read(activeRelayProvider.future);
+      final activeRelayFuture = ref.read(activeRelayProvider.future);
+      final relayManager = ref.read(relayManagerProvider);
+      final wsService = ref.read(webSocketServiceProvider);
+
+      final relay = await activeRelayFuture;
       if (relay != null) {
-        ref.read(relayManagerProvider).wakeUpRelay(relay);
-        final ws = ref.read(webSocketServiceProvider);
-        ws.connect(relay);
+        relayManager.wakeUpRelay(relay);
+        wsService.connect(relay);
         // Listeners are now handled by ChatRepository
       }
 
