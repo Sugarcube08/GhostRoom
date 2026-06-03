@@ -36,6 +36,10 @@ class AppInitializer {
       debugPrint('GHOST_LOG: Initializing ChatRepository...');
       await container.read(chatRepositoryProvider).init();
 
+      // 4.5. Media Manager
+      debugPrint('GHOST_LOG: Initializing MediaManager...');
+      await container.read(mediaManagerProvider).init();
+
       // 5. Notifications
       debugPrint('GHOST_LOG: Initializing NotificationService...');
       await container.read(notificationServiceProvider).init();

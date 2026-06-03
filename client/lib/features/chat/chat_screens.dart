@@ -8,16 +8,18 @@ import 'package:chewie/chewie.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:path/path.dart' as p;
 import 'dart:io';
-import 'dart:typed_data';
-import 'package:path_provider/path_provider.dart';
+import 'dart:async';
 import 'package:hive_flutter/hive_flutter.dart';
 import '../../core/providers.dart';
+import 'chat_repository.dart';
 import 'conversation_service.dart';
 import 'conversation_state.dart';
 import 'message.dart';
 import '../contacts/contact.dart';
 import '../media/attachment_envelope.dart';
+import '../media/media_manager.dart';
 import '../contacts/contact_actions.dart';
+import 'package:share_plus/share_plus.dart';
 
 final conversationsProvider = Provider<List<Conversation>>((ref) {
   return ref.watch(conversationServiceProvider).getConversations();
@@ -304,6 +306,71 @@ class ConversationScreen extends ConsumerStatefulWidget {
   ConsumerState<ConversationScreen> createState() => _ConversationScreenState();
 }
 
+class RecentMediaItem {
+  final AssetEntity? asset;
+  final File? file;
+
+  RecentMediaItem({this.asset, this.file});
+
+  bool get isVideo {
+    if (asset != null) {
+      return asset!.type == AssetType.video;
+    }
+    if (file != null) {
+      final pLower = file!.path.toLowerCase();
+      return pLower.endsWith('.mp4') || pLower.endsWith('.mov') || pLower.endsWith('.avi') || pLower.endsWith('.mkv');
+    }
+    return false;
+  }
+
+  Future<File?> get filePromise async {
+    if (asset != null) {
+      return await asset!.file;
+    }
+    return file;
+  }
+
+  Widget buildThumbnail(BuildContext context) {
+    if (asset != null) {
+      return AssetEntityImage(
+        asset!,
+        isOriginal: false,
+        thumbnailSize: const ThumbnailSize(200, 200),
+        fit: BoxFit.cover,
+        errorBuilder: (context, error, stackTrace) {
+          return Container(
+            color: Colors.white10,
+            child: const Icon(Icons.image, color: Colors.white24),
+          );
+        },
+      );
+    } else if (file != null) {
+      return Image.file(
+        file!,
+        fit: BoxFit.cover,
+        cacheWidth: 200,
+        cacheHeight: 200,
+        errorBuilder: (context, error, stackTrace) {
+          return Container(
+            color: Colors.white10,
+            child: const Icon(Icons.image, color: Colors.white24),
+          );
+        },
+      );
+    }
+    return Container(
+      color: Colors.white10,
+      child: const Icon(Icons.image, color: Colors.white24),
+    );
+  }
+}
+
+class FolderItem {
+  final AssetPathEntity folder;
+  final int count;
+  FolderItem(this.folder, this.count);
+}
+
 class _ConversationScreenState extends ConsumerState<ConversationScreen> {
   final TextEditingController _controller = TextEditingController();
   final ScrollController _scrollController = ScrollController();
@@ -313,13 +380,16 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
   DateTime? _lastRemoteChange;
   bool _showScrollButton = false;
   bool _isInitialScroll = true;
+  late final ChatRepository _chatRepository;
+  AssetPathEntity? _selectedPath;
 
   @override
   void initState() {
     super.initState();
-    ref.read(chatRepositoryProvider).setActiveConversation(widget.conversation.contactId);
+    _chatRepository = ref.read(chatRepositoryProvider);
+    _chatRepository.setActiveConversation(widget.conversation.contactId);
     // Safety sync: ensure count is cleared even if setActiveConversation timing is tight
-    ref.read(chatRepositoryProvider).markConversationAsRead(widget.conversation.contactId);
+    _chatRepository.markConversationAsRead(widget.conversation.contactId);
     _scrollController.addListener(_onScroll);
   }
 
@@ -333,10 +403,10 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
 
   @override
   void dispose() {
-    ref.read(chatRepositoryProvider).setActiveConversation(null);
+    _chatRepository.setActiveConversation(null);
     _scrollController.removeListener(_onScroll);
     final contactId = widget.conversation.contactId;
-    Future.microtask(() => ref.read(chatRepositoryProvider).flushGhostMessages(contactId));
+    Future.microtask(() => _chatRepository.flushGhostMessages(contactId));
     _controller.dispose();
     _scrollController.dispose();
     super.dispose();
@@ -396,34 +466,109 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
     return files;
   }
 
-  Future<List<File>> _getRecentMedia() async {
-    final List<File> result = [];
-    
-    // Add session picked paths first
-    for (final path in _sessionPickedPaths) {
-      final file = File(path);
-      if (file.existsSync()) {
-        result.add(file);
+
+  Future<List<FolderItem>> _getFolders() async {
+    if (Platform.isAndroid || Platform.isIOS) {
+      try {
+        final PermissionState ps = await PhotoManager.requestPermissionExtend();
+        if (ps == PermissionState.authorized || ps == PermissionState.limited) {
+          final List<AssetPathEntity> paths = await PhotoManager.getAssetPathList(
+            type: RequestType.common,
+            filterOption: FilterOptionGroup(
+              orders: [
+                const OrderOption(
+                  type: OrderOptionType.createDate,
+                  asc: false,
+                ),
+              ],
+            ),
+          );
+          
+          final List<FolderItem> folderItems = [];
+          for (final path in paths) {
+            final count = await path.assetCountAsync;
+            folderItems.add(FolderItem(path, count));
+          }
+          return folderItems;
+        }
+      } catch (e) {
+        debugPrint('GHOST_LOG: Error getting folders: $e');
       }
     }
-    
-    // Add scanned files
-    final scanned = await _scanRecentMedia();
-    for (final file in scanned) {
-      if (!result.any((f) => f.path == file.path)) {
-        result.add(file);
-      }
-    }
-    
-    return result.take(18).toList();
+    return [];
   }
 
-  void _confirmAndSendRecentMedia(File file) {
+  Future<List<RecentMediaItem>> _getRecentMedia() async {
+    final List<RecentMediaItem> result = [];
+    
+    // Add session picked paths first if no specific folder is selected or if we're showing all
+    if (_selectedPath == null) {
+      for (final path in _sessionPickedPaths) {
+        final file = File(path);
+        if (file.existsSync()) {
+          result.add(RecentMediaItem(file: file));
+        }
+      }
+    }
+    
+    if (Platform.isAndroid || Platform.isIOS) {
+      try {
+        final PermissionState ps = await PhotoManager.requestPermissionExtend();
+        if (ps == PermissionState.authorized || ps == PermissionState.limited) {
+          if (_selectedPath == null) {
+            final List<AssetPathEntity> paths = await PhotoManager.getAssetPathList(
+              type: RequestType.common,
+              filterOption: FilterOptionGroup(
+                orders: [
+                  const OrderOption(
+                    type: OrderOptionType.createDate,
+                    asc: false,
+                  ),
+                ],
+              ),
+            );
+            if (paths.isNotEmpty) {
+              _selectedPath = paths.first;
+            }
+          }
+          
+          if (_selectedPath != null) {
+            final List<AssetEntity> assets = await _selectedPath!.getAssetListRange(
+              start: 0,
+              end: 30, // Get up to 30 items for better photo grid options
+            );
+            for (final asset in assets) {
+              result.add(RecentMediaItem(asset: asset));
+            }
+          }
+        }
+      } catch (e) {
+        debugPrint('GHOST_LOG: Error getting photo manager recent media: $e');
+      }
+    } else {
+      // Desktop fallback
+      final scanned = await _scanRecentMedia();
+      for (final file in scanned) {
+        result.add(RecentMediaItem(file: file));
+      }
+    }
+    
+    return result;
+  }
+
+  void _confirmAndSendRecentMedia(RecentMediaItem item) async {
+    final scaffoldMessenger = ScaffoldMessenger.of(context);
+    final file = await item.filePromise;
+    if (file == null) {
+      scaffoldMessenger.showSnackBar(const SnackBar(content: Text('Failed to load media file.')));
+      return;
+    }
+    if (!mounted) return;
+    
     final path = file.path.toLowerCase();
     final isVideo = path.endsWith('.mp4') || path.endsWith('.mov') || path.endsWith('.avi') || path.endsWith('.mkv');
     final convService = ref.read(conversationServiceProvider);
     final contactId = widget.conversation.contactId;
-    final scaffoldMessenger = ScaffoldMessenger.of(context);
     
     showDialog(
       context: context,
@@ -440,7 +585,21 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
                 width: 240,
                 child: isVideo
                   ? const Center(child: Icon(Icons.play_circle_outline, color: Colors.blueAccent, size: 48))
-                  : Image.file(file, fit: BoxFit.cover, errorBuilder: (context, error, stackTrace) => const Icon(Icons.broken_image, size: 48)),
+                  : (item.asset != null
+                      ? AssetEntityImage(
+                          item.asset!,
+                          isOriginal: false,
+                          thumbnailSize: const ThumbnailSize(400, 400),
+                          fit: BoxFit.cover,
+                          errorBuilder: (context, error, stackTrace) => const Icon(Icons.broken_image, size: 48),
+                        )
+                      : Image.file(
+                          file,
+                          fit: BoxFit.cover,
+                          cacheWidth: 400,
+                          cacheHeight: 400,
+                          errorBuilder: (context, error, stackTrace) => const Icon(Icons.broken_image, size: 48),
+                        )),
               ),
             ),
             const SizedBox(height: 8),
@@ -743,177 +902,244 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
           maxChildSize: 0.9,
           expand: false,
           builder: (context, scrollController) {
-            return FutureBuilder<List<File>>(
-              future: _getRecentMedia(),
-              builder: (context, snapshot) {
-                final files = snapshot.data ?? [];
-                
-                return Column(
-                  children: [
-                    // Handlebar
-                    Container(
-                      margin: const EdgeInsets.symmetric(vertical: 10),
-                      width: 40,
-                      height: 4,
-                      decoration: BoxDecoration(
-                        color: Colors.white24,
-                        borderRadius: BorderRadius.circular(2),
-                      ),
-                    ),
+            return StatefulBuilder(
+              builder: (context, setSheetState) {
+                return FutureBuilder<List<RecentMediaItem>>(
+                  future: _getRecentMedia(),
+                  builder: (context, snapshot) {
+                    final items = snapshot.data ?? [];
                     
-                    const Padding(
-                      padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                      child: Align(
-                        alignment: Alignment.centerLeft,
-                        child: Text(
-                          'RECENT MEDIA',
-                          style: TextStyle(
-                            color: Colors.white54,
-                            fontSize: 11,
-                            fontWeight: FontWeight.bold,
-                            letterSpacing: 1.5,
+                    return Column(
+                      children: [
+                        // Handlebar
+                        Container(
+                          margin: const EdgeInsets.symmetric(vertical: 10),
+                          width: 40,
+                          height: 4,
+                          decoration: BoxDecoration(
+                            color: Colors.white24,
+                            borderRadius: BorderRadius.circular(2),
                           ),
                         ),
-                      ),
-                    ),
-                    
-                    // Recent Media Grid
-                    Expanded(
-                      child: files.isEmpty
-                          ? Center(
-                              child: Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: const [
-                                  Icon(Icons.photo_library_outlined, color: Colors.white24, size: 48),
-                                  SizedBox(height: 12),
-                                  Text(
-                                    'No recent media found',
-                                    style: TextStyle(color: Colors.white30, fontSize: 13),
+                        
+                        // Compact Header dropdown
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 12),
+                          child: InkWell(
+                            onTap: () async {
+                              final folders = await _getFolders();
+                              if (folders.isEmpty) return;
+                              if (!context.mounted) return;
+                              showModalBottomSheet(
+                                context: context,
+                                backgroundColor: const Color(0xFF1E1E1E),
+                                shape: const RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+                                ),
+                                builder: (context) {
+                                  return ListView.builder(
+                                    shrinkWrap: true,
+                                    itemCount: folders.length,
+                                    itemBuilder: (context, index) {
+                                      final item = folders[index];
+                                      final folder = item.folder;
+                                      final count = item.count;
+                                      return ListTile(
+                                        title: Text(folder.name, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14)),
+                                        subtitle: Text('$count items', style: const TextStyle(color: Colors.white30, fontSize: 11)),
+                                        trailing: _selectedPath?.id == folder.id ? const Icon(Icons.check, color: Colors.blueAccent) : null,
+                                        onTap: () {
+                                          setSheetState(() {
+                                            _selectedPath = folder;
+                                          });
+                                          Navigator.pop(context);
+                                        },
+                                      );
+                                    },
+                                  );
+                                },
+                              );
+                            },
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Text(
+                                  (_selectedPath?.name ?? 'Recent').toUpperCase(),
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.bold,
+                                    letterSpacing: 1.0,
                                   ),
-                                ],
-                              ),
-                            )
-                          : GridView.builder(
-                              controller: scrollController,
-                              padding: const EdgeInsets.symmetric(horizontal: 16),
-                              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                                crossAxisCount: 3,
-                                crossAxisSpacing: 8,
-                                mainAxisSpacing: 8,
-                                childAspectRatio: 1.0,
-                              ),
-                              itemCount: files.length,
-                              itemBuilder: (context, index) {
-                                final file = files[index];
-                                final isVideo = file.path.toLowerCase().endsWith('.mp4') || file.path.toLowerCase().endsWith('.mov');
-                                
-                                return InkWell(
+                                ),
+                                const SizedBox(width: 4),
+                                const Icon(Icons.keyboard_arrow_down, color: Colors.white54, size: 16),
+                              ],
+                            ),
+                          ),
+                        ),
+                        const Divider(height: 1, color: Colors.white10),
+
+                        // Edge-to-Edge 3-Column Grid
+                        Expanded(
+                          child: items.isEmpty
+                              ? Center(
+                                  child: Column(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: const [
+                                      Icon(Icons.photo_library_outlined, color: Colors.white24, size: 48),
+                                      SizedBox(height: 12),
+                                      Text(
+                                        'No media found',
+                                        style: TextStyle(color: Colors.white30, fontSize: 13),
+                                      ),
+                                    ],
+                                  ),
+                                )
+                              : GridView.builder(
+                                  controller: scrollController,
+                                  padding: EdgeInsets.zero,
+                                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                                    crossAxisCount: 3,
+                                    crossAxisSpacing: 1,
+                                    mainAxisSpacing: 1,
+                                    childAspectRatio: 1.0,
+                                  ),
+                                  itemCount: items.length,
+                                  itemBuilder: (context, index) {
+                                    final item = items[index];
+                                    final isVideo = item.isVideo;
+                                    
+                                    return InkWell(
+                                      onTap: () {
+                                        Navigator.pop(context);
+                                        _confirmAndSendRecentMedia(item);
+                                      },
+                                      child: Stack(
+                                        fit: StackFit.expand,
+                                        children: [
+                                          item.buildThumbnail(context),
+                                          if (isVideo)
+                                            Container(
+                                              color: Colors.black38,
+                                              child: const Center(
+                                                child: Icon(Icons.play_circle_outline, color: Colors.white70, size: 28),
+                                              ),
+                                            ),
+                                        ],
+                                      ),
+                                    );
+                                  },
+                                ),
+                        ),
+                        
+                        // Action Buttons (Camera, Gallery, Files)
+                        Padding(
+                          padding: const EdgeInsets.only(left: 16, right: 16, bottom: 24, top: 12),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: InkWell(
                                   onTap: () {
                                     Navigator.pop(context);
-                                    _confirmAndSendRecentMedia(file);
+                                    _pickCamera();
                                   },
-                                  child: ClipRRect(
-                                    borderRadius: BorderRadius.circular(8),
-                                    child: Stack(
-                                      fit: StackFit.expand,
-                                      children: [
-                                        Image.file(
-                                          file,
-                                          fit: BoxFit.cover,
-                                          errorBuilder: (context, error, stackTrace) {
-                                            return Container(
-                                              color: Colors.white10,
-                                              child: const Icon(Icons.image, color: Colors.white24),
-                                            );
-                                          },
-                                        ),
-                                        if (isVideo)
-                                          Container(
-                                            color: Colors.black38,
-                                            child: const Center(
-                                              child: Icon(Icons.play_circle_outline, color: Colors.white70, size: 28),
-                                            ),
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(vertical: 12),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white.withAlpha(8),
+                                      borderRadius: BorderRadius.circular(12),
+                                      border: Border.all(color: Colors.white10),
+                                    ),
+                                    child: Column(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: const [
+                                        Icon(Icons.camera_alt_outlined, color: Colors.pinkAccent),
+                                        SizedBox(height: 6),
+                                        Text(
+                                          'Camera',
+                                          style: TextStyle(
+                                            color: Colors.white,
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 12,
                                           ),
+                                        ),
                                       ],
                                     ),
                                   ),
-                                );
-                              },
-                            ),
-                    ),
-                    
-                    // Action Buttons (Gallery, Files)
-                    Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: InkWell(
-                              onTap: () {
-                                Navigator.pop(context);
-                                _pickMedia();
-                              },
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(vertical: 16),
-                                decoration: BoxDecoration(
-                                  color: Colors.white.withAlpha(8),
-                                  borderRadius: BorderRadius.circular(12),
-                                  border: Border.all(color: Colors.white10),
-                                ),
-                                child: Column(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: const [
-                                    Icon(Icons.photo_library_outlined, color: Colors.blueAccent),
-                                    SizedBox(height: 8),
-                                    Text(
-                                      'Gallery',
-                                      style: TextStyle(
-                                        color: Colors.white,
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 13,
-                                      ),
-                                    ),
-                                  ],
                                 ),
                               ),
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: InkWell(
-                              onTap: () {
-                                Navigator.pop(context);
-                                _pickFile();
-                              },
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(vertical: 16),
-                                decoration: BoxDecoration(
-                                  color: Colors.white.withAlpha(8),
-                                  borderRadius: BorderRadius.circular(12),
-                                  border: Border.all(color: Colors.white10),
-                                ),
-                                child: Column(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: const [
-                                    Icon(Icons.insert_drive_file_outlined, color: Colors.amber),
-                                    SizedBox(height: 8),
-                                    Text(
-                                      'Files',
-                                      style: TextStyle(
-                                        color: Colors.white,
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 13,
-                                      ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: InkWell(
+                                  onTap: () {
+                                    Navigator.pop(context);
+                                    _pickMedia();
+                                  },
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(vertical: 12),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white.withAlpha(8),
+                                      borderRadius: BorderRadius.circular(12),
+                                      border: Border.all(color: Colors.white10),
                                     ),
-                                  ],
+                                    child: Column(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: const [
+                                        Icon(Icons.photo_library_outlined, color: Colors.blueAccent),
+                                        SizedBox(height: 6),
+                                        Text(
+                                          'Gallery',
+                                          style: TextStyle(
+                                            color: Colors.white,
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 12,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
                                 ),
                               ),
-                            ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: InkWell(
+                                  onTap: () {
+                                    Navigator.pop(context);
+                                    _pickFile();
+                                  },
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(vertical: 12),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white.withAlpha(8),
+                                      borderRadius: BorderRadius.circular(12),
+                                      border: Border.all(color: Colors.white10),
+                                    ),
+                                    child: Column(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: const [
+                                        Icon(Icons.insert_drive_file_outlined, color: Colors.amber),
+                                        SizedBox(height: 6),
+                                        Text(
+                                          'Files',
+                                          style: TextStyle(
+                                            color: Colors.white,
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 12,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
-                        ],
-                      ),
-                    ),
-                  ],
+                        ),
+                      ],
+                    );
+                  },
                 );
               },
             );
@@ -1017,58 +1243,125 @@ class AttachmentWidget extends ConsumerStatefulWidget {
 }
 
 class _AttachmentWidgetState extends ConsumerState<AttachmentWidget> {
-  Uint8List? _decryptedData;
-  Uint8List? _thumbData;
-  bool _isDownloading = false;
+  File? _decryptedFile;
+  File? _thumbFile;
+  MediaState _mediaState = MediaState.notDownloaded;
+  MediaState _thumbState = MediaState.notDownloaded;
+  StreamSubscription? _stateSub;
   bool _hasLoggedRender = false;
 
   @override
   void initState() {
     super.initState();
-    _loadThumb();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _initMedia();
+    });
   }
 
-  void _loadThumb() async {
-    if (widget.message.metadata == null) return;
-    final repo = ref.read(chatRepositoryProvider);
-    final mediaService = ref.read(mediaServiceProvider);
-    final identityService = ref.read(identityServiceProvider);
-    
-    try {
-      final envelope = AttachmentEnvelope.fromJson(widget.message.metadata!);
-      
-      // Check Cache First
-      final cached = repo.getCachedThumbnail(envelope.mediaId);
-      if (cached != null) {
-        if (mounted) setState(() => _thumbData = cached);
-        return;
-      }
+  @override
+  void dispose() {
+    _stateSub?.cancel();
+    super.dispose();
+  }
 
-      final relay = await ref.read(activeRelayProvider.future);
-      if (relay == null) return;
-      
-      final identity = identityService.currentIdentity;
-      if (identity == null) return;
-      
-      final data = await mediaService.downloadMedia(
+  void _initMedia() async {
+    if (widget.message.metadata == null) return;
+    final envelope = AttachmentEnvelope.fromJson(widget.message.metadata!);
+    final mediaId = envelope.mediaId;
+    final mediaManager = ref.read(mediaManagerProvider);
+
+    // Initial state query
+    if (mounted) {
+      setState(() {
+        _mediaState = mediaManager.getMediaState(mediaId, isThumbnail: false);
+        _thumbState = mediaManager.getMediaState(mediaId, isThumbnail: true);
+      });
+    }
+
+    // Subscribe to state updates
+    _stateSub = mediaManager.stateStream.listen((update) {
+      if (update.mediaId == mediaId) {
+        if (mounted) {
+          setState(() {
+            if (update.isThumbnail) {
+              _thumbState = update.state;
+            } else {
+              _mediaState = update.state;
+            }
+          });
+          // Retrieve the files if ready
+          if (update.state == MediaState.ready) {
+            _loadFiles();
+          }
+        }
+      }
+    });
+
+    _loadFiles();
+  }
+
+  void _loadFiles() async {
+    if (widget.message.metadata == null) return;
+    final envelope = AttachmentEnvelope.fromJson(widget.message.metadata!);
+    final mediaManager = ref.read(mediaManagerProvider);
+    final relay = await ref.read(activeRelayProvider.future);
+    final identity = ref.read(identityServiceProvider).currentIdentity;
+
+    if (relay == null || identity == null) return;
+
+    // Load thumbnail if ready (or trigger download if not cached yet)
+    if (_thumbState == MediaState.ready) {
+      final file = await mediaManager.getMedia(
         envelope: envelope,
         relay: relay,
         myXidKeyPair: identity.x25519KeyPair,
         isThumbnail: true,
       );
-      
-      // Save to Cache
-      await repo.cacheThumbnail(envelope.mediaId, data);
-      
-      if (mounted) setState(() => _thumbData = data);
-    } catch (_) {}
+      if (mounted) {
+        setState(() {
+          _thumbFile = file;
+        });
+      }
+    } else if (_thumbState == MediaState.notDownloaded) {
+      // Trigger lazy thumbnail download in background
+      try {
+        final file = await mediaManager.getMedia(
+          envelope: envelope,
+          relay: relay,
+          myXidKeyPair: identity.x25519KeyPair,
+          isThumbnail: true,
+        );
+        if (mounted) {
+          setState(() {
+            _thumbFile = file;
+            _thumbState = MediaState.ready;
+          });
+        }
+      } catch (_) {}
+    }
+
+    // Load original if ready
+    if (_mediaState == MediaState.ready) {
+      final file = await mediaManager.getMedia(
+        envelope: envelope,
+        relay: relay,
+        myXidKeyPair: identity.x25519KeyPair,
+        isThumbnail: false,
+      );
+      if (mounted) {
+        setState(() {
+          _decryptedFile = file;
+        });
+      }
+    }
   }
 
   void _download() async {
     if (widget.message.metadata == null) return;
-    setState(() => _isDownloading = true);
+    if (_mediaState == MediaState.downloading || _mediaState == MediaState.decrypting || _mediaState == MediaState.verifying) return;
+
     final messenger = ScaffoldMessenger.of(context);
-    final mediaService = ref.read(mediaServiceProvider);
+    final mediaManager = ref.read(mediaManagerProvider);
     final identityService = ref.read(identityServiceProvider);
     
     try {
@@ -1078,18 +1371,25 @@ class _AttachmentWidgetState extends ConsumerState<AttachmentWidget> {
       
       final identity = identityService.currentIdentity;
       if (identity == null) throw Exception('No current identity');
-      
-      final data = await mediaService.downloadMedia(
+
+      final file = await mediaManager.getMedia(
         envelope: envelope,
         relay: relay,
         myXidKeyPair: identity.x25519KeyPair,
+        isThumbnail: false,
       );
+
       if (mounted) {
-        setState(() { _decryptedData = data; _isDownloading = false; });
+        setState(() {
+          _decryptedFile = file;
+          _mediaState = MediaState.ready;
+        });
         _showFullScreen();
       }
     } catch (e) {
-      if (mounted) { setState(() => _isDownloading = false); messenger.showSnackBar(SnackBar(content: Text('Download failed: $e'))); }
+      if (mounted) {
+        messenger.showSnackBar(SnackBar(content: Text('Download failed: $e')));
+      }
     }
   }
 
@@ -1102,26 +1402,47 @@ class _AttachmentWidgetState extends ConsumerState<AttachmentWidget> {
     final isPending = status != null && status != 'SENT';
     final isFailed = status == 'FAILED';
 
-    if (!_hasLoggedRender && (_thumbData != null || _decryptedData != null)) {
+    if (!_hasLoggedRender && (_thumbFile != null || _decryptedFile != null)) {
       _hasLoggedRender = true;
       debugPrint('GHOST_LOG: MEDIA_RENDERED type: ${widget.message.type.name} id: ${widget.message.id}');
     }
 
+    final isProcessing = _mediaState == MediaState.downloading || 
+                         _mediaState == MediaState.decrypting || 
+                         _mediaState == MediaState.verifying;
+
+    String progressText = 'DOWNLOADING';
+    if (_mediaState == MediaState.decrypting) {
+      progressText = 'DECRYPTING';
+    } else if (_mediaState == MediaState.verifying) {
+      progressText = 'VERIFYING';
+    }
+
     return GestureDetector(
-      onTap: (!isPending && _decryptedData != null) ? _showFullScreen : (!isPending ? _download : null),
+      onTap: (!isPending && _decryptedFile != null) ? _showFullScreen : (!isPending && !isProcessing ? _download : null),
       child: Container(
         width: 200,
         height: 150,
-        decoration: BoxDecoration(color: Colors.black26, borderRadius: BorderRadius.circular(8), image: _thumbData != null ? DecorationImage(image: MemoryImage(_thumbData!), fit: BoxFit.cover, opacity: isGhost ? 0.2 : 0.5) : null),
+        decoration: BoxDecoration(
+          color: Colors.black26, 
+          borderRadius: BorderRadius.circular(8), 
+          image: _thumbFile != null 
+              ? DecorationImage(
+                  image: FileImage(_thumbFile!), 
+                  fit: BoxFit.cover, 
+                  opacity: isGhost ? 0.2 : 0.5
+                ) 
+              : null
+        ),
         child: Stack(
           children: [
             Center(
-              child: (_isDownloading || (isPending && !isFailed)) ? Column(
+              child: (isProcessing || (isPending && !isFailed)) ? Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   const CircularProgressIndicator(strokeWidth: 2),
                   const SizedBox(height: 12),
-                  Text(status ?? 'DOWNLOADING', style: const TextStyle(color: Colors.white30, fontSize: 8, fontWeight: FontWeight.bold, letterSpacing: 1)),
+                  Text(status ?? progressText, style: const TextStyle(color: Colors.white30, fontSize: 8, fontWeight: FontWeight.bold, letterSpacing: 1)),
                 ],
               ) : Column(
                 mainAxisAlignment: MainAxisAlignment.center,
@@ -1148,32 +1469,49 @@ class _AttachmentWidgetState extends ConsumerState<AttachmentWidget> {
   }
 
   void _showFullScreen() {
-    if (_decryptedData == null) return;
-    Navigator.push(context, MaterialPageRoute(builder: (_) => FullScreenMediaViewer(data: _decryptedData!, type: widget.message.type)));
+    if (_decryptedFile == null) return;
+    Navigator.push(context, MaterialPageRoute(builder: (_) => FullScreenMediaViewer(file: _decryptedFile!, type: widget.message.type)));
   }
 }
 
 class FullScreenMediaViewer extends StatelessWidget {
-  final Uint8List data;
+  final File file;
   final MessageType type;
-  const FullScreenMediaViewer({super.key, required this.data, required this.type});
+  const FullScreenMediaViewer({super.key, required this.file, required this.type});
 
   @override
   Widget build(BuildContext context) {
     debugPrint('GHOST_LOG: MEDIA_RENDERED type: ${type.name} fullscreen: true');
     return Scaffold(
       backgroundColor: Colors.black,
-      appBar: AppBar(backgroundColor: Colors.transparent, elevation: 0, leading: IconButton(icon: const Icon(Icons.close, color: Colors.white), onPressed: () => Navigator.pop(context))),
+      appBar: AppBar(
+        backgroundColor: Colors.transparent, 
+        elevation: 0, 
+        leading: IconButton(
+          icon: const Icon(Icons.close, color: Colors.white), 
+          onPressed: () => Navigator.pop(context)
+        ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.share, color: Colors.white),
+            onPressed: () async {
+              await Share.shareXFiles([XFile(file.path)]);
+            },
+          ),
+        ],
+      ),
       body: Center(
-        child: type == MessageType.video ? _VideoPreview(data: data) : InteractiveViewer(minScale: 0.5, maxScale: 4.0, child: Image.memory(data, fit: BoxFit.contain)),
+        child: type == MessageType.video 
+            ? _VideoPreview(file: file) 
+            : InteractiveViewer(minScale: 0.5, maxScale: 4.0, child: Image.file(file, fit: BoxFit.contain)),
       ),
     );
   }
 }
 
 class _VideoPreview extends StatefulWidget {
-  final Uint8List data;
-  const _VideoPreview({required this.data});
+  final File file;
+  const _VideoPreview({required this.file});
   @override
   State<_VideoPreview> createState() => _VideoPreviewState();
 }
@@ -1181,7 +1519,6 @@ class _VideoPreview extends StatefulWidget {
 class _VideoPreviewState extends State<_VideoPreview> {
   VideoPlayerController? _controller;
   ChewieController? _chewieController;
-  File? _tempFile;
 
   @override
   void initState() {
@@ -1191,26 +1528,26 @@ class _VideoPreviewState extends State<_VideoPreview> {
 
   void _initPlayer() async {
     try {
-      final tempDir = await getTemporaryDirectory();
-      if (!mounted) return;
-      final tempFile = File('${tempDir.path}/${DateTime.now().microsecondsSinceEpoch}.mp4');
-      _tempFile = tempFile;
-      await tempFile.writeAsBytes(widget.data);
-      if (!mounted) return;
-      final controller = VideoPlayerController.file(tempFile);
+      final controller = VideoPlayerController.file(widget.file);
       _controller = controller;
       await controller.initialize();
       if (!mounted) { controller.dispose(); return; }
-      _chewieController = ChewieController(videoPlayerController: controller, autoPlay: true, looping: false, aspectRatio: controller.value.aspectRatio);
+      _chewieController = ChewieController(
+        videoPlayerController: controller, 
+        autoPlay: true, 
+        looping: false, 
+        aspectRatio: controller.value.aspectRatio
+      );
       if (mounted) setState(() {});
-    } catch (e) { debugPrint('GHOST_ERROR: _VideoPreview failed: $e'); }
+    } catch (e) { 
+      debugPrint('GHOST_ERROR: _VideoPreview failed: $e'); 
+    }
   }
 
   @override
   void dispose() {
     _controller?.dispose();
     _chewieController?.dispose();
-    _tempFile?.delete().catchError((_) => File(''));
     super.dispose();
   }
 

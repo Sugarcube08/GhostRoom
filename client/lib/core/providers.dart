@@ -12,6 +12,8 @@ import '../features/chat/dm_service.dart';
 import '../features/chat/chat_repository.dart';
 import '../features/chat/conversation_service.dart';
 import '../features/media/media_service.dart';
+import '../features/media/media_manager.dart';
+import '../features/media/share_service.dart';
 import 'backup/backup_service.dart';
 
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -71,6 +73,19 @@ final mediaServiceProvider = Provider<MediaService>((ref) {
   return MediaService(
     ref.watch(sodiumProvider),
     ref.watch(identityServiceProvider),
+  );
+});
+
+final mediaManagerProvider = Provider<MediaManager>((ref) {
+  return MediaManager(
+    ref.watch(sodiumProvider),
+    ref.watch(mediaServiceProvider),
+  );
+});
+
+final shareServiceProvider = Provider<ShareService>((ref) {
+  return ShareService(
+    ref.watch(mediaManagerProvider),
   );
 });
 

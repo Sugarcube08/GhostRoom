@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/providers.dart';
+import '../../core/network/websocket_service.dart';
 import '../spaces/space_service.dart';
 import '../invite/invite_screen.dart';
 import 'dart:convert';
@@ -26,18 +27,20 @@ class ChatScreen extends ConsumerStatefulWidget {
 class _ChatScreenState extends ConsumerState<ChatScreen> {
   final List<Message> _messages = [];
   final TextEditingController _controller = TextEditingController();
+  late final WebSocketService _webSocketService;
 
   @override
   void initState() {
     super.initState();
     debugPrint('GHOST_LOG: ChatScreen initState starting');
+    _webSocketService = ref.read(webSocketServiceProvider);
     _setupListeners();
     debugPrint('GHOST_LOG: ChatScreen initState completed');
   }
 
   @override
   void dispose() {
-    ref.read(webSocketServiceProvider).clearRoomCallbacks();
+    _webSocketService.clearRoomCallbacks();
     _controller.dispose();
     super.dispose();
   }

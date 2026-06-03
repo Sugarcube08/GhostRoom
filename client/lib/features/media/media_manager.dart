@@ -1,0 +1,446 @@
+import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
+import 'package:flutter/foundation.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:path/path.dart' as p;
+import 'package:hive/hive.dart';
+import 'package:http/http.dart' as http;
+import 'package:sodium/sodium_sumo.dart' hide Box;
+import 'package:crypto/crypto.dart' as crypto;
+import 'package:logger/logger.dart';
+import 'attachment_envelope.dart';
+import '../../core/network/relay_manager.dart';
+import 'media_service.dart';
+
+enum MediaState {
+  notDownloaded,
+  downloading,
+  decrypting,
+  verifying,
+  ready,
+  failed,
+}
+
+class MediaStateUpdate {
+  final String mediaId;
+  final MediaState state;
+  final bool isThumbnail;
+  MediaStateUpdate(this.mediaId, this.state, {this.isThumbnail = false});
+}
+
+class CachedMedia {
+  final String mediaId;
+  final String localPath;
+  final String checksum;
+  final int size;
+  final DateTime downloadedAt;
+  final bool isThumbnail;
+
+  CachedMedia({
+    required this.mediaId,
+    required this.localPath,
+    required this.checksum,
+    required this.size,
+    required this.downloadedAt,
+    required this.isThumbnail,
+  });
+
+  Map<String, dynamic> toMap() {
+    return {
+      'mediaId': mediaId,
+      'localPath': localPath,
+      'checksum': checksum,
+      'size': size,
+      'downloadedAt': downloadedAt.toIso8601String(),
+      'isThumbnail': isThumbnail,
+    };
+  }
+
+  factory CachedMedia.fromMap(Map<dynamic, dynamic> map) {
+    return CachedMedia(
+      mediaId: map['mediaId'] as String,
+      localPath: map['localPath'] as String,
+      checksum: map['checksum'] as String,
+      size: map['size'] as int,
+      downloadedAt: DateTime.parse(map['downloadedAt'] as String),
+      isThumbnail: map['isThumbnail'] as bool? ?? false,
+    );
+  }
+}
+
+class MediaManager {
+  final SodiumSumo _sodium;
+  final MediaService _mediaService;
+  
+  late final Directory _originalsDir;
+  late final Directory _thumbsDir;
+  late final Directory _tempDir;
+  late final Box<dynamic> _cacheIndex;
+  
+  final Map<String, Future<File>> _activeDownloads = {};
+  final Map<String, MediaState> _states = {};
+  final Map<String, MediaState> _thumbStates = {};
+  
+  final StreamController<MediaStateUpdate> _stateController = StreamController<MediaStateUpdate>.broadcast();
+  late final ThumbnailQueue _thumbnailQueue;
+
+  final Logger _logger = Logger(
+    level: kReleaseMode ? Level.warning : Level.info,
+    printer: PrettyPrinter(
+      methodCount: 0,
+      errorMethodCount: 5,
+      lineLength: 50,
+      colors: true,
+      printEmojis: true,
+      dateTimeFormat: DateTimeFormat.onlyTimeAndSinceStart,
+    ),
+  );
+
+  MediaManager(this._sodium, this._mediaService) {
+    _thumbnailQueue = ThumbnailQueue(_mediaService, this);
+  }
+
+  Stream<MediaStateUpdate> get stateStream => _stateController.stream;
+
+  Future<void> init() async {
+    final docsDir = await getApplicationDocumentsDirectory();
+    _originalsDir = Directory(p.join(docsDir.path, 'media', 'originals'));
+    _thumbsDir = Directory(p.join(docsDir.path, 'media', 'thumbs'));
+    _tempDir = Directory(p.join(docsDir.path, 'media', 'temp'));
+
+    await _originalsDir.create(recursive: true);
+    await _thumbsDir.create(recursive: true);
+    await _tempDir.create(recursive: true);
+
+    _cacheIndex = await Hive.openBox<dynamic>('media_cache_index');
+    _logger.i('GHOST_LOG: MediaManager initialized. Directories and Cache Index ready.');
+  }
+
+  MediaState getMediaState(String mediaId, {bool isThumbnail = false}) {
+    final state = isThumbnail ? _thumbStates[mediaId] : _states[mediaId];
+    if (state != null) return state;
+
+    final key = '${mediaId}_${isThumbnail ? 'thumb' : 'original'}';
+    final cached = _cacheIndex.get(key);
+    if (cached != null) {
+      final cachedMedia = CachedMedia.fromMap(cached as Map);
+      if (File(cachedMedia.localPath).existsSync()) {
+        return MediaState.ready;
+      }
+    }
+    return MediaState.notDownloaded;
+  }
+
+  Future<bool> isThumbnailCached(String mediaId) async {
+    final key = '${mediaId}_thumb';
+    final cached = _cacheIndex.get(key);
+    if (cached != null) {
+      final cachedMedia = CachedMedia.fromMap(cached as Map);
+      return File(cachedMedia.localPath).exists();
+    }
+    return false;
+  }
+
+  Future<void> saveThumbnailDirectly(String mediaId, Uint8List thumbBytes) async {
+    final extension = '.jpg';
+    final targetPath = p.join(_thumbsDir.path, '$mediaId$extension');
+    
+    // Atomic write
+    final tempFile = File(p.join(_tempDir.path, '${mediaId}_thumb_${DateTime.now().microsecondsSinceEpoch}.tmp'));
+    await tempFile.writeAsBytes(thumbBytes, flush: true);
+    
+    // Rename to final location
+    final finalFile = File(targetPath);
+    await tempFile.rename(finalFile.path);
+
+    final entry = CachedMedia(
+      mediaId: mediaId,
+      localPath: finalFile.path,
+      checksum: crypto.sha256.convert(thumbBytes).toString(),
+      size: thumbBytes.length,
+      downloadedAt: DateTime.now(),
+      isThumbnail: true,
+    );
+    await _cacheIndex.put('${mediaId}_thumb', entry.toMap());
+    _updateState(mediaId, MediaState.ready, isThumbnail: true);
+  }
+
+  void _updateState(String mediaId, MediaState state, {bool isThumbnail = false}) {
+    if (isThumbnail) {
+      _thumbStates[mediaId] = state;
+    } else {
+      _states[mediaId] = state;
+    }
+    _stateController.add(MediaStateUpdate(mediaId, state, isThumbnail: isThumbnail));
+    _logger.i('GHOST_LOG: Media state update: $mediaId isThumb: $isThumbnail state: ${state.name}');
+  }
+
+  Future<File> getMedia({
+    required AttachmentEnvelope envelope,
+    required RelayProfile relay,
+    required KeyPair myXidKeyPair,
+    bool isThumbnail = false,
+  }) {
+    final key = '${envelope.mediaId}_${isThumbnail ? 'thumb' : 'original'}';
+    
+    // Check active downloads (Critical Rule #1)
+    return _activeDownloads.putIfAbsent(key, () async {
+      try {
+        // Local cache lookup (Critical Rule #2 & #3)
+        final cached = _cacheIndex.get(key);
+        if (cached != null) {
+          final cachedMedia = CachedMedia.fromMap(cached as Map);
+          final file = File(cachedMedia.localPath);
+          if (await file.exists()) {
+            _logger.i('GHOST_LOG: Media cache hit for $key');
+            _updateState(envelope.mediaId, MediaState.ready, isThumbnail: isThumbnail);
+            return file;
+          }
+        }
+
+        // Cache miss -> Trigger pipeline (Critical Rule #8: retry policy is wrapped inside _downloadAndProcess)
+        final file = await _downloadAndProcess(
+          envelope: envelope,
+          relay: relay,
+          myXidKeyPair: myXidKeyPair,
+          isThumbnail: isThumbnail,
+        );
+
+        // Background thumbnail generation (Critical Rule #6)
+        if (!isThumbnail && (envelope.kind == AttachmentKind.image || envelope.kind == AttachmentKind.video)) {
+          _thumbnailQueue.queue(envelope.mediaId, file, envelope.kind);
+        }
+
+        return file;
+      } catch (e) {
+        _updateState(envelope.mediaId, MediaState.failed, isThumbnail: isThumbnail);
+        rethrow;
+      } finally {
+        _activeDownloads.remove(key);
+      }
+    });
+  }
+
+  Future<File> _downloadAndProcess({
+    required AttachmentEnvelope envelope,
+    required RelayProfile relay,
+    required KeyPair myXidKeyPair,
+    required bool isThumbnail,
+  }) async {
+    final mediaId = envelope.mediaId;
+    
+    // Retry policy logic (Critical Rule #8)
+    int attempts = 0;
+    const maxAttempts = 3;
+    bool isHashMismatch = false;
+
+    while (attempts < maxAttempts) {
+      attempts++;
+      File? tempFile;
+      try {
+        // Step 1: Downloading
+        _updateState(mediaId, MediaState.downloading, isThumbnail: isThumbnail);
+        
+        final urlString = isThumbnail 
+            ? '${relay.apiUrl}/media/download-url/$mediaId?thumbnail=true'
+            : '${relay.apiUrl}/media/download-url/$mediaId';
+        
+        final response = await http.get(Uri.parse(urlString));
+        if (response.statusCode == 404) {
+          throw Exception('404: Media not found'); // Fail immediately
+        }
+        if (response.statusCode != 200) {
+          throw Exception('Download request failed with status: ${response.statusCode}');
+        }
+
+        final data = jsonDecode(response.body);
+        final String downloadUrl = data['downloadUrl'];
+
+        final getResponse = await http.get(Uri.parse(downloadUrl));
+        if (getResponse.statusCode == 404) {
+          throw Exception('404: Media file not found in storage'); // Fail immediately
+        }
+        if (getResponse.statusCode != 200) {
+          throw Exception('R2 download failed with status: ${getResponse.statusCode}');
+        }
+
+        final ciphertext = getResponse.bodyBytes;
+
+        // Step 2: Decrypting
+        _updateState(mediaId, MediaState.decrypting, isThumbnail: isThumbnail);
+        
+        late final Uint8List decrypted;
+        try {
+          final messageKeyBytes = _sodium.crypto.box.sealOpen(
+            cipherText: base64Decode(envelope.encryptedKey),
+            publicKey: myXidKeyPair.publicKey,
+            secretKey: myXidKeyPair.secretKey,
+          );
+          final messageKey = SecureKey.fromList(_sodium, messageKeyBytes);
+
+          final String? nonceBase64 = isThumbnail 
+              ? (envelope.meta?['thumb_nonce'] as String?) 
+              : (envelope.meta?['nonce'] as String?);
+          
+          if (nonceBase64 == null) throw Exception('Missing nonce in metadata');
+
+          decrypted = _sodium.crypto.aeadXChaCha20Poly1305IETF.decrypt(
+            cipherText: ciphertext,
+            nonce: base64Decode(nonceBase64),
+            key: messageKey,
+          );
+        } catch (e) {
+          throw Exception('Decryption failure: $e'); // Fail immediately (Critical Rule #8)
+        }
+
+        // Step 3: Verifying
+        _updateState(mediaId, MediaState.verifying, isThumbnail: isThumbnail);
+        
+        if (!isThumbnail) {
+          final actualHash = crypto.sha256.convert(decrypted).toString();
+          if (actualHash != envelope.hash) {
+            isHashMismatch = true;
+            throw Exception('Hash mismatch: expected ${envelope.hash}, got $actualHash');
+          }
+        }
+
+        // Step 4: Persist (Atomic writes, Critical Rule #4 & #7)
+        final extension = _getFileExtension(envelope);
+        final baseDir = isThumbnail ? _thumbsDir : _originalsDir;
+        final finalFile = File(p.join(baseDir.path, '$mediaId$extension'));
+        
+        tempFile = File(p.join(_tempDir.path, '${mediaId}_${isThumbnail ? 'thumb' : 'orig'}_${DateTime.now().microsecondsSinceEpoch}.tmp'));
+        await tempFile.writeAsBytes(decrypted, flush: true);
+        
+        // Atomically rename
+        await tempFile.rename(finalFile.path);
+        
+        // Update Index (Critical Rule #3)
+        final entry = CachedMedia(
+          mediaId: mediaId,
+          localPath: finalFile.path,
+          checksum: isThumbnail ? crypto.sha256.convert(decrypted).toString() : envelope.hash,
+          size: decrypted.length,
+          downloadedAt: DateTime.now(),
+          isThumbnail: isThumbnail,
+        );
+        final indexKey = '${mediaId}_${isThumbnail ? 'thumb' : 'original'}';
+        await _cacheIndex.put(indexKey, entry.toMap());
+
+        // Step 5: Ready
+        _updateState(mediaId, MediaState.ready, isThumbnail: isThumbnail);
+        return finalFile;
+
+      } catch (e) {
+        // Clean up temp file if it exists
+        if (tempFile != null && await tempFile.exists()) {
+          try {
+            await tempFile.delete();
+          } catch (_) {}
+        }
+
+        final errStr = e.toString();
+        // Fail immediately rules
+        if (errStr.contains('404') || errStr.contains('Decryption failure')) {
+          _logger.e('GHOST_LOG: Media pipeline failed immediately: $errStr');
+          rethrow;
+        }
+
+        // Hash mismatch rule: retry once (max 2 attempts total)
+        if (isHashMismatch) {
+          if (attempts >= 2) {
+            _logger.e('GHOST_LOG: Hash mismatch check failed after retry.');
+            rethrow;
+          }
+          _logger.w('GHOST_LOG: Hash mismatch detected. Retrying download once... Error: $errStr');
+          continue;
+        }
+
+        // Other network/timeout errors: retry 3x
+        if (attempts >= maxAttempts) {
+          _logger.e('GHOST_LOG: Media download failed after $attempts attempts: $errStr');
+          rethrow;
+        }
+
+        _logger.w('GHOST_LOG: Network error during media download. Retrying in ${attempts * 2}s... Error: $errStr');
+        await Future.delayed(Duration(seconds: attempts * 2));
+      }
+    }
+
+    throw Exception('Failed to download and process media');
+  }
+
+  String _getFileExtension(AttachmentEnvelope envelope) {
+    if (envelope.name != null && envelope.name!.contains('.')) {
+      return p.extension(envelope.name!).toLowerCase();
+    }
+    switch (envelope.kind) {
+      case AttachmentKind.image:
+        return '.jpg';
+      case AttachmentKind.video:
+        return '.mp4';
+      default:
+        return '.bin';
+    }
+  }
+
+  Future<void> clearCache() async {
+    await _originalsDir.delete(recursive: true);
+    await _thumbsDir.delete(recursive: true);
+    await _tempDir.delete(recursive: true);
+    await _originalsDir.create();
+    await _thumbsDir.create();
+    await _tempDir.create();
+    await _cacheIndex.clear();
+    _states.clear();
+    _thumbStates.clear();
+    _logger.i('GHOST_LOG: Media cache cleared.');
+  }
+}
+
+class ThumbnailQueue {
+  final MediaService _mediaService;
+  final MediaManager _mediaManager;
+  final List<_ThumbnailTask> _queue = [];
+  bool _isProcessing = false;
+
+  ThumbnailQueue(this._mediaService, this._mediaManager);
+
+  void queue(String mediaId, File file, AttachmentKind kind) {
+    _queue.add(_ThumbnailTask(mediaId, file, kind));
+    _processNext();
+  }
+
+  Future<void> _processNext() async {
+    if (_isProcessing || _queue.isEmpty) return;
+    _isProcessing = true;
+    final task = _queue.removeAt(0);
+    try {
+      final exists = await _mediaManager.isThumbnailCached(task.mediaId);
+      if (!exists) {
+        Uint8List? thumbBytes;
+        if (task.kind == AttachmentKind.image) {
+          thumbBytes = await _mediaService.generateImageThumbnail(task.file);
+        } else if (task.kind == AttachmentKind.video) {
+          thumbBytes = await _mediaService.generateVideoThumbnail(task.file);
+        }
+        if (thumbBytes != null && thumbBytes.isNotEmpty) {
+          await _mediaManager.saveThumbnailDirectly(task.mediaId, thumbBytes);
+        }
+      }
+    } catch (e) {
+      debugPrint('GHOST_ERROR: Background thumbnail generation failed for ${task.mediaId}: $e');
+    } finally {
+      _isProcessing = false;
+      _processNext();
+    }
+  }
+}
+
+class _ThumbnailTask {
+  final String mediaId;
+  final File file;
+  final AttachmentKind kind;
+  _ThumbnailTask(this.mediaId, this.file, this.kind);
+}

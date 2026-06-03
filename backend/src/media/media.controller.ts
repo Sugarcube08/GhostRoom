@@ -8,6 +8,7 @@ import {
   BadRequestException,
   ForbiddenException,
   Req,
+  Query,
 } from "@nestjs/common";
 import { Request } from "express";
 import { MediaService } from "./media.service";
@@ -64,12 +65,18 @@ export class MediaController {
   }
 
   @Get("download-url/:id")
-  async getDownloadUrl(@Param("id") mediaId: string, @Req() req: Request) {
+  async getDownloadUrl(
+    @Param("id") mediaId: string,
+    @Req() req: Request,
+    @Query("thumbnail") thumbnail?: string,
+  ) {
     try {
       const dynamicPublicEndpoint = this.getDynamicPublicEndpoint(req);
+      const isThumbnail = thumbnail === "true";
       return await this.mediaService.generateDownloadUrl(
         mediaId,
         dynamicPublicEndpoint,
+        isThumbnail,
       );
     } catch (e: any) {
       throw new BadRequestException(e.message);

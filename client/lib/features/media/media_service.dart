@@ -282,14 +282,14 @@ class MediaService {
     bool isThumbnail = false,
   }) async {
     _logger.i('GHOST_LOG: MEDIA_DOWNLOAD_START isThumb: $isThumbnail');
-    final response = await http.get(Uri.parse('${relay.apiUrl}/media/download-url/${envelope.mediaId}'));
+    final urlString = isThumbnail 
+        ? '${relay.apiUrl}/media/download-url/${envelope.mediaId}?thumbnail=true'
+        : '${relay.apiUrl}/media/download-url/${envelope.mediaId}';
+    final response = await http.get(Uri.parse(urlString));
     if (response.statusCode != 200) throw Exception('Download request failed');
 
     final data = jsonDecode(response.body);
-    String downloadUrl = data['downloadUrl'];
-    if (isThumbnail) {
-      downloadUrl = downloadUrl.replaceFirst('/media/', '/thumbs/');
-    }
+    final String downloadUrl = data['downloadUrl'];
 
     final getResponse = await http.get(Uri.parse(downloadUrl));
     if (getResponse.statusCode != 200) throw Exception('R2 Download failed');

@@ -87,26 +87,42 @@ export class MediaService {
     const mediaId = uuidv4();
     const expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000); // 48 hours
 
+    const bulkKey = `media/${mediaId}`;
+    const thumbKey = `thumbs/${mediaId}`;
+
+    this.logger.log(
+      `GHOST_LOG: UPLOAD_URL REQUEST: ownerId=${ownerId} mediaId=${mediaId} bucket=${this.bucketName} key=${bulkKey} size=${size} mime=${mime} hash=${hash}`,
+    );
+
+    const s3SigningClient = this.getS3ClientForSigning(dynamicPublicEndpoint);
+
     // 1. Bulk URL
     const bulkCommand = new PutObjectCommand({
       Bucket: this.bucketName,
-      Key: `media/${mediaId}`,
+      Key: bulkKey,
       ContentLength: size,
       ContentType: mime,
     });
-    const uploadUrl = await getSignedUrl(this.s3Client, bulkCommand, {
+    const uploadUrl = await getSignedUrl(s3SigningClient, bulkCommand, {
       expiresIn: 3600,
     });
 
     // 2. Thumb URL
     const thumbCommand = new PutObjectCommand({
       Bucket: this.bucketName,
-      Key: `thumbs/${mediaId}`,
+      Key: thumbKey,
       ContentType: "image/jpeg",
     });
-    const thumbUrl = await getSignedUrl(this.s3Client, thumbCommand, {
+    const thumbUrl = await getSignedUrl(s3SigningClient, thumbCommand, {
       expiresIn: 3600,
     });
+
+    const mappedUploadUrl = this.mapToPublicUrl(uploadUrl, dynamicPublicEndpoint);
+    const mappedThumbUrl = this.mapToPublicUrl(thumbUrl, dynamicPublicEndpoint);
+
+    this.logger.log(
+      `GHOST_LOG: UPLOAD_URLS GENERATED: mediaId=${mediaId} uploadUrl=${mappedUploadUrl} thumbUrl=${mappedThumbUrl}`,
+    );
 
     // 3. Store metadata in Postgres
     try {
@@ -144,8 +160,8 @@ export class MediaService {
 
     return {
       mediaId,
-      uploadUrl: this.mapToPublicUrl(uploadUrl, dynamicPublicEndpoint),
-      thumbUrl: this.mapToPublicUrl(thumbUrl, dynamicPublicEndpoint),
+      uploadUrl: mappedUploadUrl,
+      thumbUrl: mappedThumbUrl,
     };
   }
 
@@ -183,7 +199,7 @@ export class MediaService {
     });
   }
 
-  async generateDownloadUrl(mediaId: string, dynamicPublicEndpoint?: string) {
+  async generateDownloadUrl(mediaId: string, dynamicPublicEndpoint?: string, isThumbnail = false) {
     const metadata = await this.mediaRepo.findOne({ where: { id: mediaId } });
     if (
       !metadata ||
@@ -192,24 +208,38 @@ export class MediaService {
       throw new Error("Media not found or expired");
     }
 
+    const key = isThumbnail ? `thumbs/${mediaId}` : `media/${mediaId}`;
+    this.logger.log(
+      `GHOST_LOG: DOWNLOAD_URL REQUEST: mediaId=${mediaId} bucket=${this.bucketName} key=${key} isThumbnail=${isThumbnail}`,
+    );
+
+    const s3SigningClient = this.getS3ClientForSigning(dynamicPublicEndpoint);
+
     const command = new GetObjectCommand({
       Bucket: this.bucketName,
-      Key: `media/${mediaId}`,
+      Key: key,
     });
 
-    const downloadUrl = await getSignedUrl(this.s3Client, command, {
+    const downloadUrl = await getSignedUrl(s3SigningClient, command, {
       expiresIn: 3600,
     });
+
+    const publicUrl = this.mapToPublicUrl(downloadUrl, dynamicPublicEndpoint);
+    this.logger.log(`GHOST_LOG: DOWNLOAD_URL GENERATED: mediaId=${mediaId} downloadUrl=${publicUrl}`);
+
     return {
-      downloadUrl: this.mapToPublicUrl(downloadUrl, dynamicPublicEndpoint),
+      downloadUrl: publicUrl,
       metadata,
     };
   }
 
   private mapToPublicUrl(url: string, dynamicPublicEndpoint?: string): string {
-    const publicEndpoint =
-      this.configService.get<string>("R2_PUBLIC_ENDPOINT") ||
-      dynamicPublicEndpoint;
+    let publicEndpoint = this.configService.get<string>("R2_PUBLIC_ENDPOINT");
+    if (!publicEndpoint || publicEndpoint.includes("localhost") || publicEndpoint.includes("127.0.0.1")) {
+      if (dynamicPublicEndpoint) {
+        publicEndpoint = dynamicPublicEndpoint;
+      }
+    }
     if (!publicEndpoint) return url;
 
     try {
@@ -221,6 +251,37 @@ export class MediaService {
     } catch {
       return url;
     }
+  }
+
+  private getS3ClientForSigning(dynamicPublicEndpoint?: string): S3Client {
+    let publicEndpoint = this.configService.get<string>("R2_PUBLIC_ENDPOINT");
+    if (!publicEndpoint || publicEndpoint.includes("localhost") || publicEndpoint.includes("127.0.0.1")) {
+      if (dynamicPublicEndpoint) {
+        publicEndpoint = dynamicPublicEndpoint;
+      }
+    }
+
+    if (publicEndpoint) {
+      const accessKeyId = this.configService.get<string>("R2_ACCESS_KEY_ID");
+      const secretAccessKey = this.configService.get<string>(
+        "R2_SECRET_ACCESS_KEY",
+      );
+      const endpoint = this.configService.get<string>("R2_ENDPOINT");
+      
+      // If we are using a custom endpoint (like MinIO) and we need to sign for a public IP,
+      // we must configure the signing client with the public endpoint so Host signatures match.
+      return new S3Client({
+        region: "auto",
+        endpoint: publicEndpoint,
+        forcePathStyle: !!endpoint,
+        credentials: {
+          accessKeyId: accessKeyId || "",
+          secretAccessKey: secretAccessKey || "",
+        },
+      });
+    }
+
+    return this.s3Client;
   }
 
   async deleteMedia(mediaId: string) {
