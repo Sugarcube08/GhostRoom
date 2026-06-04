@@ -260,7 +260,7 @@ export class MediaService {
         publicEndpoint = dynamicPublicEndpoint;
       }
     }
-    if (!publicEndpoint) return url;
+    if (!publicEndpoint || publicEndpoint.includes("r2.cloudflarestorage.com")) return url;
 
     try {
       const parsedUrl = new URL(url);
@@ -281,7 +281,7 @@ export class MediaService {
       }
     }
 
-    if (publicEndpoint) {
+    if (publicEndpoint && !publicEndpoint.includes("r2.cloudflarestorage.com")) {
       const accessKeyId = this.configService.get<string>("R2_ACCESS_KEY_ID");
       const secretAccessKey = this.configService.get<string>(
         "R2_SECRET_ACCESS_KEY",
