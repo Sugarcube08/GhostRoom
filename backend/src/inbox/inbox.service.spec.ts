@@ -48,6 +48,7 @@ describe("InboxService", () => {
       save: (jest.fn() as any).mockResolvedValue({}),
       update: (jest.fn() as any).mockResolvedValue({}),
       count: (jest.fn() as any).mockResolvedValue(0),
+      delete: (jest.fn() as any).mockResolvedValue({}),
     };
 
     const module: TestingModule = await Test.createTestingModule({

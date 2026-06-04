@@ -198,17 +198,29 @@ export class InboxService {
       });
       if (!message) return;
 
-      // Mark as delivered
-      message.delivered_at = new Date();
-      if (message.retention_mode === "EPHEMERAL") {
-        message.expires_at = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
-      }
-      await this.messageRepo.save(message);
+      if (message.retention_mode === "VIEW_ONCE") {
+        if (message.media_id) {
+          try {
+            await this.mediaService.decrementReferenceCount(message.media_id);
+          } catch (e: any) {
+            this.logger.error(`Failed to decrement media refcount for VIEW_ONCE message: ${e?.message}`);
+          }
+        }
+        await this.messageRepo.delete(messageId);
+        await this.deliveryRepo.delete({ message_id: messageId });
+      } else {
+        // Mark as delivered
+        message.delivered_at = new Date();
+        if (message.retention_mode === "EPHEMERAL") {
+          message.expires_at = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+        }
+        await this.messageRepo.save(message);
 
-      await this.deliveryRepo.update(
-        { message_id: messageId },
-        { status: "ACKNOWLEDGED" },
-      );
+        await this.deliveryRepo.update(
+          { message_id: messageId },
+          { status: "ACKNOWLEDGED" },
+        );
+      }
     } catch (e: any) {
       this.logger.error(`Failed to ACK message in Postgres: ${e?.message}`);
     }
