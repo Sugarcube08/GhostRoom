@@ -27,90 +27,99 @@ class AnonymousRoomsScreen extends ConsumerWidget {
     return Scaffold(
       backgroundColor: colors.primaryBackground,
       body: SafeArea(
-        child: CustomScrollView(
-          slivers: [
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: AppSpacing.l,
-                  vertical: AppSpacing.xl,
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'SPACES',
-                      style: AppTypography.hero(context),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'Temporary. Anonymous. Zero Footprint.',
-                      style: AppTypography.secondary(context).copyWith(
-                        color: colors.secondaryText.withAlpha(100),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.l),
-                child: _buildIntro(context),
-              ),
-            ),
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(AppSpacing.l, AppSpacing.xl, AppSpacing.l, AppSpacing.m),
-                child: Text(
-                  'CREATE NEW SPACE',
-                  style: AppTypography.caption(context).copyWith(
-                    fontWeight: FontWeight.bold,
-                    color: colors.secondaryText.withAlpha(80),
-                    letterSpacing: 1.5,
-                  ),
-                ),
-              ),
-            ),
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.l),
-                child: _buildCreationCards(context, ref, activeRelay.value != null),
-              ),
-            ),
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(AppSpacing.l, AppSpacing.xl, AppSpacing.l, AppSpacing.m),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      'RECENT SPACES',
-                      style: AppTypography.caption(context).copyWith(
-                        fontWeight: FontWeight.bold,
-                        color: colors.secondaryText.withAlpha(80),
-                        letterSpacing: 1.5,
-                      ),
-                    ),
-                    TextButton(
-                      onPressed: () => _showJoinOptions(context, ref),
-                      child: Text(
-                        'JOIN VIA INVITE',
-                        style: AppTypography.caption(context).copyWith(
-                          color: colors.ghostAccent,
-                          fontWeight: FontWeight.bold,
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            return Center(
+              child: Container(
+                constraints: const BoxConstraints(maxWidth: 600),
+                child: CustomScrollView(
+                  slivers: [
+                    SliverToBoxAdapter(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: AppSpacing.l,
+                          vertical: AppSpacing.xl,
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'SPACES',
+                              style: AppTypography.hero(context),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              'Temporary. Anonymous. Zero Footprint.',
+                              style: AppTypography.secondary(context).copyWith(
+                                color: colors.secondaryText.withAlpha(100),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ),
+                    SliverToBoxAdapter(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.l),
+                        child: _buildIntro(context),
+                      ),
+                    ),
+                    SliverToBoxAdapter(
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(AppSpacing.l, AppSpacing.xl, AppSpacing.l, AppSpacing.m),
+                        child: Text(
+                          'CREATE NEW SPACE',
+                          style: AppTypography.caption(context).copyWith(
+                            fontWeight: FontWeight.bold,
+                            color: colors.secondaryText.withAlpha(80),
+                            letterSpacing: 1.5,
+                          ),
+                        ),
+                      ),
+                    ),
+                    SliverToBoxAdapter(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.l),
+                        child: _buildCreationCards(context, ref, activeRelay.value != null),
+                      ),
+                    ),
+                    SliverToBoxAdapter(
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(AppSpacing.l, AppSpacing.xl, AppSpacing.l, AppSpacing.m),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              'RECENT SPACES',
+                              style: AppTypography.caption(context).copyWith(
+                                fontWeight: FontWeight.bold,
+                                color: colors.secondaryText.withAlpha(80),
+                                letterSpacing: 1.5,
+                              ),
+                            ),
+                            TextButton(
+                              onPressed: () => _showJoinOptions(context, ref),
+                              child: Text(
+                                'JOIN VIA INVITE',
+                                style: AppTypography.caption(context).copyWith(
+                                  color: colors.ghostAccent,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    SliverPadding(
+                      padding: const EdgeInsets.only(bottom: 120),
+                      sliver: _buildRecentRooms(recentRooms, context, ref),
+                    ),
                   ],
                 ),
               ),
-            ),
-            SliverPadding(
-              padding: const EdgeInsets.only(bottom: 120),
-              sliver: _buildRecentRooms(recentRooms, context, ref),
-            ),
-          ],
+            );
+          }
         ),
       ),
     );

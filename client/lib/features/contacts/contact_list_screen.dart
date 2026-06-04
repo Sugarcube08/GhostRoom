@@ -27,124 +27,133 @@ class _ContactListScreenState extends ConsumerState<ContactListScreen>
   Widget build(BuildContext context) {
     final colors = AppColors.of(context);
 
-    return ValueListenableBuilder(
-      valueListenable: Hive.box<Contact>('contacts').listenable(),
-      builder: (context, _, _) {
-        final contacts = ref.watch(contactServiceProvider).getAllContacts();
-        final identity = ref.watch(identityServiceProvider).currentIdentity;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return ValueListenableBuilder(
+          valueListenable: Hive.box<Contact>('contacts').listenable(),
+          builder: (context, _, _) {
+            final contacts = ref.watch(contactServiceProvider).getAllContacts();
+            final identity = ref.watch(identityServiceProvider).currentIdentity;
 
-        return Scaffold(
-          backgroundColor: colors.primaryBackground,
-          body: SafeArea(
-            bottom: false,
-            child: CustomScrollView(
-              slivers: [
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: AppSpacing.l,
-                      vertical: AppSpacing.xl,
-                    ),
-                    child: Text(
-                      'CONNECTIONS',
-                      style: AppTypography.hero(context),
-                    ),
-                  ),
-                ),
-                if (identity != null)
-                  SliverToBoxAdapter(
-                    child: MyPassportCard(
-                      identity: identity,
-                      onTap: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => const MyPassportScreen(),
+            return Scaffold(
+              backgroundColor: colors.primaryBackground,
+              body: SafeArea(
+                bottom: false,
+                child: Center(
+                  child: Container(
+                    constraints: const BoxConstraints(maxWidth: 600),
+                    child: CustomScrollView(
+                      slivers: [
+                        SliverToBoxAdapter(
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: AppSpacing.l,
+                              vertical: AppSpacing.xl,
+                            ),
+                            child: Text(
+                              'CONNECTIONS',
+                              style: AppTypography.hero(context),
+                            ),
                           ),
-                        );
-                      },
-                    ),
-                  ),
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: AppSpacing.l,
-                      vertical: AppSpacing.m,
-                    ),
-                    child: Row(
-                      children: [
-                        _buildQuickAction(
-                          context,
-                          icon: Icons.qr_code_scanner,
-                          label: 'SCAN',
-                          onTap: () => openScanner(context),
                         ),
-                        const SizedBox(width: AppSpacing.m),
-                        _buildQuickAction(
-                          context,
-                          icon: Icons.file_download_outlined,
-                          label: 'IMPORT',
-                          onTap: () => showAddOptions(context),
+                        if (identity != null)
+                          SliverToBoxAdapter(
+                            child: MyPassportCard(
+                              identity: identity,
+                              onTap: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => const MyPassportScreen(),
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
+                        SliverToBoxAdapter(
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: AppSpacing.l,
+                              vertical: AppSpacing.m,
+                            ),
+                            child: Row(
+                              children: [
+                                _buildQuickAction(
+                                  context,
+                                  icon: Icons.qr_code_scanner,
+                                  label: 'SCAN',
+                                  onTap: () => openScanner(context),
+                                ),
+                                const SizedBox(width: AppSpacing.m),
+                                _buildQuickAction(
+                                  context,
+                                  icon: Icons.file_download_outlined,
+                                  label: 'IMPORT',
+                                  onTap: () => showAddOptions(context),
+                                ),
+                                const SizedBox(width: AppSpacing.m),
+                                _buildQuickAction(
+                                  context,
+                                  icon: Icons.share_outlined,
+                                  label: 'SHARE',
+                                  onTap: () => shareIdentity(ref),
+                                ),
+                              ],
+                            ),
+                          ),
                         ),
-                        const SizedBox(width: AppSpacing.m),
-                        _buildQuickAction(
-                          context,
-                          icon: Icons.share_outlined,
-                          label: 'SHARE',
-                          onTap: () => shareIdentity(ref),
+                        SliverToBoxAdapter(
+                          child: Padding(
+                            padding: const EdgeInsets.fromLTRB(
+                              AppSpacing.l,
+                              AppSpacing.l,
+                              AppSpacing.l,
+                              AppSpacing.s,
+                            ),
+                            child: Text(
+                              'YOUR NETWORK',
+                              style: AppTypography.caption(context).copyWith(
+                                fontWeight: FontWeight.bold,
+                                color: colors.secondaryText.withAlpha(80),
+                                letterSpacing: 1.5,
+                              ),
+                            ),
+                          ),
                         ),
+                        if (contacts.isEmpty)
+                          SliverFillRemaining(
+                            hasScrollBody: false,
+                            child: _buildEmptyState(context),
+                          )
+                        else
+                          SliverList(
+                            delegate: SliverChildBuilderDelegate((context, index) {
+                              final contact = contacts[index];
+                              return ContactListItem(
+                                contact: contact,
+                                onTap: () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) =>
+                                          ContactDetailScreen(contact: contact),
+                                    ),
+                                  );
+                                },
+                              );
+                            }, childCount: contacts.length),
+                          ),
+                        // Add a small spacer at the bottom to account for the floating Nav
+                        const SliverToBoxAdapter(child: SizedBox(height: 120)),
                       ],
                     ),
                   ),
                 ),
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(
-                      AppSpacing.l,
-                      AppSpacing.l,
-                      AppSpacing.l,
-                      AppSpacing.s,
-                    ),
-                    child: Text(
-                      'YOUR NETWORK',
-                      style: AppTypography.caption(context).copyWith(
-                        fontWeight: FontWeight.bold,
-                        color: colors.secondaryText.withAlpha(80),
-                        letterSpacing: 1.5,
-                      ),
-                    ),
-                  ),
-                ),
-                if (contacts.isEmpty)
-                  SliverFillRemaining(
-                    hasScrollBody: false,
-                    child: _buildEmptyState(context),
-                  )
-                else
-                  SliverList(
-                    delegate: SliverChildBuilderDelegate((context, index) {
-                      final contact = contacts[index];
-                      return ContactListItem(
-                        contact: contact,
-                        onTap: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) =>
-                                  ContactDetailScreen(contact: contact),
-                            ),
-                          );
-                        },
-                      );
-                    }, childCount: contacts.length),
-                  ),
-                // Add a small spacer at the bottom to account for the floating FAB and Nav
-                const SliverToBoxAdapter(child: SizedBox(height: 120)),
-              ],
-            ),
-          ),
+              ),
+            );
+          },
         );
-      },
+      }
     );
   }
 

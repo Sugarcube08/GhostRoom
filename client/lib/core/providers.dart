@@ -1,9 +1,12 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sodium/sodium_sumo.dart';
+import 'package:hive_flutter/hive_flutter.dart';
 import 'crypto/identity_service.dart';
 import 'network/relay_manager.dart';
 import 'network/websocket_service.dart';
 import 'notification_service.dart';
+
+import '../features/chat/message.dart';
 
 import '../features/spaces/space_service.dart';
 import '../features/contacts/contact_service.dart';
@@ -131,4 +134,17 @@ final activeRelayProvider = FutureProvider<RelayProfile?>((ref) async {
 
 final recentRoomsProvider = FutureProvider<List<Map<String, dynamic>>>((ref) async {
   return ref.watch(relayManagerProvider).getRecentRooms();
+});
+
+final requestCountProvider = Provider<int>((ref) {
+  // Watch messages box for changes
+  ref.watch(messageBoxListenableProvider);
+  return ref.read(conversationServiceProvider).getRequests().length;
+});
+
+final messageBoxListenableProvider = Provider<void>((ref) {
+  final box = Hive.box<Message>('messages');
+  void listener() => ref.invalidateSelf();
+  box.listenable().addListener(listener);
+  ref.onDispose(() => box.listenable().removeListener(listener));
 });

@@ -9,26 +9,29 @@ import 'conversation_screen.dart';
 import '../../design_system/colors.dart';
 import '../../design_system/typography.dart';
 import '../../design_system/spacing.dart';
+import '../../design_system/components/components.dart';
 
 class RequestsScreen extends ConsumerWidget {
   const RequestsScreen({super.key});
 
-  Widget _buildSubtitle(Conversation conv) {
+  String _buildSubtitleText(Conversation conv) {
     String text = conv.lastMessage?.plaintext ?? 'No messages';
     if (conv.lastMessage?.type == MessageType.image) {
-      text = '[Image]';
+      text = 'Photo';
     } else if (conv.lastMessage?.type == MessageType.video) {
-      text = '[Video]';
+      text = 'Video';
+    } else if (conv.lastMessage?.type == MessageType.voice) {
+      text = 'Voice Note';
     }
-    return Text(text, maxLines: 1, overflow: TextOverflow.ellipsis);
+    return text;
   }
 
   Widget _buildDismissBackground(Color color, IconData icon, Alignment alignment) {
     return Container(
       color: color,
       alignment: alignment,
-      padding: const EdgeInsets.symmetric(horizontal: 20),
-      child: Icon(icon, color: Colors.white),
+      padding: const EdgeInsets.symmetric(horizontal: 24),
+      child: Icon(icon, color: Colors.white, size: 28),
     );
   }
 
@@ -47,17 +50,28 @@ class RequestsScreen extends ConsumerWidget {
         return Scaffold(
           backgroundColor: colors.primaryBackground,
           appBar: AppBar(
-            title: const Text('MESSAGE REQUESTS'),
-            backgroundColor: colors.primaryBackground,
+            title: const Text('IDENTITY LINKS'),
+            backgroundColor: Colors.transparent,
             elevation: 0,
+            leading: IconButton(
+              icon: const Icon(Icons.arrow_back_ios_new, size: 20),
+              onPressed: () => Navigator.pop(context),
+            ),
           ),
           body: requests.isEmpty
               ? Center(
-                  child: Text(
-                    'No pending requests.',
-                    style: AppTypography.secondary(context).copyWith(
-                      color: colors.secondaryText.withAlpha(100),
-                    ),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.mail_lock_outlined, size: 64, color: colors.secondaryText.withAlpha(20)),
+                      const SizedBox(height: 24),
+                      Text(
+                        'No pending requests.',
+                        style: AppTypography.section(context).copyWith(
+                          color: colors.secondaryText.withAlpha(80),
+                        ),
+                      ),
+                    ],
                   ),
                 )
               : ListView.builder(
@@ -67,8 +81,8 @@ class RequestsScreen extends ConsumerWidget {
                     final req = requests[index];
                     return Dismissible(
                       key: Key(req.contactId),
-                      background: _buildDismissBackground(colors.success, Icons.check, Alignment.centerLeft),
-                      secondaryBackground: _buildDismissBackground(colors.error, Icons.block, Alignment.centerRight),
+                      background: _buildDismissBackground(colors.success, Icons.check_circle_outline, Alignment.centerLeft),
+                      secondaryBackground: _buildDismissBackground(colors.error, Icons.block_outlined, Alignment.centerRight),
                       confirmDismiss: (direction) async {
                         if (direction == DismissDirection.startToEnd) {
                           await ref.read(conversationServiceProvider).acceptRequest(req.contactId);
@@ -78,24 +92,7 @@ class RequestsScreen extends ConsumerWidget {
                           return true;
                         }
                       },
-                      child: ListTile(
-                        leading: CircleAvatar(
-                          backgroundColor: colors.elevatedSurface,
-                          child: Icon(Icons.person_outline, color: colors.secondaryText),
-                        ),
-                        title: Text(
-                          'Unknown Sender',
-                          style: AppTypography.section(context).copyWith(fontWeight: FontWeight.w600),
-                        ),
-                        subtitle: _buildSubtitle(req),
-                        trailing: req.unreadCount > 0 ? Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                          decoration: BoxDecoration(color: colors.ghostAccent, borderRadius: BorderRadius.circular(10)),
-                          child: Text(
-                            req.unreadCount > 9 ? '9+' : req.unreadCount.toString(),
-                            style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.white),
-                          ),
-                        ) : null,
+                      child: GhostCard(
                         onTap: () {
                           Navigator.push(
                             context,
@@ -104,6 +101,46 @@ class RequestsScreen extends ConsumerWidget {
                             ),
                           );
                         },
+                        margin: const EdgeInsets.symmetric(horizontal: AppSpacing.l, vertical: AppSpacing.xs),
+                        padding: const EdgeInsets.all(AppSpacing.m),
+                        type: GhostSurfaceType.secondary,
+                        child: Row(
+                          children: [
+                            GhostAvatar(
+                              alias: 'Unknown',
+                              size: 48,
+                              backgroundColor: colors.elevatedSurface,
+                            ),
+                            const SizedBox(width: AppSpacing.m),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Unknown Sender',
+                                    style: AppTypography.section(context).copyWith(fontWeight: FontWeight.bold),
+                                  ),
+                                  Text(
+                                    _buildSubtitleText(req),
+                                    style: AppTypography.caption(context).copyWith(
+                                      color: colors.secondaryText.withAlpha(150),
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ],
+                              ),
+                            ),
+                            if (req.unreadCount > 0)
+                              GhostBadge(
+                                label: req.unreadCount.toString(),
+                                color: colors.ghostAccent,
+                                textColor: Colors.white,
+                              ),
+                            const SizedBox(width: AppSpacing.s),
+                            Icon(Icons.chevron_right, size: 16, color: colors.secondaryText.withAlpha(50)),
+                          ],
+                        ),
                       ),
                     );
                   },

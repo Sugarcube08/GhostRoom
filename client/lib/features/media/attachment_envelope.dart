@@ -34,13 +34,24 @@ class AttachmentEnvelope {
     if (meta != null) 'meta': meta,
   };
 
-  factory AttachmentEnvelope.fromJson(Map<String, dynamic> json) => AttachmentEnvelope(
-    kind: AttachmentKind.values.firstWhere((e) => e.name == json['kind']),
-    mediaId: json['media_id'],
-    encryptedKey: json['key'],
-    hash: json['hash'],
-    name: json['name'],
-    relayUrl: json['relay_url'],
-    meta: json['meta'] != null ? Map<String, dynamic>.from(json['meta']) : null,
-  );
+  factory AttachmentEnvelope.fromJson(Map<String, dynamic> json) {
+    AttachmentKind kind;
+    try {
+      kind = AttachmentKind.values.firstWhere(
+        (e) => e.name == json['kind'],
+      );
+    } catch (_) {
+      kind = AttachmentKind.file; // Safe fallback
+    }
+
+    return AttachmentEnvelope(
+      kind: kind,
+      mediaId: json['media_id'],
+      encryptedKey: json['key'],
+      hash: json['hash'],
+      name: json['name'],
+      relayUrl: json['relay_url'],
+      meta: json['meta'] != null ? Map<String, dynamic>.from(json['meta']) : null,
+    );
+  }
 }

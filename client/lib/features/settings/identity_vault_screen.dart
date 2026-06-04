@@ -5,6 +5,7 @@ import '../../core/providers.dart';
 import 'relay_settings_screen.dart';
 import 'identity_actions.dart';
 import '../contacts/my_passport_screen.dart';
+import '../chat/requests_screen.dart';
 import '../../design_system/colors.dart';
 import '../../design_system/typography.dart';
 import '../../design_system/spacing.dart';
@@ -26,104 +27,122 @@ class _IdentityVaultScreenState extends ConsumerState<IdentityVaultScreen> with 
     return Scaffold(
       backgroundColor: colors.primaryBackground,
       body: SafeArea(
-        child: CustomScrollView(
-          slivers: [
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: AppSpacing.l,
-                  vertical: AppSpacing.xl,
-                ),
-                child: Text(
-                  'IDENTITY VAULT',
-                  style: AppTypography.hero(context),
-                ),
-              ),
-            ),
-            if (identity != null) ...[
-              SliverToBoxAdapter(child: _buildIdentityStatus(context)),
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.only(top: AppSpacing.m),
-                  child: _buildPassportHero(context, identity),
-                ),
-              ),
-            ],
-            SliverPadding(
-              padding: const EdgeInsets.symmetric(vertical: AppSpacing.l),
-              sliver: SliverList(
-                delegate: SliverChildListDelegate([
-                  _buildVaultSection(
-                    context,
-                    'SECURITY & RECOVERY',
-                    [
-                      VaultAction(
-                        icon: Icons.vpn_key_outlined,
-                        title: 'Recovery Seed',
-                        subtitle: 'Manage your 24-word phrase',
-                        onTap: () => _showSeedReveal(context, ref),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            return Center(
+              child: Container(
+                constraints: const BoxConstraints(maxWidth: 600),
+                child: CustomScrollView(
+                  slivers: [
+                    SliverToBoxAdapter(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: AppSpacing.l,
+                          vertical: AppSpacing.xl,
+                        ),
+                        child: Text(
+                          'IDENTITY VAULT',
+                          style: AppTypography.hero(context),
+                        ),
                       ),
-                      VaultAction(
-                        icon: Icons.backup_outlined,
-                        title: 'Cloud Backup',
-                        subtitle: 'Encrypted archives',
-                        onTap: () => _showBackupOptions(context, ref),
-                      ),
-                      VaultAction(
-                        icon: Icons.health_and_safety_outlined,
-                        title: 'Recovery Drill',
-                        subtitle: 'Test your access',
-                        onTap: () => _startRecoveryDrill(context),
+                    ),
+                    if (identity != null) ...[
+                      SliverToBoxAdapter(child: _buildIdentityStatus(context)),
+                      SliverToBoxAdapter(
+                        child: Padding(
+                          padding: const EdgeInsets.only(top: AppSpacing.m),
+                          child: _buildPassportHero(context, identity),
+                        ),
                       ),
                     ],
-                  ),
-                  _buildVaultSection(
-                    context,
-                    'INFRASTRUCTURE',
-                    [
-                      VaultAction(
-                        icon: Icons.router_outlined,
-                        title: 'Relay Nodes',
-                        subtitle: 'Manage secure mailboxes',
-                        onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const RelaySettingsScreen())),
+                    SliverPadding(
+                      padding: const EdgeInsets.symmetric(vertical: AppSpacing.l),
+                      sliver: SliverList(
+                        delegate: SliverChildListDelegate([
+                          _buildVaultSection(
+                            context,
+                            'SECURITY & RECOVERY',
+                            [
+                              VaultAction(
+                                icon: Icons.vpn_key_outlined,
+                                title: 'Recovery Seed',
+                                subtitle: 'Manage your 24-word phrase',
+                                onTap: () => _showSeedReveal(context, ref),
+                              ),
+                              VaultAction(
+                                icon: Icons.mail_lock_outlined,
+                                title: 'Identity Links',
+                                subtitle: 'Manage message requests',
+                                onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const RequestsScreen())),
+                              ),
+                              VaultAction(
+                                icon: Icons.backup_outlined,
+                                title: 'Cloud Backup',
+                                subtitle: 'Encrypted archives',
+                                onTap: () => _showBackupOptions(context, ref),
+                              ),
+
+                              VaultAction(
+                                icon: Icons.health_and_safety_outlined,
+                                title: 'Recovery Drill',
+                                subtitle: 'Test your access',
+                                onTap: () => _startRecoveryDrill(context),
+                              ),
+                            ],
+                          ),
+                          _buildVaultSection(
+                            context,
+                            'INFRASTRUCTURE',
+                            [
+                              VaultAction(
+                                icon: Icons.router_outlined,
+                                title: 'Relay Nodes',
+                                subtitle: 'Manage secure mailboxes',
+                                onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const RelaySettingsScreen())),
+                              ),
+                              VaultAction(
+                                icon: Icons.analytics_outlined,
+                                title: 'Diagnostics',
+                                subtitle: 'System health check',
+                                onTap: () => _showDiagnostics(context, ref),
+                              ),
+                            ],
+                          ),
+                          _buildVaultSection(
+                            context,
+                            'DANGER ZONE',
+                            [
+                              VaultAction(
+                                icon: Icons.delete_forever_outlined,
+                                title: 'Wipe All Data',
+                                subtitle: 'Irreversible local erase',
+                                color: colors.error,
+                                onTap: () => _showPanicConfirm(context, ref),
+                              ),
+                            ],
+                          ),
+                        ]),
                       ),
-                      VaultAction(
-                        icon: Icons.analytics_outlined,
-                        title: 'Diagnostics',
-                        subtitle: 'System health check',
-                        onTap: () => _showDiagnostics(context, ref),
+                    ),
+                    const SliverToBoxAdapter(
+                      child: Padding(
+                        padding: EdgeInsets.symmetric(vertical: 48),
+                        child: Center(
+                          child: Text(
+                            'GHOSTROOM V3.0 PREMIUM\nZERO-KNOWLEDGE ARCHITECTURE',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(color: Colors.white10, fontSize: 10, letterSpacing: 2),
+                          ),
+                        ),
                       ),
-                    ],
-                  ),
-                  _buildVaultSection(
-                    context,
-                    'DANGER ZONE',
-                    [
-                      VaultAction(
-                        icon: Icons.delete_forever_outlined,
-                        title: 'Wipe All Data',
-                        subtitle: 'Irreversible local erase',
-                        color: colors.error,
-                        onTap: () => _showPanicConfirm(context, ref),
-                      ),
-                    ],
-                  ),
-                ]),
-              ),
-            ),
-            const SliverToBoxAdapter(
-              child: Padding(
-                padding: EdgeInsets.symmetric(vertical: 48),
-                child: Center(
-                  child: Text(
-                    'GHOSTROOM V3.0 PREMIUM\nZERO-KNOWLEDGE ARCHITECTURE',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(color: Colors.white10, fontSize: 10, letterSpacing: 2),
-                  ),
+                    ),
+                    // Bottom Nav spacing
+                    const SliverToBoxAdapter(child: SizedBox(height: 120)),
+                  ],
                 ),
               ),
-            ),
-          ],
+            );
+          }
         ),
       ),
     );

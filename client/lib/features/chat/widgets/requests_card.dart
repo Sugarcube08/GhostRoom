@@ -17,6 +17,7 @@ class RequestsCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = AppColors.of(context);
+    final bool isEmpty = count == 0;
     
     return GhostCard(
       onTap: onTap,
@@ -32,10 +33,14 @@ class RequestsCard extends StatelessWidget {
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: colors.warning.withAlpha(30),
+              color: isEmpty ? colors.secondaryText.withAlpha(20) : colors.warning.withAlpha(30),
               shape: BoxShape.circle,
             ),
-            child: Icon(Icons.mail_lock_outlined, color: colors.warning, size: 24),
+            child: Icon(
+              isEmpty ? Icons.mail_outline : Icons.mail_lock_outlined, 
+              color: isEmpty ? colors.secondaryText.withAlpha(100) : colors.warning, 
+              size: 24
+            ),
           ),
           const SizedBox(width: AppSpacing.m),
           Expanded(
@@ -46,24 +51,26 @@ class RequestsCard extends StatelessWidget {
                   'Message Requests',
                   style: AppTypography.section(context).copyWith(
                     fontWeight: FontWeight.w700,
+                    color: isEmpty ? colors.primaryText.withAlpha(150) : colors.primaryText,
                   ),
                 ),
                 Text(
-                  'Pending identity links',
+                  isEmpty ? 'No pending requests' : 'Pending identity links',
                   style: AppTypography.caption(context).copyWith(
-                    color: colors.secondaryText.withAlpha(150),
+                    color: colors.secondaryText.withAlpha(100),
                   ),
                 ),
               ],
             ),
           ),
-          GhostBadge(
-            label: count.toString(),
-            color: colors.warning,
-            textColor: Colors.black,
-          ),
+          if (!isEmpty)
+            GhostBadge(
+              label: count.toString(),
+              color: colors.warning,
+              textColor: Colors.black,
+            ),
           const SizedBox(width: AppSpacing.s),
-          Icon(Icons.chevron_right, color: colors.secondaryText.withAlpha(100)),
+          Icon(Icons.chevron_right, color: colors.secondaryText.withAlpha(50)),
         ],
       ),
     );

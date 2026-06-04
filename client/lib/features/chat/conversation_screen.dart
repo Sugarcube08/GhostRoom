@@ -6,6 +6,7 @@ import 'package:wechat_assets_picker/wechat_assets_picker.dart';
 import 'package:video_player/video_player.dart';
 import 'package:chewie/chewie.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:file_picker/file_picker.dart';
 import 'dart:io';
 import 'dart:async';
 import 'package:hive_flutter/hive_flutter.dart';
@@ -671,52 +672,73 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
     final messenger = ScaffoldMessenger.of(context);
     final convService = ref.read(conversationServiceProvider);
     final contactId = widget.conversation.contactId;
-    
+
     try {
       _logger.i('GHOST_LOG: MEDIA_PICKER_OPEN_START native_picker');
-      final List<AssetEntity>? result = await AssetPicker.pickAssets(
-        context,
-        pickerConfig: const AssetPickerConfig(
-          maxAssets: 1,
-          requestType: RequestType.common,
-        ),
-      );
-      
-      if (result == null || result.isEmpty) {
+      File? pickedFile;
+
+      if (Platform.isAndroid || Platform.isIOS) {
+        final List<AssetEntity>? result = await AssetPicker.pickAssets(
+          context,
+          pickerConfig: const AssetPickerConfig(
+            maxAssets: 1,
+            requestType: RequestType.common,
+          ),
+        );
+
+        if (result != null && result.isNotEmpty) {
+          pickedFile = await result.first.file;
+        }
+      } else {
+        // Desktop Fallback
+        final result = await FilePicker.pickFiles(
+          type: FileType.media,
+          allowMultiple: false,
+        );
+
+        if (result != null && result.files.single.path != null) {
+          pickedFile = File(result.files.single.path!);
+        }
+      }
+
+      if (pickedFile == null) {
         _logger.i('GHOST_LOG: MEDIA_PICKER_CANCELLED native_picker');
         return;
       }
-      
-      final file = await result.first.file;
-      if (file == null) {
-        _logger.e('GHOST_LOG: MEDIA_PICKER_FILE_NULL native_picker');
-        return;
-      }
-      
-      _logger.i('GHOST_LOG: MEDIA_PICKER_RETURNED native_picker path=${file.path}');
-      _sessionPickedPaths.insert(0, file.path);
 
-      final path = file.path.toLowerCase();
-      final isVideo = path.endsWith('.mp4') || path.endsWith('.mov') || path.endsWith('.avi') || path.endsWith('.mkv');
-      
+      _logger.i('GHOST_LOG: MEDIA_PICKER_RETURNED native_picker path=${pickedFile.path}');
+      _sessionPickedPaths.insert(0, pickedFile.path);
+
+      final path = pickedFile.path.toLowerCase();
+      final isVideo = path.endsWith('.mp4') ||
+          path.endsWith('.mov') ||
+          path.endsWith('.avi') ||
+          path.endsWith('.mkv');
+
       if (isVideo) {
-        messenger.showSnackBar(const SnackBar(content: Text('Compressing & Uploading Video...')));
-        await convService.sendVideo(contactId, file);
+        messenger.showSnackBar(
+          const SnackBar(content: Text('Compressing & Uploading Video...')),
+        );
+        await convService.sendVideo(contactId, pickedFile);
       } else {
-        messenger.showSnackBar(const SnackBar(content: Text('Encrypting & Uploading Image...')));
-        await convService.sendImage(contactId, file);
+        messenger.showSnackBar(
+          const SnackBar(content: Text('Encrypting & Uploading Image...')),
+        );
+        await convService.sendImage(contactId, pickedFile);
       }
     } catch (e) {
       _logger.e('GHOST_LOG: MEDIA_PICKER_ERROR native_picker: $e');
       if (mounted) {
-        messenger.showSnackBar(SnackBar(content: Text('Media selection/upload failed: $e')));
+        messenger.showSnackBar(
+          SnackBar(content: Text('Media selection/upload failed: $e')),
+        );
       }
     }
   }
 
   Future<List<RecentMediaItem>> _getRecentMedia() async {
     final List<RecentMediaItem> result = [];
-    
+
     // Add session picked paths first
     for (final path in _sessionPickedPaths) {
       final file = File(path);
@@ -724,30 +746,34 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
         result.add(RecentMediaItem(file: file));
       }
     }
-    
-    try {
-      final PermissionState ps = await PhotoManager.requestPermissionExtend();
-      if (ps == PermissionState.authorized || ps == PermissionState.limited) {
-        final List<AssetPathEntity> paths = await PhotoManager.getAssetPathList(
-          type: RequestType.common,
-          filterOption: FilterOptionGroup(
-            orders: [
-              const OrderOption(type: OrderOptionType.createDate, asc: false),
-            ],
-          ),
-        );
-        
-        if (paths.isNotEmpty) {
-          final List<AssetEntity> assets = await paths.first.getAssetListRange(start: 0, end: 30);
-          for (final asset in assets) {
-            result.add(RecentMediaItem(asset: asset));
+
+    // Only use PhotoManager on supported platforms
+    if (Platform.isAndroid || Platform.isIOS) {
+      try {
+        final PermissionState ps = await PhotoManager.requestPermissionExtend();
+        if (ps == PermissionState.authorized || ps == PermissionState.limited) {
+          final List<AssetPathEntity> paths = await PhotoManager.getAssetPathList(
+            type: RequestType.common,
+            filterOption: FilterOptionGroup(
+              orders: [
+                const OrderOption(type: OrderOptionType.createDate, asc: false),
+              ],
+            ),
+          );
+
+          if (paths.isNotEmpty) {
+            final List<AssetEntity> assets =
+                await paths.first.getAssetListRange(start: 0, end: 30);
+            for (final asset in assets) {
+              result.add(RecentMediaItem(asset: asset));
+            }
           }
         }
+      } catch (e) {
+        _logger.w('GHOST_LOG: Error getting recent media: $e');
       }
-    } catch (e) {
-      _logger.w('GHOST_LOG: Error getting recent media: $e');
     }
-    
+
     return result;
   }
 

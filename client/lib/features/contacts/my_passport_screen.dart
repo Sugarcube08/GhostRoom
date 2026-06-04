@@ -84,114 +84,149 @@ class _MyPassportScreenState extends ConsumerState<MyPassportScreen> with Identi
         backgroundColor: Colors.transparent,
         elevation: 0,
       ),
-      body: SingleChildScrollView(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xl),
-          child: Column(
-            children: [
-              const SizedBox(height: AppSpacing.l),
-              FutureBuilder<IdentityPackage>(
-                future: idService.createPackage([]),
-                builder: (context, snapshot) {
-                  if (!snapshot.hasData) {
-                    return const CircularProgressIndicator();
-                  }
-                  final pkgString = snapshot.data!.toEncodedString();
-                  return Column(
-                    children: [
-                      RepaintBoundary(
-                        key: _qrKey,
-                        child: GhostSurface(
-                          type: GhostSurfaceType.elevated,
-                          padding: const EdgeInsets.all(AppSpacing.xl),
-                          borderRadius: BorderRadius.circular(32),
-                          child: Column(
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.all(AppSpacing.m),
-                                decoration: BoxDecoration(
-                                  color: Colors.white,
-                                  borderRadius: BorderRadius.circular(20),
-                                ),
-                                child: QrImageView(
-                                  data: pkgString,
-                                  version: QrVersions.auto,
-                                  size: 200,
-                                  gapless: false,
-                                  eyeStyle: const QrEyeStyle(eyeShape: QrEyeShape.square, color: Colors.black),
-                                  dataModuleStyle: const QrDataModuleStyle(dataModuleShape: QrDataModuleShape.square, color: Colors.black),
+      body: LayoutBuilder(
+        builder: (context, constraints) {
+          final double maxWidth = constraints.maxWidth > 500 ? 500 : constraints.maxWidth;
+          final bool isNarrow = constraints.maxWidth < 360;
+
+          return SingleChildScrollView(
+            child: Center(
+              child: Container(
+                constraints: BoxConstraints(maxWidth: maxWidth),
+                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xl),
+                child: Column(
+                  children: [
+                    const SizedBox(height: AppSpacing.l),
+                    FutureBuilder<IdentityPackage>(
+                      future: idService.createPackage([]),
+                      builder: (context, snapshot) {
+                        if (!snapshot.hasData) {
+                          return const CircularProgressIndicator();
+                        }
+                        final pkgString = snapshot.data!.toEncodedString();
+                        return Column(
+                          children: [
+                            RepaintBoundary(
+                              key: _qrKey,
+                              child: GhostSurface(
+                                type: GhostSurfaceType.elevated,
+                                padding: const EdgeInsets.all(AppSpacing.xl),
+                                borderRadius: BorderRadius.circular(32),
+                                child: Column(
+                                  children: [
+                                    Container(
+                                      padding: const EdgeInsets.all(AppSpacing.m),
+                                      decoration: BoxDecoration(
+                                        color: Colors.white,
+                                        borderRadius: BorderRadius.circular(20),
+                                      ),
+                                      child: QrImageView(
+                                        data: pkgString,
+                                        version: QrVersions.auto,
+                                        size: isNarrow ? 160 : 200,
+                                        gapless: false,
+                                        eyeStyle: const QrEyeStyle(eyeShape: QrEyeShape.square, color: Colors.black),
+                                        dataModuleStyle: const QrDataModuleStyle(dataModuleShape: QrDataModuleShape.square, color: Colors.black),
+                                      ),
+                                    ),
+                                    const SizedBox(height: AppSpacing.xl),
+                                    FittedBox(
+                                      fit: BoxFit.scaleDown,
+                                      child: Text(
+                                        identity.publicId,
+                                        textAlign: TextAlign.center,
+                                        style: AppTypography.section(context).copyWith(
+                                          fontFamily: 'monospace',
+                                          letterSpacing: 1,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(height: AppSpacing.s),
+                                    Text(
+                                      'GHOSTROOM ID',
+                                      style: AppTypography.caption(context).copyWith(
+                                        color: colors.ghostAccent,
+                                        fontWeight: FontWeight.w900,
+                                        letterSpacing: 2,
+                                        fontSize: 10,
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
-                              const SizedBox(height: AppSpacing.xl),
-                              Text(
-                                identity.publicId,
+                            ),
+                            const SizedBox(height: AppSpacing.xl),
+                            _buildInfoSection(
+                              context,
+                              'SAFETY FINGERPRINT',
+                              identity.fingerprint,
+                              isMonospace: true,
+                            ),
+                            const SizedBox(height: AppSpacing.l),
+                            const Padding(
+                              padding: EdgeInsets.symmetric(vertical: AppSpacing.l),
+                              child: Text(
+                                'Scan this passport to establish a secure, end-to-end encrypted channel. Your identity is local and sovereign.',
                                 textAlign: TextAlign.center,
-                                style: AppTypography.section(context).copyWith(
-                                  fontFamily: 'monospace',
-                                  letterSpacing: 1,
-                                  fontWeight: FontWeight.bold,
-                                ),
+                                style: TextStyle(fontSize: 13, color: Colors.white38, height: 1.5),
                               ),
-                              const SizedBox(height: AppSpacing.s),
-                              Text(
-                                'GHOSTROOM ID',
-                                style: AppTypography.caption(context).copyWith(
-                                  color: colors.ghostAccent,
-                                  fontWeight: FontWeight.w900,
-                                  letterSpacing: 2,
-                                  fontSize: 10,
-                                ),
+                            ),
+                            const SizedBox(height: AppSpacing.l),
+                            // Responsive Button Row/Column
+                            if (constraints.maxWidth > 380)
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: GhostButton(
+                                      label: 'DOWNLOAD',
+                                      icon: Icons.download,
+                                      type: GhostButtonType.secondary,
+                                      onPressed: () => _saveQRToGallery(identity.publicId),
+                                    ),
+                                  ),
+                                  const SizedBox(width: AppSpacing.m),
+                                  Expanded(
+                                    child: GhostButton(
+                                      label: 'SHARE LINK',
+                                      icon: Icons.share,
+                                      type: GhostButtonType.primary,
+                                      onPressed: () => shareIdentity(ref),
+                                    ),
+                                  ),
+                                ],
+                              )
+                            else
+                              Column(
+                                children: [
+                                  GhostButton(
+                                    label: 'DOWNLOAD',
+                                    icon: Icons.download,
+                                    type: GhostButtonType.secondary,
+                                    width: double.infinity,
+                                    onPressed: () => _saveQRToGallery(identity.publicId),
+                                  ),
+                                  const SizedBox(height: AppSpacing.m),
+                                  GhostButton(
+                                    label: 'SHARE LINK',
+                                    icon: Icons.share,
+                                    type: GhostButtonType.primary,
+                                    width: double.infinity,
+                                    onPressed: () => shareIdentity(ref),
+                                  ),
+                                ],
                               ),
-                            ],
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: AppSpacing.xl),
-                      _buildInfoSection(
-                        context,
-                        'SAFETY FINGERPRINT',
-                        identity.fingerprint,
-                        isMonospace: true,
-                      ),
-                      const SizedBox(height: AppSpacing.l),
-                      const Padding(
-                        padding: EdgeInsets.symmetric(vertical: AppSpacing.l),
-                        child: Text(
-                          'Scan this passport to establish a secure, end-to-end encrypted channel. Your identity is local and sovereign.',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(fontSize: 13, color: Colors.white38, height: 1.5),
-                        ),
-                      ),
-                      const SizedBox(height: AppSpacing.l),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: GhostButton(
-                              label: 'DOWNLOAD',
-                              icon: Icons.download,
-                              type: GhostButtonType.secondary,
-                              onPressed: () => _saveQRToGallery(identity.publicId),
-                            ),
-                          ),
-                          const SizedBox(width: AppSpacing.m),
-                          Expanded(
-                            child: GhostButton(
-                              label: 'SHARE LINK',
-                              icon: Icons.share,
-                              type: GhostButtonType.primary,
-                              onPressed: () => shareIdentity(ref),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  );
-                },
+                          ],
+                        );
+                      },
+                    ),
+                    const SizedBox(height: 48),
+                  ],
+                ),
               ),
-              const SizedBox(height: 48),
-            ],
-          ),
-        ),
+            ),
+          );
+        },
       ),
     );
   }

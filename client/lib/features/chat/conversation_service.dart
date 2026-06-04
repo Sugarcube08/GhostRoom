@@ -73,10 +73,13 @@ class ConversationService {
       unreadCounts[state.contactId] = state.effectiveUnreadCount;
     }
 
-    for (final msg in _chatRepository.getAllMessages()) {
-      if (msg.isRequest) continue;
+    final knownContactIds = _contactService.getAllContacts().map((c) => c.publicId).toSet();
 
+    for (final msg in _chatRepository.getAllMessages()) {
       final otherId = msg.senderId == myId ? msg.recipientId : msg.senderId;
+      
+      // EXCLUSION: If not in contacts and marked as request, skip for main list
+      if (msg.isRequest || !knownContactIds.contains(otherId)) continue;
 
       // Update last message
       final existingLast = lastMessages[otherId];
@@ -93,9 +96,7 @@ class ConversationService {
 
     final Set<String> validContactIds = {};
     validContactIds.addAll(lastMessages.keys);
-    for (final contact in _contactService.getAllContacts()) {
-      validContactIds.add(contact.publicId);
-    }
+    validContactIds.addAll(knownContactIds);
 
     return validContactIds.map((contactId) {
       final lastMsg = lastMessages[contactId];
@@ -118,21 +119,29 @@ class ConversationService {
     final Map<String, Message> lastMessages = {};
     final Map<String, int> unreadCounts = {};
     final myId = _chatRepository.myPublicId;
+    
+    final knownContactIds = _contactService.getAllContacts().map((c) => c.publicId).toSet();
 
     for (final state in _chatRepository.getAllConversationStates()) {
       unreadCounts[state.contactId] = state.effectiveUnreadCount;
     }
 
     for (final msg in _chatRepository.getAllMessages()) {
-      if (!msg.isRequest) continue;
-
       final otherId = msg.senderId == myId ? msg.recipientId : msg.senderId;
+
+      // INCLUSION: Include if marked as request OR if sender is unknown (and not me)
+      final isUnknownSender = !knownContactIds.contains(otherId) && otherId != myId;
+      if (!msg.isRequest && !isUnknownSender) continue;
 
       final existingLast = lastMessages[otherId];
       if (existingLast == null ||
           msg.timestamp.isAfter(existingLast.timestamp)) {
         lastMessages[otherId] = msg;
       }
+    }
+
+    if (lastMessages.isNotEmpty) {
+      _logger.i('GHOST_LOG: Requests discovered: ${lastMessages.length}');
     }
 
     return lastMessages.entries.map((entry) {

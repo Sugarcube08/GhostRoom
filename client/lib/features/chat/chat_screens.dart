@@ -11,7 +11,6 @@ import 'conversation_screen.dart';
 import 'requests_screen.dart';
 import 'widgets/chats_header.dart';
 import 'widgets/conversation_list_item.dart';
-import 'widgets/requests_card.dart';
 import '../../design_system/colors.dart';
 import '../../design_system/spacing.dart';
 import '../../design_system/typography.dart';
@@ -29,109 +28,153 @@ class _ChatsScreenState extends ConsumerState<ChatsScreen> with ContactActions {
   @override
   Widget build(BuildContext context) {
     final colors = AppColors.of(context);
-    final double width = MediaQuery.of(context).size.width;
-    final bool isWide = width > 900;
     
-    return ListenableBuilder(
-      listenable: Listenable.merge([
-        Hive.box<Message>('messages').listenable(),
-        Hive.box<Contact>('contacts').listenable(),
-        Hive.box<ConversationState>('conversation_states').listenable(),
-      ]),
-      builder: (context, _) {
-        final conversationService = ref.read(conversationServiceProvider);
-        final conversations = conversationService.getConversations();
-        final requests = conversationService.getRequests();
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final bool isWide = constraints.maxWidth > 900;
+        
+        return ListenableBuilder(
+          listenable: Listenable.merge([
+            Hive.box<Message>('messages').listenable(),
+            Hive.box<Contact>('contacts').listenable(),
+            Hive.box<ConversationState>('conversation_states').listenable(),
+          ]),
+          builder: (context, _) {
+            final conversationService = ref.read(conversationServiceProvider);
+            final conversations = conversationService.getConversations();
+            final requests = conversationService.getRequests();
 
-        final Widget chatList = Scaffold(
-          backgroundColor: colors.primaryBackground,
-          body: SafeArea(
-            bottom: false,
-            child: CustomScrollView(
-              slivers: [
-                SliverToBoxAdapter(
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const ChatsHeader(alias: 'Ghost'),
-                      Padding(
-                        padding: const EdgeInsets.only(right: AppSpacing.l),
-                        child: IconButton(
-                          icon: const Icon(Icons.person_add_alt_1_outlined),
-                          onPressed: () => showAddOptions(context),
+            final Widget chatList = Scaffold(
+              backgroundColor: colors.primaryBackground,
+              body: SafeArea(
+                bottom: false,
+                child: Center(
+                  child: Container(
+                    constraints: const BoxConstraints(maxWidth: 600),
+                    child: CustomScrollView(
+                      slivers: [
+                        SliverToBoxAdapter(
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              const ChatsHeader(alias: 'Ghost'),
+                              Padding(
+                                padding: const EdgeInsets.only(right: AppSpacing.l),
+                                child: Row(
+                                  children: [
+                                    _buildRequestsIcon(context, requests.length),
+                                    const SizedBox(width: AppSpacing.s),
+                                    IconButton(
+                                      icon: const Icon(Icons.person_add_alt_1_outlined),
+                                      onPressed: () => showAddOptions(context),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
-                      ),
-                    ],
+                        if (conversations.isEmpty)
+                          SliverFillRemaining(
+                            hasScrollBody: false,
+                            child: _buildEmptyState(context),
+                          )
+                        else
+                          SliverList(
+                            delegate: SliverChildBuilderDelegate(
+                              (context, index) {
+                                final conv = conversations[index];
+                                return ConversationListItem(
+                                  conversation: conv,
+                                  onTap: () {
+                                    if (isWide) {
+                                      setState(() => _selectedConversation = conv);
+                                    } else {
+                                      Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (_) => ConversationScreen(conversation: conv),
+                                        ),
+                                      );
+                                    }
+                                  },
+                                );
+                              },
+                              childCount: conversations.length,
+                            ),
+                          ),
+                        // Add spacer to prevent hiding behind nav bar
+                        const SliverToBoxAdapter(child: SizedBox(height: 120)),
+                      ],
+                    ),
                   ),
                 ),
-                if (requests.isNotEmpty)
-                  SliverToBoxAdapter(
-                    child: RequestsCard(
-                      count: requests.length,
-                      onTap: () {
-                        if (isWide) {
-                          // In wide mode, we could show requests in the detail panel
-                          // But for now let's keep it simple
-                        }
-                        Navigator.push(context, MaterialPageRoute(builder: (_) => const RequestsScreen()));
-                      },
-                    ),
-                  ),
-                if (conversations.isEmpty)
-                  SliverFillRemaining(
-                    hasScrollBody: false,
-                    child: _buildEmptyState(context),
-                  )
-                else
-                  SliverList(
-                    delegate: SliverChildBuilderDelegate(
-                      (context, index) {
-                        final conv = conversations[index];
-                        return ConversationListItem(
-                          conversation: conv,
-                          onTap: () {
-                            if (isWide) {
-                              setState(() => _selectedConversation = conv);
-                            } else {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (_) => ConversationScreen(conversation: conv),
-                                ),
-                              );
-                            }
-                          },
-                        );
-                      },
-                      childCount: conversations.length,
-                    ),
-                  ),
-                // Add spacer to prevent hiding behind nav bar
-                const SliverToBoxAdapter(child: SizedBox(height: 120)),
+              ),
+            );
+
+            if (!isWide) return chatList;
+
+            return Row(
+              children: [
+                SizedBox(
+                  width: 350,
+                  child: chatList,
+                ),
+                VerticalDivider(width: 1, color: colors.hairline),
+                Expanded(
+                  child: _selectedConversation == null
+                      ? _buildNoSelectionState(context)
+                      : ConversationScreen(
+                          key: ValueKey(_selectedConversation!.contactId),
+                          conversation: _selectedConversation!,
+                        ),
+                ),
               ],
-            ),
-          ),
+            );
+          },
         );
+      }
+    );
+  }
 
-        if (!isWide) return chatList;
-
-        return Row(
-          children: [
-            SizedBox(
-              width: 350,
-              child: chatList,
+  Widget _buildRequestsIcon(BuildContext context, int count) {
+    final colors = AppColors.of(context);
+    
+    return IconButton(
+      icon: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Icon(count > 0 ? Icons.mail_lock_outlined : Icons.mail_outline),
+          if (count > 0)
+            Positioned(
+              top: -2,
+              right: -4,
+              child: Container(
+                padding: const EdgeInsets.all(4),
+                decoration: BoxDecoration(
+                  color: colors.warning,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: colors.primaryBackground, width: 1.5),
+                ),
+                constraints: const BoxConstraints(
+                  minWidth: 16,
+                  minHeight: 16,
+                ),
+                child: Text(
+                  count > 9 ? '9+' : count.toString(),
+                  style: const TextStyle(
+                    color: Colors.black,
+                    fontSize: 8,
+                    fontWeight: FontWeight.bold,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ),
             ),
-            VerticalDivider(width: 1, color: colors.hairline),
-            Expanded(
-              child: _selectedConversation == null
-                  ? _buildNoSelectionState(context)
-                  : ConversationScreen(
-                      key: ValueKey(_selectedConversation!.contactId),
-                      conversation: _selectedConversation!,
-                    ),
-            ),
-          ],
-        );
+        ],
+      ),
+      onPressed: () {
+        Navigator.push(context, MaterialPageRoute(builder: (_) => const RequestsScreen()));
       },
     );
   }

@@ -9,11 +9,13 @@ class GhostNavItem {
   final IconData outlineIcon;
   final IconData solidIcon;
   final String label;
+  final int badgeCount;
 
   const GhostNavItem({
     required this.outlineIcon,
     required this.solidIcon,
     required this.label,
+    this.badgeCount = 0,
   });
 }
 
@@ -76,10 +78,40 @@ class GhostNavigationBar extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
-              isSelected ? item.solidIcon : item.outlineIcon,
-              color: isSelected ? activeColor : inactiveColor,
-              size: 24,
+            Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Icon(
+                  isSelected ? item.solidIcon : item.outlineIcon,
+                  color: isSelected ? activeColor : inactiveColor,
+                  size: 24,
+                ),
+                if (item.badgeCount > 0)
+                  Positioned(
+                    top: -4,
+                    right: -8,
+                    child: Container(
+                      padding: const EdgeInsets.all(4),
+                      decoration: const BoxDecoration(
+                        color: Colors.redAccent,
+                        shape: BoxShape.circle,
+                      ),
+                      constraints: const BoxConstraints(
+                        minWidth: 16,
+                        minHeight: 16,
+                      ),
+                      child: Text(
+                        item.badgeCount > 9 ? '9+' : item.badgeCount.toString(),
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 8,
+                          fontWeight: FontWeight.bold,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  ),
+              ],
             ),
             const SizedBox(height: 4),
             Text(
@@ -170,21 +202,51 @@ class GhostNavigationRail extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          AnimatedContainer(
-            duration: AppAnimations.fast,
-            curve: AppAnimations.springCurve,
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(16),
-              color: isSelected 
-                  ? colors.ghostAccent.withAlpha(20) 
-                  : Colors.transparent,
-            ),
-            child: Icon(
-              isSelected ? item.solidIcon : item.outlineIcon,
-              color: isSelected ? activeColor : inactiveColor,
-              size: 24,
-            ),
+          Stack(
+            clipBehavior: Clip.none,
+            children: [
+              AnimatedContainer(
+                duration: AppAnimations.fast,
+                curve: AppAnimations.springCurve,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(16),
+                  color: isSelected 
+                      ? colors.ghostAccent.withAlpha(20) 
+                      : Colors.transparent,
+                ),
+                child: Icon(
+                  isSelected ? item.solidIcon : item.outlineIcon,
+                  color: isSelected ? activeColor : inactiveColor,
+                  size: 24,
+                ),
+              ),
+              if (item.badgeCount > 0)
+                Positioned(
+                  top: 0,
+                  right: -4,
+                  child: Container(
+                    padding: const EdgeInsets.all(4),
+                    decoration: const BoxDecoration(
+                      color: Colors.redAccent,
+                      shape: BoxShape.circle,
+                    ),
+                    constraints: const BoxConstraints(
+                      minWidth: 16,
+                      minHeight: 16,
+                    ),
+                    child: Text(
+                      item.badgeCount > 9 ? '9+' : item.badgeCount.toString(),
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 8,
+                        fontWeight: FontWeight.bold,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                ),
+            ],
           ),
           const SizedBox(height: 4),
           Text(
