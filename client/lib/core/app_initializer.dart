@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:hive_flutter/hive_flutter.dart';
 import '../core/providers.dart';
 
 enum InitializationStatus { idle, initializing, success, failure }
@@ -13,7 +12,8 @@ class AppInitializer {
   AppInitializer(this.container);
 
   Future<void> initialize() async {
-    if (status == InitializationStatus.initializing || status == InitializationStatus.success) {
+    if (status == InitializationStatus.initializing ||
+        status == InitializationStatus.success) {
       return;
     }
 
@@ -21,27 +21,15 @@ class AppInitializer {
     debugPrint('GHOST_LOG: Starting system initialization...');
 
     try {
-      // 1. Hive
-      await Hive.initFlutter();
-      
-      // 2. Identity
+      // 1. Identity
       debugPrint('GHOST_LOG: Initializing IdentityService...');
       await container.read(identityServiceProvider).initIdentity();
-      
-      // 3. Contacts
-      debugPrint('GHOST_LOG: Initializing ContactService...');
+
+      // 2. Core Services (Ordered for dependency satisfaction)
+      debugPrint('GHOST_LOG: Initializing core services...');
       await container.read(contactServiceProvider).init();
-      
-      // 4. Chat Repository
-      debugPrint('GHOST_LOG: Initializing ChatRepository...');
-      await container.read(chatRepositoryProvider).init();
-
-      // 4.5. Media Manager
-      debugPrint('GHOST_LOG: Initializing MediaManager...');
       await container.read(mediaManagerProvider).init();
-
-      // 5. Notifications
-      debugPrint('GHOST_LOG: Initializing NotificationService...');
+      await container.read(chatRepositoryProvider).init();
       await container.read(notificationServiceProvider).init();
 
       status = InitializationStatus.success;

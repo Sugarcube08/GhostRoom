@@ -170,15 +170,18 @@ class MediaService {
     required AttachmentKind kind,
     required RelayProfile relay,
     required Uint8List recipientXid,
+    String? messageId,
   }) async {
-    _logger.i('GHOST_LOG: MEDIA_UPLOAD_START kind: ${kind.name}');
-    _logger.i('GHOST_LOG: MEDIA_UPLOAD_START');
     final identity = _idService.currentIdentity;
     if (identity == null) throw Exception('Identity not initialized');
+
+    _logger.i('GHOST_LOG: MEDIA_ENCRYPT_START messageId: ${messageId ?? "unknown"} mediaId: pending mediaKind: ${kind.name} url: pending');
 
     final bytes = await file.readAsBytes();
     final encrypted = await encryptMedia(bytes, null);
     final SecureKey messageKey = encrypted['messageKey'];
+
+    _logger.i('GHOST_LOG: MEDIA_ENCRYPT_SUCCESS messageId: ${messageId ?? "unknown"} mediaId: pending mediaKind: ${kind.name} url: pending');
 
     // Metadata extraction
     Map<String, dynamic>? meta = {
@@ -208,7 +211,7 @@ class MediaService {
     final String thumbUrl = data['thumbUrl'];
 
     // 2. PUT Bulk File
-    _logger.i('GHOST_LOG: MEDIA_UPLOAD_STEP_BLOB_START id: $mediaId');
+    _logger.i('GHOST_LOG: MEDIA_UPLOAD_START messageId: ${messageId ?? "unknown"} mediaId: $mediaId mediaKind: ${kind.name} url: $uploadUrl');
     await _retryHttp(() => http.put(Uri.parse(uploadUrl), body: encrypted['ciphertext']));
     _logger.i('GHOST_LOG: MEDIA_BLOB_PUT_SUCCESS id: $mediaId');
 
@@ -245,7 +248,7 @@ class MediaService {
       publicKey: recipientXid,
     );
 
-    _logger.i('GHOST_LOG: MEDIA_UPLOAD_SUCCESS');
+    _logger.i('GHOST_LOG: MEDIA_UPLOAD_SUCCESS messageId: ${messageId ?? "unknown"} mediaId: $mediaId mediaKind: ${kind.name} url: $uploadUrl');
 
     final envelope = AttachmentEnvelope(
       kind: kind,

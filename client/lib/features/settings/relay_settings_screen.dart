@@ -14,9 +14,10 @@ class RelaySettingsScreen extends ConsumerStatefulWidget {
 class _RelaySettingsScreenState extends ConsumerState<RelaySettingsScreen> {
   @override
   Widget build(BuildContext context) {
-    debugPrint('GHOST_LOG: RelaySettingsScreen building');
     final relaysAsync = ref.watch(relayProfilesProvider);
     final activeRelayAsync = ref.watch(activeRelayProvider);
+    
+    debugPrint('GHOST_LOG: RelaySettingsScreen building. Relays: ${relaysAsync.isLoading ? "loading" : relaysAsync.hasError ? "error" : "data(${relaysAsync.value?.length})"}, Active: ${activeRelayAsync.value?.label ?? "none"}');
 
     return Scaffold(
       appBar: AppBar(
@@ -50,10 +51,15 @@ class _RelaySettingsScreenState extends ConsumerState<RelaySettingsScreen> {
                 ],
               ),
               onTap: () async {
-                await ref.read(relayManagerProvider).setActiveRelay(relay.id);
+                final manager = ref.read(relayManagerProvider);
+                final ws = ref.read(webSocketServiceProvider);
+                
+                await manager.setActiveRelay(relay.id);
+                if (!mounted) return;
+                
                 ref.invalidate(activeRelayProvider);
                 // Connect to the new relay
-                ref.read(webSocketServiceProvider).connect(relay);
+                ws.connect(relay);
               },
               onLongPress: () => _showDeleteConfirm(context, relay),
             );
@@ -96,24 +102,33 @@ class _RelaySettingsScreenState extends ConsumerState<RelaySettingsScreen> {
           TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Cancel')),
           TextButton(
             onPressed: () async {
+              final label = labelController.text.trim();
+              final wsUrl = wsController.text.trim();
+              final apiUrl = apiController.text.trim();
+              
+              if (label.isEmpty || wsUrl.isEmpty) return;
+
               final newRelay = RelayProfile(
                 id: const Uuid().v4(),
-                label: labelController.text,
-                websocketUrl: wsController.text,
-                apiUrl: apiController.text,
+                label: label,
+                websocketUrl: wsUrl,
+                apiUrl: apiUrl,
               );
-              await ref.read(relayManagerProvider).saveRelay(newRelay);
               
-              // Auto-select the newly added relay
-              await ref.read(relayManagerProvider).setActiveRelay(newRelay.id);
+              final manager = ref.read(relayManagerProvider);
+              final ws = ref.read(webSocketServiceProvider);
+
+              await manager.saveRelay(newRelay);
+              await manager.setActiveRelay(newRelay.id);
+              
+              if (!dialogContext.mounted) return;
               
               ref.invalidate(relayProfilesProvider);
               ref.invalidate(activeRelayProvider);
               
               // Connect to the new relay
-              ref.read(webSocketServiceProvider).connect(newRelay);
+              ws.connect(newRelay);
               
-              if (!dialogContext.mounted) return;
               Navigator.pop(dialogContext);
             },
             child: const Text('Save'),
@@ -133,11 +148,14 @@ class _RelaySettingsScreenState extends ConsumerState<RelaySettingsScreen> {
            TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Cancel')),
            TextButton(
             onPressed: () async {
-              await ref.read(relayManagerProvider).deleteRelay(relay.id);
+              final manager = ref.read(relayManagerProvider);
+              await manager.deleteRelay(relay.id);
+              
+              if (!dialogContext.mounted) return;
+
               ref.invalidate(relayProfilesProvider);
               ref.invalidate(activeRelayProvider);
               
-              if (!dialogContext.mounted) return;
               Navigator.pop(dialogContext);
             },
             child: const Text('Delete', style: TextStyle(color: Colors.red)),

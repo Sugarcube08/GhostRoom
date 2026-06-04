@@ -9,6 +9,7 @@ import 'core/widgets/navigation_shell.dart';
 import 'features/home/onboarding_screen.dart';
 import 'core/app_initializer.dart';
 import 'core/stability_tracker.dart';
+import 'package:hive_flutter/hive_flutter.dart';
 import 'dart:async';
 import 'dart:io';
 import 'features/chat/requests_screen.dart';
@@ -18,12 +19,17 @@ import 'package:app_links/app_links.dart';
 import 'dart:convert';
 import 'core/crypto/identity_service.dart';
 import 'features/contacts/contact_actions.dart';
+import 'package:window_manager/window_manager.dart';
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
 void main() async {
   runZonedGuarded(() async {
     WidgetsFlutterBinding.ensureInitialized();
+    
+    if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
+      await windowManager.ensureInitialized();
+    }
     
     // Global Error Handlers
     FlutterError.onError = (details) {
@@ -43,6 +49,7 @@ void main() async {
     };
 
     final sodium = await SodiumSumoInit.init();
+    await Hive.initFlutter();
     
     late final ProviderContainer container;
     container = ProviderContainer(
@@ -275,10 +282,10 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
       await Future.delayed(const Duration(milliseconds: 200));
     }
 
+    if (!mounted) return;
+
     if (initializer.status == InitializationStatus.failure) {
-      if (mounted) {
-        _showInitializationError(initializer.errorMessage ?? 'Unknown fatal error during startup.');
-      }
+      _showInitializationError(initializer.errorMessage ?? 'Unknown fatal error during startup.');
       return;
     }
 
@@ -377,12 +384,17 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
               final seed = controller.text.trim();
               if (seed.isEmpty) return;
               try {
-                await ref.read(identityServiceProvider).restoreIdentity(seed);
+                final idService = ref.read(identityServiceProvider);
+                final appInit = ref.read(appInitializerProvider);
+
+                await idService.restoreIdentity(seed);
                 if (!context.mounted) return;
                 
                 Navigator.pop(dialogContext); // Close recovery dialog
-                ref.read(appInitializerProvider).status = InitializationStatus.idle;
-                await ref.read(appInitializerProvider).initialize();
+                appInit.status = InitializationStatus.idle;
+                await appInit.initialize();
+                
+                if (!mounted) return;
                 _checkInitialization();
               } catch (e) {
                 scaffoldMessenger.showSnackBar(
@@ -415,17 +427,25 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
           ),
           TextButton(
             onPressed: () async {
+              final idService = ref.read(identityServiceProvider);
+              final contactService = ref.read(contactServiceProvider);
+              final chatRepo = ref.read(chatRepositoryProvider);
+              final relayManager = ref.read(relayManagerProvider);
+              final appInit = ref.read(appInitializerProvider);
+
               Navigator.pop(dialogContext); // Close confirm
               
               // Wipe local DBs & Secure Storage
-              await ref.read(identityServiceProvider).wipeIdentity();
-              await ref.read(contactServiceProvider).clearAll();
-              await ref.read(chatRepositoryProvider).dangerouslyClearAll();
-              await ref.read(relayManagerProvider).panicWipe();
+              await idService.wipeIdentity();
+              await contactService.clearAll();
+              await chatRepo.dangerouslyClearAll();
+              await relayManager.panicWipe();
               
               // Reset status & re-run initialization
-              ref.read(appInitializerProvider).status = InitializationStatus.idle;
-              await ref.read(appInitializerProvider).initialize();
+              appInit.status = InitializationStatus.idle;
+              await appInit.initialize();
+              
+              if (!mounted) return;
               _checkInitialization();
             },
             child: const Text('RESET', style: TextStyle(color: Colors.redAccent)),
@@ -517,12 +537,13 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
       final wsService = ref.read(webSocketServiceProvider);
 
       final relay = await activeRelayFuture;
-      if (relay != null) {
+      if (mounted && relay != null) {
         relayManager.wakeUpRelay(relay);
         wsService.connect(relay);
         // Listeners are now handled by ChatRepository
       }
 
+      if (!mounted) return;
       debugPrint('GHOST_LOG: Identity verified. Entering app.');
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {

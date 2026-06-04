@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import '../../core/providers.dart';
+import '../../core/security/privacy_protection_service.dart';
 import 'relay_settings_screen.dart';
 import 'identity_actions.dart';
 import '../contacts/my_passport_screen.dart';
@@ -19,6 +20,21 @@ class IdentityVaultScreen extends ConsumerStatefulWidget {
 }
 
 class _IdentityVaultScreenState extends ConsumerState<IdentityVaultScreen> with IdentityActions {
+  late final PrivacyProtectionService _privacyService;
+
+  @override
+  void initState() {
+    super.initState();
+    _privacyService = ref.read(privacyProtectionProvider);
+    _privacyService.enableScreenshotProtection();
+  }
+
+  @override
+  void dispose() {
+    _privacyService.disableScreenshotProtection();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     final identity = ref.watch(identityServiceProvider).currentIdentity;
@@ -332,6 +348,7 @@ class _IdentityVaultScreenState extends ConsumerState<IdentityVaultScreen> with 
                   }
                 }
                 if (allCorrect) {
+                  final idService = ref.read(identityServiceProvider);
                   await idService.recordDrillSuccess();
                   if (context.mounted) {
                     Navigator.pop(context);
@@ -423,7 +440,8 @@ class _IdentityVaultScreenState extends ConsumerState<IdentityVaultScreen> with 
             onPressed: () async {
               if (controller.text.isEmpty) return;
               try {
-                await ref.read(backupServiceProvider).exportBackup(controller.text);
+                final backupService = ref.read(backupServiceProvider);
+                await backupService.exportBackup(controller.text);
                 if (context.mounted) Navigator.pop(context);
               } catch (e) {
                 if (context.mounted) {
@@ -454,8 +472,11 @@ class _IdentityVaultScreenState extends ConsumerState<IdentityVaultScreen> with 
             label: 'ERASE EVERYTHING',
             type: GhostButtonType.danger,
             onPressed: () async {
-              await ref.read(identityServiceProvider).wipeIdentity();
-              await ref.read(contactServiceProvider).clearAll();
+              final idService = ref.read(identityServiceProvider);
+              final contactService = ref.read(contactServiceProvider);
+
+              await idService.wipeIdentity();
+              await contactService.clearAll();
 
               if (!dialogContext.mounted) return;
               Navigator.pop(dialogContext);

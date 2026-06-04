@@ -233,6 +233,9 @@ class ConversationService {
 
     // 1. Create Placeholder
     final placeholderId = 'pending_${DateTime.now().microsecondsSinceEpoch}';
+    
+    _logger.i('GHOST_LOG: MEDIA_PICKED messageId: $placeholderId mediaId: pending mediaKind: image url: pending');
+
     final placeholder = Message(
       id: placeholderId,
       senderId: _chatRepository.myPublicId,
@@ -250,7 +253,10 @@ class ConversationService {
 
     try {
       // 2. Compress
+      _logger.i('GHOST_LOG: MEDIA_COMPRESS_START messageId: $placeholderId mediaId: pending mediaKind: image url: pending');
       final compressed = await _mediaService.compressImage(file);
+      _logger.i('GHOST_LOG: MEDIA_COMPRESS_SUCCESS messageId: $placeholderId mediaId: pending mediaKind: image url: pending');
+
       await _chatRepository.updateMessageMetadata(placeholderId, {
         'status': 'ENCRYPTING',
       });
@@ -261,6 +267,7 @@ class ConversationService {
         kind: AttachmentKind.image,
         relay: activeRelay,
         recipientXid: base64Decode(contact.xid),
+        messageId: placeholderId,
       );
       await _chatRepository.mediaManager.cacheSentMedia(
         mediaId: envelope.mediaId,
@@ -274,8 +281,8 @@ class ConversationService {
       // 3. Send Message
       await _chatRepository.sendMessage(
         recipientId: recipientId,
-        text: '[Video]',
-        type: MessageType.video,
+        text: '[Image]',
+        type: MessageType.image,
         existingId: placeholderId,
         retention: isGhost ? 'EPHEMERAL' : 'PERSISTENT',
         metadata: {
@@ -286,6 +293,7 @@ class ConversationService {
         },
       );
 
+      _logger.i('GHOST_LOG: MEDIA_MESSAGE_SENT messageId: $placeholderId mediaId: ${envelope.mediaId} mediaKind: image url: ${activeRelay.apiUrl}');
       _logger.i('GHOST_LOG: MEDIA_ENVELOPE_SENT id: ${envelope.mediaId}');
     } catch (e) {
       await _chatRepository.updateMessageMetadata(placeholderId, {
@@ -308,6 +316,9 @@ class ConversationService {
 
     // 1. Create Placeholder
     final placeholderId = 'pending_${DateTime.now().microsecondsSinceEpoch}';
+
+    _logger.i('GHOST_LOG: MEDIA_PICKED messageId: $placeholderId mediaId: pending mediaKind: video url: pending');
+
     final placeholder = Message(
       id: placeholderId,
       senderId: _chatRepository.myPublicId,
@@ -328,7 +339,10 @@ class ConversationService {
       await _chatRepository.updateMessageMetadata(placeholderId, {
         'status': 'COMPRESSING',
       });
+      _logger.i('GHOST_LOG: MEDIA_COMPRESS_START messageId: $placeholderId mediaId: pending mediaKind: video url: pending');
       final compressed = await _mediaService.compressVideo(file);
+      _logger.i('GHOST_LOG: MEDIA_COMPRESS_SUCCESS messageId: $placeholderId mediaId: pending mediaKind: video url: pending');
+
       await _chatRepository.updateMessageMetadata(placeholderId, {
         'status': 'ENCRYPTING',
       });
@@ -339,6 +353,7 @@ class ConversationService {
         kind: AttachmentKind.video,
         relay: activeRelay,
         recipientXid: base64Decode(contact.xid),
+        messageId: placeholderId,
       );
       await _chatRepository.mediaManager.cacheSentMedia(
         mediaId: envelope.mediaId,
@@ -364,6 +379,7 @@ class ConversationService {
         },
       );
 
+      _logger.i('GHOST_LOG: MEDIA_MESSAGE_SENT messageId: $placeholderId mediaId: ${envelope.mediaId} mediaKind: video url: ${activeRelay.apiUrl}');
       _logger.i('GHOST_LOG: MEDIA_ENVELOPE_SENT id: ${envelope.mediaId}');
     } catch (e) {
       await _chatRepository.updateMessageMetadata(placeholderId, {

@@ -68,10 +68,13 @@ class _VoiceMessageBubbleState extends ConsumerState<VoiceMessageBubble> {
   }
 
   void _initMedia() async {
-    if (widget.message.metadata == null) return;
+    if (widget.message.metadata == null || widget.message.metadata?['media_id'] == null) return;
     final envelope = AttachmentEnvelope.fromJson(widget.message.metadata!);
     final mediaId = envelope.mediaId;
     final mediaManager = ref.read(mediaManagerProvider);
+
+    final urlHint = envelope.relayUrl ?? "active_relay";
+    debugPrint('GHOST_LOG: MEDIA_ATTACHMENT_DETECTED messageId: ${widget.message.id} mediaId: $mediaId mediaKind: ${envelope.kind.name} url: $urlHint');
 
     setState(() {
       _mediaState = mediaManager.getMediaState(mediaId, isThumbnail: false);
@@ -81,7 +84,11 @@ class _VoiceMessageBubbleState extends ConsumerState<VoiceMessageBubble> {
       if (update.mediaId == mediaId && !update.isThumbnail) {
         if (mounted) {
           setState(() => _mediaState = update.state);
-          if (update.state == MediaState.ready) _loadAudioFile();
+          if (update.state == MediaState.ready) {
+            _loadAudioFile();
+          } else if (update.state == MediaState.failed) {
+            debugPrint('GHOST_LOG: MEDIA_RENDER_FAILED messageId: ${widget.message.id} mediaId: $mediaId mediaKind: ${envelope.kind.name} url: $urlHint error: Media state transitioned to failed');
+          }
         }
       }
     });
@@ -92,13 +99,18 @@ class _VoiceMessageBubbleState extends ConsumerState<VoiceMessageBubble> {
   }
 
   Future<void> _loadAudioFile() async {
-    if (widget.message.metadata == null) return;
+    if (widget.message.metadata == null || widget.message.metadata?['media_id'] == null) return;
     final envelope = AttachmentEnvelope.fromJson(widget.message.metadata!);
+    final mediaId = envelope.mediaId;
     final mediaManager = ref.read(mediaManagerProvider);
     final relay = await ref.read(activeRelayProvider.future);
     final identity = ref.read(identityServiceProvider).currentIdentity;
+    final urlHint = envelope.relayUrl ?? relay?.apiUrl ?? "unknown";
 
-    if (relay == null || identity == null) return;
+    if (relay == null || identity == null) {
+      debugPrint('GHOST_LOG: MEDIA_RENDER_FAILED messageId: ${widget.message.id} mediaId: $mediaId mediaKind: ${envelope.kind.name} url: $urlHint error: Active relay or identity is null');
+      return;
+    }
 
     try {
       final file = await mediaManager.getMedia(
@@ -106,9 +118,15 @@ class _VoiceMessageBubbleState extends ConsumerState<VoiceMessageBubble> {
         relay: relay,
         myXidKeyPair: identity.x25519KeyPair,
         isThumbnail: false,
+        messageId: widget.message.id,
       );
-      if (mounted) setState(() => _audioFile = file);
-    } catch (_) {}
+      if (mounted) {
+        setState(() => _audioFile = file);
+        debugPrint('GHOST_LOG: MEDIA_RENDER_READY messageId: ${widget.message.id} mediaId: $mediaId mediaKind: ${envelope.kind.name} url: $urlHint (Voice loaded)');
+      }
+    } catch (e) {
+      debugPrint('GHOST_LOG: MEDIA_RENDER_FAILED messageId: ${widget.message.id} mediaId: $mediaId mediaKind: ${envelope.kind.name} url: $urlHint error: Failed loading voice file: $e');
+    }
   }
 
   void _togglePlayback() async {
@@ -126,7 +144,7 @@ class _VoiceMessageBubbleState extends ConsumerState<VoiceMessageBubble> {
   }
 
   void _download() async {
-    if (widget.message.metadata == null) return;
+    if (widget.message.metadata == null || widget.message.metadata?['media_id'] == null) return;
     if (_mediaState == MediaState.downloading || 
         _mediaState == MediaState.decrypting || 
         _mediaState == MediaState.verifying) {
@@ -134,26 +152,35 @@ class _VoiceMessageBubbleState extends ConsumerState<VoiceMessageBubble> {
     }
 
     final mediaManager = ref.read(mediaManagerProvider);
+    final envelope = AttachmentEnvelope.fromJson(widget.message.metadata!);
+    final mediaId = envelope.mediaId;
+    final relay = await ref.read(activeRelayProvider.future);
+    final urlHint = envelope.relayUrl ?? relay?.apiUrl ?? "unknown";
+
     try {
-      final envelope = AttachmentEnvelope.fromJson(widget.message.metadata!);
-      final relay = await ref.read(activeRelayProvider.future);
       final identity = ref.read(identityServiceProvider).currentIdentity;
-      if (relay == null || identity == null) return;
+      if (relay == null || identity == null) {
+        throw Exception('Active relay or identity is null');
+      }
 
       final file = await mediaManager.getMedia(
         envelope: envelope,
         relay: relay,
         myXidKeyPair: identity.x25519KeyPair,
         isThumbnail: false,
+        messageId: widget.message.id,
       );
       if (mounted) {
         setState(() {
           _audioFile = file;
           _mediaState = MediaState.ready;
         });
+        debugPrint('GHOST_LOG: MEDIA_RENDER_READY messageId: ${widget.message.id} mediaId: $mediaId mediaKind: ${envelope.kind.name} url: $urlHint (Voice downloaded)');
         await _player.play(DeviceFileSource(file.path));
       }
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('GHOST_LOG: MEDIA_RENDER_FAILED messageId: ${widget.message.id} mediaId: $mediaId mediaKind: ${envelope.kind.name} url: $urlHint error: $e');
+    }
   }
 
   String _formatDuration(Duration d) {

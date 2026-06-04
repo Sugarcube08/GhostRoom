@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:file_picker/file_picker.dart';
 import '../../core/providers.dart';
+import '../../core/security/privacy_protection_service.dart';
 import '../../core/widgets/navigation_shell.dart';
 import 'dart:io';
 
@@ -14,6 +15,21 @@ class OnboardingScreen extends ConsumerStatefulWidget {
 
 class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
   final PageController _pageController = PageController();
+  late final PrivacyProtectionService _privacyService;
+
+  @override
+  void initState() {
+    super.initState();
+    _privacyService = ref.read(privacyProtectionProvider);
+    _privacyService.enableScreenshotProtection();
+  }
+
+  @override
+  void dispose() {
+    _privacyService.disableScreenshotProtection();
+    _pageController.dispose();
+    super.dispose();
+  }
   String? _mnemonic;
   bool _isGenerating = false;
   bool _backupSaved = false;
@@ -86,8 +102,12 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
             onPressed: () async {
               if (controller.text.isEmpty) return;
               try {
-                await ref.read(identityServiceProvider).restoreIdentity(_mnemonic!);
-                await ref.read(backupServiceProvider).exportBackup(controller.text);
+                final idService = ref.read(identityServiceProvider);
+                final backupService = ref.read(backupServiceProvider);
+
+                await idService.restoreIdentity(_mnemonic!);
+                await backupService.exportBackup(controller.text);
+                
                 if (mounted) setState(() => _backupSaved = true);
                 
                 _drillIndices.clear();
@@ -131,8 +151,9 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
   }
 
   void _completeOnboarding() async {
-    if (!ref.read(identityServiceProvider).hasIdentity) {
-       await ref.read(identityServiceProvider).restoreIdentity(_mnemonic!);
+    final idService = ref.read(identityServiceProvider);
+    if (!idService.hasIdentity) {
+       await idService.restoreIdentity(_mnemonic!);
     }
     
     if (mounted) {
@@ -168,7 +189,8 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                 final nav = Navigator.of(context);
                 final scaffoldMessenger = ScaffoldMessenger.of(context);
                 try {
-                  await ref.read(identityServiceProvider).restoreIdentity(controller.text.trim());
+                  final idService = ref.read(identityServiceProvider);
+                  await idService.restoreIdentity(controller.text.trim());
                   if (mounted) {
                     nav.pop();
                     nav.pushReplacement(MaterialPageRoute(builder: (_) => const NavigationShell()));
@@ -216,7 +238,8 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
             TextButton(
               onPressed: () async {
               try {
-                await ref.read(backupServiceProvider).importBackup(fileBytes, passController.text);
+                final backupService = ref.read(backupServiceProvider);
+                await backupService.importBackup(fileBytes, passController.text);
                 if (!context.mounted) return;
                 
                 Navigator.pop(dialogContext);

@@ -40,8 +40,11 @@ export class MediaService {
       this.configService.get<string>("R2_BUCKET_NAME") || "ghostroom-media";
 
     const clientEndpoint = endpoint || (accountId ? `https://${accountId}.r2.cloudflarestorage.com` : "");
-    this.logger.log(`STORAGE_ENDPOINT=${clientEndpoint}`);
-    this.logger.log(`STORAGE_BUCKET=${this.bucketName}`);
+    const redactedAccessKey = accessKeyId ? (accessKeyId.length > 6 ? `${accessKeyId.substring(0, 6)}...` : '***') : 'undefined';
+    
+    this.logger.log(`GHOST_LOG: R2_ENDPOINT=${clientEndpoint}`);
+    this.logger.log(`GHOST_LOG: R2_BUCKET=${this.bucketName}`);
+    this.logger.log(`GHOST_LOG: R2_ACCESS_KEY=${redactedAccessKey}`);
 
     if (
       this.configService.get<string>("NODE_ENV") === "production" &&
@@ -93,6 +96,7 @@ export class MediaService {
     hash: string,
     dynamicPublicEndpoint?: string,
   ) {
+    this.logger.log(`GHOST_LOG: MEDIA_CREATE_REQUEST ownerId=${ownerId} size=${size} mime=${mime} hash=${hash}`);
     await this.checkQuotas(ownerId, size);
 
     const mediaId = uuidv4();
@@ -104,6 +108,8 @@ export class MediaService {
     this.logger.log(
       `GHOST_LOG: UPLOAD_URL REQUEST: ownerId=${ownerId} mediaId=${mediaId} bucket=${this.bucketName} key=${bulkKey} size=${size} mime=${mime} hash=${hash}`,
     );
+
+    this.logger.log(`GHOST_LOG: MEDIA_PRESIGN_REQUEST mediaId=${mediaId} bucket=${this.bucketName} key=${bulkKey}`);
 
     const s3SigningClient = this.getS3ClientForSigning(dynamicPublicEndpoint);
 
@@ -131,6 +137,7 @@ export class MediaService {
     const mappedUploadUrl = this.mapToPublicUrl(uploadUrl, dynamicPublicEndpoint);
     const mappedThumbUrl = this.mapToPublicUrl(thumbUrl, dynamicPublicEndpoint);
 
+    this.logger.log(`GHOST_LOG: MEDIA_PRESIGN_SUCCESS mediaId=${mediaId} bucket=${this.bucketName} key=${bulkKey}`);
     this.logger.log(
       `GHOST_LOG: UPLOAD_URLS GENERATED: mediaId=${mediaId} uploadUrl=${mappedUploadUrl} thumbUrl=${mappedThumbUrl}`,
     );
@@ -185,6 +192,7 @@ export class MediaService {
 
     metadata.state = metadata.reference_count > 0 ? "REFERENCED" : "UPLOADED";
     await this.mediaRepo.save(metadata);
+    this.logger.log(`GHOST_LOG: R2_UPLOAD_CONFIRMED mediaId=${mediaId} ownerId=${ownerId}`);
     await this.auditService.log("media_upload_confirmed", {
       media_id: mediaId,
       owner: ownerId,
@@ -204,6 +212,7 @@ export class MediaService {
 
     metadata.state = "REFERENCED";
     await this.mediaRepo.save(metadata);
+    this.logger.log(`GHOST_LOG: MEDIA_REFERENCE_CREATED mediaId=${mediaId} ownerId=${ownerId}`);
     await this.auditService.log("media_referenced", {
       media_id: mediaId,
       owner: ownerId,

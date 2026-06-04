@@ -9,10 +9,14 @@ class ContactService {
   static const String _blockBoxName = 'blocked_identities';
   static const String _hiveKey = 'hive_encryption_key';
   final FlutterSecureStorage _storage;
+  bool _isInitialized = false;
 
   ContactService(this._storage);
   
   Future<void> init() async {
+    if (_isInitialized) return;
+    _isInitialized = true;
+
     if (!Hive.isAdapterRegistered(0)) {
       Hive.registerAdapter(ContactAdapter());
     }
@@ -51,24 +55,30 @@ class ContactService {
     }
   }
 
-  Box<Contact> get _box => Hive.box<Contact>(_boxName);
-  Box<String> get _blockBox => Hive.box<String>(_blockBoxName);
+  Box<Contact>? get _box {
+    if (!Hive.isBoxOpen(_boxName)) return null;
+    return Hive.box<Contact>(_boxName);
+  }
+  Box<String>? get _blockBox {
+    if (!Hive.isBoxOpen(_blockBoxName)) return null;
+    return Hive.box<String>(_blockBoxName);
+  }
 
   List<Contact> getAllContacts() {
-    return _box.values.toList();
+    return _box?.values.toList() ?? [];
   }
 
   Contact? getContact(String publicId) {
-    return _box.get(publicId);
+    return _box?.get(publicId);
   }
 
   Future<void> saveContact(Contact contact) async {
-    await _box.put(contact.publicId, contact);
+    await _box?.put(contact.publicId, contact);
     await unblockIdentity(contact.publicId); // Unblock if they were blocked
   }
 
   Future<void> deleteContact(String publicId) async {
-    await _box.delete(publicId);
+    await _box?.delete(publicId);
   }
 
   Future<void> updateAlias(String publicId, String alias) async {
@@ -80,26 +90,26 @@ class ContactService {
   }
 
   Future<void> clearAll() async {
-    await _box.clear();
-    await _blockBox.clear();
+    await _box?.clear();
+    await _blockBox?.clear();
   }
 
   // Block List Management
   bool isBlocked(String publicId) {
-    return _blockBox.containsKey(publicId);
+    return _blockBox?.containsKey(publicId) ?? false;
   }
 
   Future<void> blockIdentity(String publicId) async {
-    await _blockBox.put(publicId, publicId);
+    await _blockBox?.put(publicId, publicId);
     await deleteContact(publicId); // Ensure not in contacts if blocked
   }
 
   Future<void> unblockIdentity(String publicId) async {
-    await _blockBox.delete(publicId);
+    await _blockBox?.delete(publicId);
   }
 
   List<String> getBlockedIdentities() {
-    return _blockBox.values.toList();
+    return _blockBox?.values.toList() ?? [];
   }
 }
 

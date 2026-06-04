@@ -13,6 +13,8 @@ import 'attachment_envelope.dart';
 import '../../core/network/relay_manager.dart';
 import 'media_service.dart';
 
+import 'lru_memory_cache.dart';
+
 enum MediaState {
   notDownloaded,
   downloading,
@@ -79,8 +81,17 @@ class MediaManager {
   late final Box<dynamic> _cacheIndex;
 
   final Map<String, Future<File>> _activeDownloads = {};
-  final Map<String, MediaState> _states = {};
-  final Map<String, MediaState> _thumbStates = {};
+  
+  // Use LRU to bound states. Assuming each string is 50 bytes and state is 8 bytes.
+  final LRUMemoryCache<String, MediaState> _states = LRUMemoryCache<String, MediaState>(
+    maximumSizeBytes: 10 * 1024 * 1024, // 10MB limit for state cache
+    sizeEstimator: (k, v) => k.length + 8,
+  );
+  
+  final LRUMemoryCache<String, MediaState> _thumbStates = LRUMemoryCache<String, MediaState>(
+    maximumSizeBytes: 10 * 1024 * 1024, // 10MB limit for thumb state cache
+    sizeEstimator: (k, v) => k.length + 8,
+  );
 
   final StreamController<MediaStateUpdate> _stateController =
       StreamController<MediaStateUpdate>.broadcast();
@@ -145,7 +156,7 @@ class MediaManager {
     if (!_initCompleter.isCompleted) {
       return MediaState.notDownloaded;
     }
-    final state = isThumbnail ? _thumbStates[mediaId] : _states[mediaId];
+    final state = isThumbnail ? _thumbStates.get(mediaId) : _states.get(mediaId);
     if (state != null) return state;
 
     final key = '${mediaId}_${isThumbnail ? 'thumb' : 'original'}';
@@ -203,18 +214,45 @@ class MediaManager {
     _updateState(mediaId, MediaState.ready, isThumbnail: true);
   }
 
+  bool _isValidTransition(MediaState? from, MediaState to) {
+    if (from == null) return true;
+    if (from == to) return true;
+    switch (from) {
+      case MediaState.notDownloaded:
+        return to == MediaState.downloading || to == MediaState.ready || to == MediaState.failed;
+      case MediaState.downloading:
+        return to == MediaState.decrypting || to == MediaState.failed;
+      case MediaState.decrypting:
+        return to == MediaState.verifying || to == MediaState.failed;
+      case MediaState.verifying:
+        return to == MediaState.ready || to == MediaState.failed;
+      case MediaState.ready:
+        return to == MediaState.notDownloaded;
+      case MediaState.failed:
+        return to == MediaState.downloading || to == MediaState.notDownloaded;
+    }
+  }
+
   void _updateState(
     String mediaId,
     MediaState state, {
     bool isThumbnail = false,
   }) {
-    final currentState = isThumbnail ? _thumbStates[mediaId] : _states[mediaId];
+    final currentState = isThumbnail ? _thumbStates.get(mediaId) : _states.get(mediaId);
     if (currentState == state) return;
 
+    if (!_isValidTransition(currentState, state)) {
+      _logger.w('GHOST_WARNING: Invalid MediaState transition from ${currentState?.name ?? "null"} to ${state.name} for media $mediaId isThumb $isThumbnail');
+    }
+    assert(
+      _isValidTransition(currentState, state),
+      'GHOST_ERROR: Invalid MediaState transition from ${currentState?.name ?? "null"} to ${state.name} for media $mediaId isThumb $isThumbnail',
+    );
+
     if (isThumbnail) {
-      _thumbStates[mediaId] = state;
+      _thumbStates.put(mediaId, state);
     } else {
-      _states[mediaId] = state;
+      _states.put(mediaId, state);
     }
     _stateController.add(
       MediaStateUpdate(mediaId, state, isThumbnail: isThumbnail),
@@ -229,6 +267,7 @@ class MediaManager {
     required RelayProfile relay,
     required KeyPair myXidKeyPair,
     bool isThumbnail = false,
+    String? messageId,
   }) {
     final key = '${envelope.mediaId}_${isThumbnail ? 'thumb' : 'original'}';
 
@@ -272,6 +311,7 @@ class MediaManager {
           relay: targetRelay,
           myXidKeyPair: myXidKeyPair,
           isThumbnail: isThumbnail,
+          messageId: messageId,
         );
 
         // Background thumbnail generation (Critical Rule #6)
@@ -300,6 +340,7 @@ class MediaManager {
     required RelayProfile relay,
     required KeyPair myXidKeyPair,
     required bool isThumbnail,
+    required String? messageId,
   }) async {
     final mediaId = envelope.mediaId;
 
@@ -318,6 +359,8 @@ class MediaManager {
         final urlString = isThumbnail
             ? '${relay.apiUrl}/media/download-url/$mediaId?thumbnail=true'
             : '${relay.apiUrl}/media/download-url/$mediaId';
+
+        _logger.i('GHOST_LOG: MEDIA_DOWNLOAD_START messageId: ${messageId ?? "unknown"} mediaId: $mediaId mediaKind: ${envelope.kind.name} url: $urlString');
 
         final response = await http.get(Uri.parse(urlString));
         if (response.statusCode == 404) {
@@ -345,9 +388,11 @@ class MediaManager {
         }
 
         final ciphertext = getResponse.bodyBytes;
+        _logger.i('GHOST_LOG: MEDIA_DOWNLOAD_SUCCESS messageId: ${messageId ?? "unknown"} mediaId: $mediaId mediaKind: ${envelope.kind.name} url: $downloadUrl');
 
         // Step 2: Decrypting
         _updateState(mediaId, MediaState.decrypting, isThumbnail: isThumbnail);
+        _logger.i('GHOST_LOG: MEDIA_DECRYPT_START messageId: ${messageId ?? "unknown"} mediaId: $mediaId mediaKind: ${envelope.kind.name} url: $downloadUrl');
 
         late final Uint8List decrypted;
         try {
@@ -369,6 +414,7 @@ class MediaManager {
             nonce: base64Decode(nonceBase64),
             key: messageKey,
           );
+          _logger.i('GHOST_LOG: MEDIA_DECRYPT_SUCCESS messageId: ${messageId ?? "unknown"} mediaId: $mediaId mediaKind: ${envelope.kind.name} url: $downloadUrl');
         } catch (e) {
           throw Exception(
             'Decryption failure: $e',

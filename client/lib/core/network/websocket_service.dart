@@ -18,6 +18,12 @@ class WebSocketService {
   // Persistent callback registry to survive socket replacement
   final Map<String, dynamic> _callbacks = {};
 
+  bool _listenerSetupDone = false;
+  int _connectCount = 0;
+  int _disconnectCount = 0;
+  int _reconnectCount = 0;
+  int _listenerInitCount = 0;
+
   WebSocketService(this._ref);
 
   bool get isConnected => _socket?.connected ?? false;
@@ -49,8 +55,12 @@ class WebSocketService {
       connectionUrl = connectionUrl.replaceFirst('wss://', 'https://');
     }
 
-    if (_socket != null && _socket!.connected && _activeUrl == connectionUrl) {
-      _logger.d('Already connected to ${profile.label}');
+    if (_socket != null && _activeUrl == connectionUrl) {
+      _logger.d('WebSocket already targeting ${profile.label}. Status: ${_socket!.connected ? "Connected" : "Reconnecting/Disconnected"}');
+      if (!_socket!.connected) {
+        _logger.d('Ensuring existing socket is connected...');
+        _socket!.connect(); // Manually trigger connect if autoConnect didn't catch it
+      }
       return;
     }
 
@@ -60,9 +70,10 @@ class WebSocketService {
 
     try {
       if (_socket != null) {
-        _logger.i('Disposing existing socket before new connection');
+        _logger.i('Disposing existing socket for different URL: $_activeUrl -> $connectionUrl');
         _socket!.dispose();
         _socket = null;
+        _listenerSetupDone = false;
       }
 
       _isAuthenticated = false;
@@ -94,10 +105,23 @@ class WebSocketService {
   void _setupInternalListeners(RelayProfile profile) {
     if (_socket == null) return;
 
+    assert(!_listenerSetupDone);
+    _listenerSetupDone = true;
+
+    _listenerInitCount++;
+    _logger.i('GHOST_LOG: WS_LISTENERS_INITIALIZED count: $_listenerInitCount');
+
     _socket!.onConnect((_) {
+      _connectCount++;
       _logger.i('Connected to relay: ${profile.label}');
       _logger.i("SOCKET_CONNECTED");
+      _logger.i('GHOST_LOG: WS_CONNECT count: $_connectCount');
       StabilityTracker.logEvent('WS_Connected');
+    });
+
+    _socket!.on('reconnect', (_) {
+      _reconnectCount++;
+      _logger.i('GHOST_LOG: WS_RECONNECT count: $_reconnectCount');
     });
 
     _socket!.on('identity.challenge', (data) async {
@@ -171,7 +195,9 @@ class WebSocketService {
     });
 
     _socket!.onDisconnect((reason) {
+      _disconnectCount++;
       _logger.w('Disconnected from relay. Reason: $reason');
+      _logger.i('GHOST_LOG: WS_DISCONNECT count: $_disconnectCount');
       _isAuthenticated = false;
     });
 
@@ -255,6 +281,7 @@ class WebSocketService {
     _socket?.dispose();
     _socket = null;
     _isAuthenticated = false;
+    _listenerSetupDone = false;
   }
 
   Future<List<Map<String, dynamic>>> getDevices(String publicId) async {

@@ -59,7 +59,12 @@ class ChatRepository {
     }
   }
 
+  bool _isInitialized = false;
+
   Future<void> init() async {
+    if (_isInitialized) return;
+    _isInitialized = true;
+    
     StabilityTracker.logMemory('ChatRepo_Init_Start');
     if (!Hive.isAdapterRegistered(MessageTypeAdapter().typeId)) {
       Hive.registerAdapter(MessageTypeAdapter());
@@ -118,24 +123,39 @@ class ChatRepository {
     processEnvelopes(messages);
   }
 
-  Box<Message> get _msgBox => Hive.box<Message>(_msgBoxName);
-  Box<ConversationState> get _stateBox => Hive.box<ConversationState>('conversation_states');
-  Box get _syncBox => Hive.box(_syncBoxName);
-  Box get _processedBox => Hive.box(_processedBoxName);
-  Box<Uint8List> get _thumbBox => Hive.box<Uint8List>(_thumbCacheName);
+  Box<Message>? get _msgBox {
+    if (!Hive.isBoxOpen(_msgBoxName)) return null;
+    return Hive.box<Message>(_msgBoxName);
+  }
+  Box<ConversationState>? get _stateBox {
+    if (!Hive.isBoxOpen('conversation_states')) return null;
+    return Hive.box<ConversationState>('conversation_states');
+  }
+  Box? get _syncBox {
+    if (!Hive.isBoxOpen(_syncBoxName)) return null;
+    return Hive.box(_syncBoxName);
+  }
+  Box? get _processedBox {
+    if (!Hive.isBoxOpen(_processedBoxName)) return null;
+    return Hive.box(_processedBoxName);
+  }
+  Box<Uint8List>? get _thumbBox {
+    if (!Hive.isBoxOpen(_thumbCacheName)) return null;
+    return Hive.box<Uint8List>(_thumbCacheName);
+  }
 
-  Uint8List? getCachedThumbnail(String mediaId) => _thumbBox.get(mediaId);
-  Future<void> cacheThumbnail(String mediaId, Uint8List data) => _thumbBox.put(mediaId, data);
+  Uint8List? getCachedThumbnail(String mediaId) => _thumbBox?.get(mediaId);
+  Future<void> cacheThumbnail(String mediaId, Uint8List data) async => _thumbBox?.put(mediaId, data);
 
-  int get lastSyncTimestamp => _syncBox.get(_lastSyncKey, defaultValue: 0);
+  int get lastSyncTimestamp => _syncBox?.get(_lastSyncKey, defaultValue: 0) ?? 0;
   
-  bool isProcessed(String id) => _processedBox.containsKey(id);
+  bool isProcessed(String id) => _processedBox?.containsKey(id) ?? false;
 
   Future<void> _markProcessed(String id, int timestamp) async {
-    await _processedBox.put(id, true);
+    await _processedBox?.put(id, true);
     
     if (timestamp > lastSyncTimestamp) {
-      await _syncBox.put(_lastSyncKey, timestamp);
+      await _syncBox?.put(_lastSyncKey, timestamp);
     }
   }
 
@@ -258,7 +278,7 @@ class ChatRepository {
           if (systemType == 'receipt') {
             final targetId = payload['metadata']?['target_id'];
             if (targetId != null) {
-              final targetMsg = _msgBox.get(targetId);
+              final targetMsg = _msgBox?.get(targetId);
               if (targetMsg != null) {
                 targetMsg.metadata?['consumed'] = true;
                 await targetMsg.save();
@@ -269,7 +289,7 @@ class ChatRepository {
             final modeIndex = payload['metadata']?['mode'] as int?;
             if (modeIndex != null && modeIndex < ConversationMode.values.length) {
               final newMode = ConversationMode.values[modeIndex];
-              final state = _stateBox.get(senderId) ?? ConversationState(
+              final state = _stateBox?.get(senderId) ?? ConversationState(
                 contactId: senderId, 
                 lastChangedBy: senderId, 
                 lastChangedAt: DateTime.now(), 
@@ -278,7 +298,7 @@ class ChatRepository {
               state.mode = newMode;
               state.lastChangedBy = senderId;
               state.lastChangedAt = DateTime.now();
-              await _stateBox.put(senderId, state);
+              await _stateBox?.put(senderId, state);
               _logger.i('Conversation mode for $senderId changed to ${newMode.name} by partner.');
               _logger.i('GHOST_LOG: MODE_CHANGE_RECEIVED');
               _logger.i('GHOST_LOG: MODE_CHANGE_APPLIED');
@@ -291,7 +311,7 @@ class ChatRepository {
         }
 
         // UPDATE CONVERSATION STATE & UNREAD COUNT
-        var state = _stateBox.get(senderId);
+        var state = _stateBox?.get(senderId);
         final isCurrentlyActive = senderId == _activeConversationId;
         if (state != null) {
           // Check for 18-hour inactivity reset
@@ -307,7 +327,7 @@ class ChatRepository {
             state.unreadCount = (state.unreadCount ?? 0) + 1;
           }
           state.lastMessageId = message.id;
-          await _stateBox.put(senderId, state);
+          await _stateBox?.put(senderId, state);
         } else {
           state = ConversationState(
             contactId: senderId,
@@ -317,10 +337,10 @@ class ChatRepository {
             unreadCount: isCurrentlyActive ? 0 : 1,
             lastMessageId: message.id,
           );
-          await _stateBox.put(senderId, state);
+          await _stateBox?.put(senderId, state);
         }
 
-        await _msgBox.put(message.id, message);
+        await _msgBox?.put(message.id, message);
         
         // TRIGGER NOTIFICATION
         if (isRequest) {
@@ -387,11 +407,11 @@ class ChatRepository {
   }
 
   Future<void> saveMessage(Message message) async {
-    await _msgBox.put(message.id, message);
+    await _msgBox?.put(message.id, message);
   }
 
   Future<void> updateMessageMetadata(String messageId, Map<String, dynamic> metadata) async {
-    final message = _msgBox.get(messageId);
+    final message = _msgBox?.get(messageId);
     if (message != null) {
       final newMetadata = Map<String, dynamic>.from(message.metadata ?? {});
       newMetadata.addAll(metadata);
@@ -406,7 +426,7 @@ class ChatRepository {
         metadata: newMetadata,
         isRequest: message.isRequest,
       );
-      await _msgBox.put(messageId, updatedMessage);
+      await _msgBox?.put(messageId, updatedMessage);
     }
   }
 
@@ -511,7 +531,7 @@ class ChatRepository {
     _logger.i("MESSAGE_SENT");
 
     // Update Activity
-    final state = _stateBox.get(recipientId) ?? ConversationState(
+    final state = _stateBox?.get(recipientId) ?? ConversationState(
       contactId: recipientId,
       lastChangedBy: identity.publicId,
       lastChangedAt: DateTime.now(),
@@ -521,7 +541,7 @@ class ChatRepository {
     if (type != MessageType.system) {
       state.lastMessageId = envelope.id;
     }
-    await _stateBox.put(recipientId, state);
+    await _stateBox?.put(recipientId, state);
 
     if (type != MessageType.system) {
       final message = Message(
@@ -536,9 +556,9 @@ class ChatRepository {
       );
       
       if (existingId != null && existingId != envelope.id) {
-        await _msgBox.delete(existingId);
+        await _msgBox?.delete(existingId);
       }
-      await _msgBox.put(message.id, message);
+      await _msgBox?.put(message.id, message);
     }
   }
 
@@ -546,7 +566,7 @@ class ChatRepository {
     final identity = _idService.currentIdentity;
     if (identity == null) return;
 
-    final state = _stateBox.get(contactId) ?? ConversationState(
+    final state = _stateBox?.get(contactId) ?? ConversationState(
       contactId: contactId, 
       lastChangedBy: identity.publicId, 
       lastChangedAt: DateTime.now(), 
@@ -556,7 +576,7 @@ class ChatRepository {
     state.mode = mode;
     state.lastChangedBy = identity.publicId;
     state.lastChangedAt = DateTime.now();
-    await _stateBox.put(contactId, state);
+    await _stateBox?.put(contactId, state);
 
     // Send synchronization message
     await sendMessage(
@@ -597,7 +617,7 @@ class ChatRepository {
   Future<void> flushAllGhosts() async {
     _logger.i('GHOST_LOG: Global ghost flush starting...');
     final List<String> deletedIds = [];
-    final messages = _msgBox.values;
+    final messages = _msgBox?.values ?? [];
     for (final msg in messages) {
       if (msg.metadata?['is_ghost'] == true) {
         await msg.delete();
@@ -620,10 +640,10 @@ class ChatRepository {
   }
 
   Future<void> markConversationAsRead(String contactId) async {
-    final state = _stateBox.get(contactId);
+    final state = _stateBox?.get(contactId);
     if (state != null && (state.unreadCount ?? 0) > 0) {
       state.unreadCount = 0;
-      await _stateBox.put(contactId, state);
+      await _stateBox?.put(contactId, state);
       _logger.i('Conversation with $contactId marked as read.');
     }
   }
@@ -649,7 +669,7 @@ class ChatRepository {
     // RAM OPTIMIZATION: Do not load all values. Iterate and filter.
     // Future improvement: use an index box for performance.
     final result = <Message>[];
-    final values = _msgBox.values;
+    final values = _msgBox?.values ?? [];
     
     // Reverse iteration to get latest messages first
     for (var i = values.length - 1; i >= 0; i--) {
@@ -665,15 +685,16 @@ class ChatRepository {
   }
 
   Iterable<Message> getAllMessages() {
-    return _msgBox.values;
+    return _msgBox?.values ?? [];
   }
 
   Iterable<ConversationState> getAllConversationStates() {
-    return _stateBox.values;
+    return _stateBox?.values ?? [];
   }
 
   Future<void> dangerouslyClearAll() async {
-    await _msgBox.clear();
-    await _syncBox.clear();
+    await _msgBox?.clear();
+    await _syncBox?.clear();
   }
 }
+

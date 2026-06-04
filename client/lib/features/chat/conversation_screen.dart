@@ -17,6 +17,8 @@ import 'chat_repository.dart';
 import 'conversation_service.dart';
 import 'conversation_state.dart';
 import 'message.dart';
+import 'messages_provider.dart';
+import '../../core/security/privacy_protection_service.dart';
 import '../../design_system/colors.dart';
 import '../../design_system/typography.dart';
 import '../../design_system/components/components.dart';
@@ -110,6 +112,9 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
   bool _isRecording = false;
   late final ChatRepository _chatRepository;
   final Logger _logger = Logger();
+  late final PrivacyProtectionService _privacyService;
+  int _lastMessageCount = 0;
+  int _buildCount = 0;
 
   @override
   void initState() {
@@ -118,10 +123,19 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
     _chatRepository.setActiveConversation(widget.conversation.contactId);
     _chatRepository.markConversationAsRead(widget.conversation.contactId);
     _scrollController.addListener(_onScroll);
+    
+    // Enable screenshot protection for active chat
+    _privacyService = ref.read(privacyProtectionProvider);
+    _privacyService.enableScreenshotProtection();
   }
 
   void _onScroll() {
     if (!_scrollController.hasClients) return;
+    
+    if (_scrollController.position.pixels <= 100) {
+      ref.read(messagesProvider(widget.conversation.contactId).notifier).loadMore();
+    }
+    
     final atBottom = _scrollController.position.pixels >= _scrollController.position.maxScrollExtent - 200;
     if (atBottom && _showScrollButton) {
       setState(() => _showScrollButton = false);
@@ -136,6 +150,10 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
     Future.microtask(() => _chatRepository.flushGhostMessages(contactId));
     _controller.dispose();
     _scrollController.dispose();
+    
+    // Disable screenshot protection using local reference
+    _privacyService.disableScreenshotProtection();
+    
     super.dispose();
   }
 
@@ -143,11 +161,17 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
     if (_controller.text.isEmpty) return;
     final text = _controller.text;
     _controller.clear();
-    await ref.read(conversationServiceProvider).sendMessage(widget.conversation.contactId, text);
+    final convService = ref.read(conversationServiceProvider);
+    final contactId = widget.conversation.contactId;
+    await convService.sendMessage(contactId, text);
   }
 
   @override
   Widget build(BuildContext context) {
+    _buildCount++;
+    if (_buildCount % 10 == 0) {
+      _logger.w("GHOST_LOG: ConversationScreen build count: $_buildCount");
+    }
     final colors = AppColors.of(context);
     
     return ValueListenableBuilder(
@@ -156,33 +180,33 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
         final state = stateBox.get(widget.conversation.contactId);
         final currentMode = state?.mode ?? ConversationMode.normal;
 
-        return ValueListenableBuilder(
-          valueListenable: Hive.box<Message>('messages').listenable(),
-          builder: (context, box, child) {
-            final messages = ref.read(chatRepositoryProvider).getMessagesForContact(widget.conversation.contactId, limit: 200);
-            
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (_scrollController.hasClients && messages.isNotEmpty) {
-                final pos = _scrollController.position;
-                final lastMsg = messages.last;
-                final isMe = lastMsg.senderId == ref.read(chatRepositoryProvider).myPublicId;
-                final atBottom = pos.pixels >= pos.maxScrollExtent - 200;
+        final messages = ref.watch(messagesProvider(widget.conversation.contactId));
+        
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (_scrollController.hasClients && messages.isNotEmpty) {
+            final pos = _scrollController.position;
+            final lastMsg = messages.last;
+            final isMe = lastMsg.senderId == ref.read(chatRepositoryProvider).myPublicId;
+            final atBottom = pos.pixels >= pos.maxScrollExtent - 200;
 
-                if (_isInitialScroll) {
-                  _isInitialScroll = false;
-                  _scrollController.jumpTo(pos.maxScrollExtent);
-                } else if (isMe || atBottom) {
-                  _scrollController.animateTo(pos.maxScrollExtent, duration: const Duration(milliseconds: 300), curve: Curves.easeOut);
-                  if (_showScrollButton) setState(() => _showScrollButton = false);
-                } else if (!isMe && !atBottom && !_showScrollButton) {
-                  setState(() => _showScrollButton = true);
-                }
-              }
-            });
+            final hasNewMessage = messages.length > _lastMessageCount;
+            _lastMessageCount = messages.length;
 
-            return Scaffold(
-              backgroundColor: colors.primaryBackground,
-              appBar: AppBar(
+            if (_isInitialScroll) {
+              _isInitialScroll = false;
+              _scrollController.jumpTo(pos.maxScrollExtent);
+            } else if (hasNewMessage && (isMe || atBottom)) {
+              _scrollController.animateTo(pos.maxScrollExtent, duration: const Duration(milliseconds: 300), curve: Curves.easeOut);
+              if (_showScrollButton) setState(() => _showScrollButton = false);
+            } else if (!isMe && !atBottom && !_showScrollButton) {
+              setState(() => _showScrollButton = true);
+            }
+          }
+        });
+
+        return Scaffold(
+          backgroundColor: colors.primaryBackground,
+          appBar: AppBar(
                 backgroundColor: colors.primaryBackground,
                 elevation: 0,
                 centerTitle: true,
@@ -244,8 +268,6 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
                 ],
               ),
             );
-          },
-        );
       },
     );
   }
@@ -837,10 +859,13 @@ class _AttachmentWidgetState extends ConsumerState<AttachmentWidget> {
   }
 
   void _initMedia() async {
-    if (widget.message.metadata == null) return;
+    if (widget.message.metadata == null || widget.message.metadata?['media_id'] == null) return;
     final envelope = AttachmentEnvelope.fromJson(widget.message.metadata!);
     final mediaId = envelope.mediaId;
     final mediaManager = ref.read(mediaManagerProvider);
+
+    final urlHint = envelope.relayUrl ?? "active_relay";
+    debugPrint('GHOST_LOG: MEDIA_ATTACHMENT_DETECTED messageId: ${widget.message.id} mediaId: $mediaId mediaKind: ${envelope.kind.name} url: $urlHint');
 
     setState(() {
       _mediaState = mediaManager.getMediaState(mediaId, isThumbnail: false);
@@ -857,7 +882,11 @@ class _AttachmentWidgetState extends ConsumerState<AttachmentWidget> {
               _mediaState = update.state;
             }
           });
-          if (update.state == MediaState.ready) _loadFiles();
+          if (update.state == MediaState.ready) {
+            _loadFiles();
+          } else if (update.state == MediaState.failed) {
+            debugPrint('GHOST_LOG: MEDIA_RENDER_FAILED messageId: ${widget.message.id} mediaId: $mediaId mediaKind: ${envelope.kind.name} url: $urlHint error: Media state transitioned to failed');
+          }
         }
       }
     });
@@ -866,47 +895,107 @@ class _AttachmentWidgetState extends ConsumerState<AttachmentWidget> {
   }
 
   void _loadFiles() async {
-    if (widget.message.metadata == null) return;
+    if (widget.message.metadata == null || widget.message.metadata?['media_id'] == null) return;
     final envelope = AttachmentEnvelope.fromJson(widget.message.metadata!);
+    final mediaId = envelope.mediaId;
     final mediaManager = ref.read(mediaManagerProvider);
     final relay = await ref.read(activeRelayProvider.future);
+    if (!mounted) return;
+    
     final identity = ref.read(identityServiceProvider).currentIdentity;
+    final urlHint = envelope.relayUrl ?? relay?.apiUrl ?? "unknown";
 
-    if (relay == null || identity == null) return;
+    if (relay == null || identity == null) {
+      debugPrint('GHOST_LOG: MEDIA_RENDER_FAILED messageId: ${widget.message.id} mediaId: $mediaId mediaKind: ${envelope.kind.name} url: $urlHint error: Active relay or identity is null');
+      return;
+    }
 
     if (_thumbState == MediaState.ready) {
-      final file = await mediaManager.getMedia(envelope: envelope, relay: relay, myXidKeyPair: identity.x25519KeyPair, isThumbnail: true);
-      if (mounted) setState(() => _thumbFile = file);
+      try {
+        final file = await mediaManager.getMedia(
+          envelope: envelope,
+          relay: relay,
+          myXidKeyPair: identity.x25519KeyPair,
+          isThumbnail: true,
+          messageId: widget.message.id,
+        );
+        if (mounted) {
+          setState(() => _thumbFile = file);
+          debugPrint('GHOST_LOG: MEDIA_RENDER_READY messageId: ${widget.message.id} mediaId: $mediaId mediaKind: ${envelope.kind.name} url: $urlHint (Thumbnail)');
+        }
+      } catch (e) {
+        debugPrint('GHOST_LOG: MEDIA_RENDER_FAILED messageId: ${widget.message.id} mediaId: $mediaId mediaKind: ${envelope.kind.name} url: $urlHint error: Failed loading ready thumbnail: $e');
+      }
     } else if (_thumbState == MediaState.notDownloaded) {
       try {
-        final file = await mediaManager.getMedia(envelope: envelope, relay: relay, myXidKeyPair: identity.x25519KeyPair, isThumbnail: true);
-        if (mounted) setState(() { _thumbFile = file; _thumbState = MediaState.ready; });
-      } catch (_) {}
+        final file = await mediaManager.getMedia(
+          envelope: envelope,
+          relay: relay,
+          myXidKeyPair: identity.x25519KeyPair,
+          isThumbnail: true,
+          messageId: widget.message.id,
+        );
+        if (mounted) {
+          setState(() { _thumbFile = file; _thumbState = MediaState.ready; });
+          debugPrint('GHOST_LOG: MEDIA_RENDER_READY messageId: ${widget.message.id} mediaId: $mediaId mediaKind: ${envelope.kind.name} url: $urlHint (Thumbnail downloaded)');
+        }
+      } catch (e) {
+        debugPrint('GHOST_LOG: MEDIA_RENDER_FAILED messageId: ${widget.message.id} mediaId: $mediaId mediaKind: ${envelope.kind.name} url: $urlHint error: Failed downloading/decrypting thumbnail: $e');
+      }
     }
 
     if (_mediaState == MediaState.ready) {
-      final file = await mediaManager.getMedia(envelope: envelope, relay: relay, myXidKeyPair: identity.x25519KeyPair, isThumbnail: false);
-      if (mounted) setState(() => _decryptedFile = file);
+      try {
+        final file = await mediaManager.getMedia(
+          envelope: envelope,
+          relay: relay,
+          myXidKeyPair: identity.x25519KeyPair,
+          isThumbnail: false,
+          messageId: widget.message.id,
+        );
+        if (mounted) {
+          setState(() => _decryptedFile = file);
+          debugPrint('GHOST_LOG: MEDIA_RENDER_READY messageId: ${widget.message.id} mediaId: $mediaId mediaKind: ${envelope.kind.name} url: $urlHint (Original)');
+        }
+      } catch (e) {
+        debugPrint('GHOST_LOG: MEDIA_RENDER_FAILED messageId: ${widget.message.id} mediaId: $mediaId mediaKind: ${envelope.kind.name} url: $urlHint error: Failed loading ready original: $e');
+      }
     }
   }
 
   void _download() async {
-    if (widget.message.metadata == null) return;
+    if (widget.message.metadata == null || widget.message.metadata?['media_id'] == null) return;
     if (_mediaState == MediaState.downloading || _mediaState == MediaState.decrypting || _mediaState == MediaState.verifying) return;
 
     final mediaManager = ref.read(mediaManagerProvider);
-    try {
-      final envelope = AttachmentEnvelope.fromJson(widget.message.metadata!);
-      final relay = await ref.read(activeRelayProvider.future);
-      final identity = ref.read(identityServiceProvider).currentIdentity;
-      if (relay == null || identity == null) return;
+    final envelope = AttachmentEnvelope.fromJson(widget.message.metadata!);
+    final mediaId = envelope.mediaId;
+    final relay = await ref.read(activeRelayProvider.future);
+    final urlHint = envelope.relayUrl ?? relay?.apiUrl ?? "unknown";
 
-      final file = await mediaManager.getMedia(envelope: envelope, relay: relay, myXidKeyPair: identity.x25519KeyPair, isThumbnail: false);
+    try {
+      if (!mounted) return;
+      
+      final identity = ref.read(identityServiceProvider).currentIdentity;
+      if (relay == null || identity == null) {
+        throw Exception('Active relay or identity is null');
+      }
+
+      final file = await mediaManager.getMedia(
+        envelope: envelope,
+        relay: relay,
+        myXidKeyPair: identity.x25519KeyPair,
+        isThumbnail: false,
+        messageId: widget.message.id,
+      );
       if (mounted) {
         setState(() { _decryptedFile = file; _mediaState = MediaState.ready; });
+        debugPrint('GHOST_LOG: MEDIA_RENDER_READY messageId: ${widget.message.id} mediaId: $mediaId mediaKind: ${envelope.kind.name} url: $urlHint (Downloaded Original)');
         _showFullScreen();
       }
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('GHOST_LOG: MEDIA_RENDER_FAILED messageId: ${widget.message.id} mediaId: $mediaId mediaKind: ${envelope.kind.name} url: $urlHint error: $e');
+    }
   }
 
   @override
