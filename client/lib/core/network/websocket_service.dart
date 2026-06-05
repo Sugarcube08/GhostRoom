@@ -2,6 +2,7 @@ import 'package:socket_io_client/socket_io_client.dart' as io;
 import 'relay_manager.dart';
 import 'package:logger/logger.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter/foundation.dart';
 import '../providers.dart';
 import 'dart:convert';
 import 'dart:async';
@@ -9,7 +10,9 @@ import '../stability_tracker.dart';
 
 class WebSocketService {
   final Ref _ref;
-  final Logger _logger = Logger();
+  final Logger _logger = Logger(
+    level: kReleaseMode ? Level.warning : Level.info,
+  );
   io.Socket? _socket;
   bool _isAuthenticated = false;
   bool _isConnecting = false;

@@ -74,7 +74,9 @@ class Identity {
 class IdentityService {
   final SodiumSumo sodium;
   final FlutterSecureStorage _storage;
-  final Logger _logger = Logger();
+  final Logger _logger = Logger(
+    level: kReleaseMode ? Level.warning : Level.info,
+  );
 
   static const String _seedKey = 'identity_seed_phrase';
   static const String _deviceIdKey = 'device_id';

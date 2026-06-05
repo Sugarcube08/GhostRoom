@@ -1,11 +1,14 @@
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter/foundation.dart';
+import 'dart:async';
 
 class NotificationService {
   final FlutterLocalNotificationsPlugin _notifications = FlutterLocalNotificationsPlugin();
   bool _initialized = false;
   
   Function(String?)? onNotificationTap;
+
+  NotificationService();
 
   Future<void> init() async {
     if (_initialized) return;

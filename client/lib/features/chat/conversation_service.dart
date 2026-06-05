@@ -63,30 +63,21 @@ class ConversationService {
     final Map<String, DateTime> lastActivities = {};
 
     final myId = _chatRepository.myPublicId;
+    final knownContactIds = _contactService.getAllContacts().map((c) => c.publicId).toSet();
 
     for (final state in _chatRepository.getAllConversationStates()) {
       lastActivities[state.contactId] = state.lastActivityAt;
       unreadCounts[state.contactId] = state.effectiveUnreadCount;
-    }
-
-    final knownContactIds = _contactService.getAllContacts().map((c) => c.publicId).toSet();
-
-    for (final msg in _chatRepository.getAllMessages()) {
-      final otherId = msg.senderId == myId ? msg.recipientId : msg.senderId;
-      
-      // EXCLUSION: If not in contacts and marked as request, skip for main list
-      if (msg.isRequest || !knownContactIds.contains(otherId)) continue;
-
-      // Update last message
-      final existingLast = lastMessages[otherId];
-      if (existingLast == null ||
-          msg.timestamp.isAfter(existingLast.timestamp)) {
-        lastMessages[otherId] = msg;
-      }
-
-      if (!lastActivities.containsKey(otherId) ||
-          msg.timestamp.isAfter(lastActivities[otherId]!)) {
-        lastActivities[otherId] = msg.timestamp;
+      if (state.lastMessageId != null) {
+        final msg = _chatRepository.getMessage(state.lastMessageId!);
+        if (msg != null) {
+          final isUnknownSender = !knownContactIds.contains(state.contactId) && state.contactId != myId;
+          if (msg.isRequest || isUnknownSender) {
+            // This belongs to requests, skip for main list
+            continue;
+          }
+          lastMessages[state.contactId] = msg;
+        }
       }
     }
 
@@ -115,24 +106,18 @@ class ConversationService {
     final Map<String, Message> lastMessages = {};
     final Map<String, int> unreadCounts = {};
     final myId = _chatRepository.myPublicId;
-    
     final knownContactIds = _contactService.getAllContacts().map((c) => c.publicId).toSet();
 
     for (final state in _chatRepository.getAllConversationStates()) {
       unreadCounts[state.contactId] = state.effectiveUnreadCount;
-    }
-
-    for (final msg in _chatRepository.getAllMessages()) {
-      final otherId = msg.senderId == myId ? msg.recipientId : msg.senderId;
-
-      // INCLUSION: Include if marked as request OR if sender is unknown (and not me)
-      final isUnknownSender = !knownContactIds.contains(otherId) && otherId != myId;
-      if (!msg.isRequest && !isUnknownSender) continue;
-
-      final existingLast = lastMessages[otherId];
-      if (existingLast == null ||
-          msg.timestamp.isAfter(existingLast.timestamp)) {
-        lastMessages[otherId] = msg;
+      if (state.lastMessageId != null) {
+        final msg = _chatRepository.getMessage(state.lastMessageId!);
+        if (msg != null) {
+          final isUnknownSender = !knownContactIds.contains(state.contactId) && state.contactId != myId;
+          if (msg.isRequest || isUnknownSender) {
+            lastMessages[state.contactId] = msg;
+          }
+        }
       }
     }
 
@@ -158,7 +143,7 @@ class ConversationService {
 
   Future<void> acceptRequest(String publicId) async {
     final msgs = _chatRepository
-        .getAllMessages()
+        .getMessagesForContact(publicId, limit: 1000)
         .where((m) => m.senderId == publicId && m.isRequest)
         .toList();
     if (msgs.isEmpty) return;
@@ -193,7 +178,7 @@ class ConversationService {
 
   Future<void> rejectRequest(String publicId) async {
     final msgs = _chatRepository
-        .getAllMessages()
+        .getMessagesForContact(publicId, limit: 1000)
         .where((m) => m.senderId == publicId && m.isRequest)
         .toList();
     for (final msg in msgs) {

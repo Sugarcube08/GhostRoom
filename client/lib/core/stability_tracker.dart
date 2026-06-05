@@ -3,7 +3,9 @@ import 'package:flutter/foundation.dart';
 import 'package:logger/logger.dart';
 
 class StabilityTracker {
-  static final Logger _logger = Logger();
+  static final Logger _logger = Logger(
+    level: kReleaseMode ? Level.warning : Level.info,
+  );
   static final Stopwatch _uptime = Stopwatch()..start();
 
   // Static counters for active controllers/widgets (forensics)

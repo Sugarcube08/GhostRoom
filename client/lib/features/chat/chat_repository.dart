@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/painting.dart';
 import 'package:sodium/sodium_sumo.dart' hide Box;
 import 'package:path_provider/path_provider.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'message.dart';
 import 'dm_service.dart';
 import 'conversation_state.dart';
@@ -20,16 +21,28 @@ import '../media/media_service.dart';
 import '../media/attachment_envelope.dart';
 import '../../core/network/relay_manager.dart';
 import '../../core/stability_tracker.dart';
+import '../../core/providers.dart';
 
 class ChatRepository {
-  final IdentityService _idService;
-  final DMService _dmService;
-  final ContactService _contactService;
-  final WebSocketService _wsService;
-  final NotificationService _notificationService;
-  final MediaManager _mediaManager;
-  final MediaService _mediaService;
-  final RelayManager _relayManager;
+  final Ref? _ref;
+  IdentityService? _idServiceField;
+  DMService? _dmServiceField;
+  ContactService? _contactServiceField;
+  WebSocketService? _wsServiceField;
+  NotificationService? _notificationServiceField;
+  MediaManager? _mediaManagerField;
+  MediaService? _mediaServiceField;
+  RelayManager? _relayManagerField;
+
+  IdentityService get _idService => _idServiceField ?? _ref!.read(identityServiceProvider);
+  DMService get _dmService => _dmServiceField ?? _ref!.read(dmServiceProvider);
+  ContactService get _contactService => _contactServiceField ?? _ref!.read(contactServiceProvider);
+  WebSocketService get _wsService => _wsServiceField ?? _ref!.read(webSocketServiceProvider);
+  NotificationService get _notificationService => _notificationServiceField ?? _ref!.read(notificationServiceProvider);
+  MediaManager get _mediaManager => _mediaManagerField ?? _ref!.read(mediaManagerProvider);
+  MediaService get _mediaService => _mediaServiceField ?? _ref!.read(mediaServiceProvider);
+  RelayManager get _relayManager => _relayManagerField ?? _ref!.read(relayManagerProvider);
+
   String? _activeConversationId;
   String? _hiveDbPath;
   final Logger _logger = Logger(
@@ -53,16 +66,28 @@ class ChatRepository {
   static const String _lastSyncKey = 'last_sync_t';
 
   ChatRepository(
-    this._idService, 
-    this._dmService, 
-    this._contactService, 
-    this._wsService,
-    this._notificationService,
-    this._mediaManager,
-    this._mediaService,
-    this._relayManager,
-  ) {
+    IdentityService idService, 
+    DMService dmService, 
+    ContactService contactService, 
+    WebSocketService wsService,
+    NotificationService notificationService,
+    MediaManager mediaManager,
+    MediaService mediaService,
+    RelayManager relayManager,
+  ) : _ref = null,
+      _idServiceField = idService,
+      _dmServiceField = dmService,
+      _contactServiceField = contactService,
+      _wsServiceField = wsService,
+      _notificationServiceField = notificationService,
+      _mediaManagerField = mediaManager,
+      _mediaServiceField = mediaService,
+      _relayManagerField = relayManager {
     _logger.i('GHOST_LOG: ChatRepository constructor invoked (Singleton verification)');
+  }
+
+  ChatRepository.lazy(Ref ref) : _ref = ref {
+    _logger.i('GHOST_LOG: ChatRepository lazy constructor invoked (Singleton verification)');
   }
 
   String get myPublicId => _idService.currentIdentity?.publicId ?? '';
@@ -1057,6 +1082,10 @@ class ChatRepository {
     
     return result.reversed.toList()
       ..sort((a, b) => a.timestamp.compareTo(b.timestamp));
+  }
+
+  Message? getMessage(String messageId) {
+    return _msgBox?.get(messageId);
   }
 
   Iterable<Message> getAllMessages() {

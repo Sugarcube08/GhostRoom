@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:image_picker/image_picker.dart';
@@ -117,7 +118,9 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
   bool _isInitialScroll = true;
   bool _isRecording = false;
   late final ChatRepository _chatRepository;
-  final Logger _logger = Logger();
+  final Logger _logger = Logger(
+    level: kReleaseMode ? Level.warning : Level.info,
+  );
   int _lastMessageCount = 0;
   int _buildCount = 0;
 
