@@ -116,6 +116,7 @@ class MediaManager {
 
   MediaManager(this._sodium, this._mediaService) {
     _thumbnailQueue = ThumbnailQueue(_mediaService, this);
+    _logger.i('GHOST_LOG: MediaManager constructor invoked (Singleton verification)');
   }
 
   Stream<MediaStateUpdate> get stateStream => _stateController.stream;

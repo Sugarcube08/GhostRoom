@@ -24,7 +24,9 @@ class WebSocketService {
   int _reconnectCount = 0;
   int _listenerInitCount = 0;
 
-  WebSocketService(this._ref);
+  WebSocketService(this._ref) {
+    _logger.i('GHOST_LOG: WebSocketService constructor invoked (Singleton verification)');
+  }
 
   bool get isConnected => _socket?.connected ?? false;
   bool get isAuthenticated => _isAuthenticated;

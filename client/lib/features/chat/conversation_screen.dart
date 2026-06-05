@@ -124,6 +124,7 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
   @override
   void initState() {
     super.initState();
+    StabilityTracker.activeConversationScreens++;
     _chatRepository = ref.read(chatRepositoryProvider);
     _chatRepository.setActiveConversation(widget.conversation.contactId);
     _chatRepository.markConversationAsRead(widget.conversation.contactId);
@@ -145,6 +146,7 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
 
   @override
   void dispose() {
+    StabilityTracker.activeConversationScreens--;
     _chatRepository.setActiveConversation(null);
     _scrollController.removeListener(_onScroll);
     final contactId = widget.conversation.contactId;
@@ -1027,7 +1029,7 @@ class _AttachmentWidgetState extends ConsumerState<AttachmentWidget> {
         decoration: BoxDecoration(
           color: colors.elevatedSurface, 
           borderRadius: BorderRadius.circular(12), 
-          image: _thumbFile != null ? DecorationImage(image: FileImage(_thumbFile!), fit: BoxFit.cover, opacity: isGhost ? 0.3 : 0.6) : null
+          image: _thumbFile != null ? DecorationImage(image: ResizeImage(FileImage(_thumbFile!), width: 200, height: 150), fit: BoxFit.cover, opacity: isGhost ? 0.3 : 0.6) : null
         ),
         child: Center(
           child: (isProcessing || (isPending && !isFailed)) 

@@ -2,6 +2,7 @@ import 'package:hive_flutter/hive_flutter.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/painting.dart';
 import 'package:sodium/sodium_sumo.dart' hide Box;
+import 'package:path_provider/path_provider.dart';
 import 'message.dart';
 import 'dm_service.dart';
 import 'conversation_state.dart';
@@ -9,6 +10,7 @@ import '../../core/crypto/identity_service.dart';
 import '../../core/network/websocket_service.dart';
 import '../../core/notification_service.dart';
 import '../contacts/contact_service.dart';
+import '../contacts/contact.dart';
 import 'dart:convert';
 import 'dart:async';
 import 'dart:io';
@@ -29,6 +31,7 @@ class ChatRepository {
   final MediaService _mediaService;
   final RelayManager _relayManager;
   String? _activeConversationId;
+  String? _hiveDbPath;
   final Logger _logger = Logger(
     level: kReleaseMode ? Level.warning : Level.info,
     printer: PrettyPrinter(
@@ -58,7 +61,9 @@ class ChatRepository {
     this._mediaManager,
     this._mediaService,
     this._relayManager,
-  );
+  ) {
+    _logger.i('GHOST_LOG: ChatRepository constructor invoked (Singleton verification)');
+  }
 
   String get myPublicId => _idService.currentIdentity?.publicId ?? '';
   MediaManager get mediaManager => _mediaManager;
@@ -85,6 +90,11 @@ class ChatRepository {
   Future<void> init() async {
     if (_isInitialized) return;
     _isInitialized = true;
+    
+    try {
+      final dir = await getApplicationDocumentsDirectory();
+      _hiveDbPath = dir.path;
+    } catch (_) {}
     
     StabilityTracker.logMemory('ChatRepo_Init_Start');
     if (!Hive.isAdapterRegistered(MessageTypeAdapter().typeId)) {
@@ -1063,17 +1073,51 @@ class ChatRepository {
   }
 
   void logMemoryUsage() {
+    int messagesBoxSize = 0;
+    int contactsBoxSize = 0;
+    int statesBoxSize = 0;
+    int mediaBoxSize = 0;
+
+    final path = _hiveDbPath;
+    if (path != null) {
+      messagesBoxSize = _getBoxSizeOnDisk(path, _msgBoxName);
+      contactsBoxSize = _getBoxSizeOnDisk(path, 'contacts');
+      statesBoxSize = _getBoxSizeOnDisk(path, 'conversation_states');
+      mediaBoxSize = _getBoxSizeOnDisk(path, 'media_cache_index');
+    }
+
     final stats = {
       'initialized': _isInitialized,
       'activeConversationId': _activeConversationId,
       'messagesBoxCount': _msgBox?.length ?? 0,
+      'messagesBoxSize': messagesBoxSize,
+      'contactsBoxCount': Hive.isBoxOpen('contacts') ? Hive.box<Contact>('contacts').length : 0,
+      'contactsBoxSize': contactsBoxSize,
       'statesBoxCount': _stateBox?.length ?? 0,
+      'statesBoxSize': statesBoxSize,
+      'mediaBoxCount': Hive.isBoxOpen('media_cache_index') ? Hive.box<dynamic>('media_cache_index').length : 0,
+      'mediaBoxSize': mediaBoxSize,
       'syncBoxCount': _syncBox?.length ?? 0,
       'processedBoxCount': _processedBox?.length ?? 0,
       'offlineQueueBoxCount': _queueBox?.length ?? 0,
       'pendingDeletionsBoxCount': Hive.isBoxOpen(_pendingDeletionsBoxName) ? Hive.box<bool>(_pendingDeletionsBoxName).length : 0,
     };
     StabilityTracker.logComponentDiagnostics('ChatRepository', stats);
+  }
+
+  int _getBoxSizeOnDisk(String path, String boxName) {
+    int total = 0;
+    try {
+      final hiveFile = File('$path/$boxName.hive');
+      final logFile = File('$path/$boxName.log');
+      if (hiveFile.existsSync()) {
+        total += hiveFile.lengthSync();
+      }
+      if (logFile.existsSync()) {
+        total += logFile.lengthSync();
+      }
+    } catch (_) {}
+    return total;
   }
 }
 

@@ -75,7 +75,8 @@ void main() async {
             'activeMediaAttachmentBubbles=${StabilityTracker.activeMediaAttachmentBubbles} '
             'activeFullScreenViews=${StabilityTracker.activeFullScreenViews} '
             'activeVoiceMessageBubbles=${StabilityTracker.activeVoiceMessageBubbles} '
-            'activeMemoryImages=${StabilityTracker.activeMemoryImages}'
+            'activeMemoryImages=${StabilityTracker.activeMemoryImages} '
+            'activeConversationScreens=${StabilityTracker.activeConversationScreens}'
           );
         } catch (_) {}
         try {

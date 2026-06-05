@@ -12,12 +12,42 @@ class StabilityTracker {
   static int activeFullScreenViews = 0;
   static int activeVoiceMessageBubbles = 0;
   static int activeMemoryImages = 0;
+  static int activeConversationScreens = 0;
 
   static void logMemory(String point) {
     if (kReleaseMode) return;
     
     final rss = ProcessInfo.currentRss / (1024 * 1024);
-    _logger.i('STABILITY_CHECK [$point] - Uptime: ${_uptime.elapsed.inSeconds}s - RAM: ${rss.toStringAsFixed(2)} MB');
+    String extra = '';
+    
+    if (Platform.isLinux) {
+      try {
+        final file = File('/proc/self/smaps_rollup');
+        if (file.existsSync()) {
+          final lines = file.readAsLinesSync();
+          int privateDirty = 0;
+          int sharedDirty = 0;
+          int pss = 0;
+          for (final line in lines) {
+            final parts = line.split(RegExp(r'\s+'));
+            if (parts.length >= 2) {
+              final key = parts[0].replaceAll(':', '').toLowerCase();
+              final val = int.tryParse(parts[1]) ?? 0;
+              if (key == 'private_dirty') {
+                privateDirty = val;
+              } else if (key == 'shared_dirty') {
+                sharedDirty = val;
+              } else if (key == 'pss') {
+                pss = val;
+              }
+            }
+          }
+          extra = ' - PSS: ${(pss / 1024).toStringAsFixed(2)} MB - PrivateDirty: ${(privateDirty / 1024).toStringAsFixed(2)} MB - SharedDirty: ${(sharedDirty / 1024).toStringAsFixed(2)} MB';
+        }
+      } catch (_) {}
+    }
+    
+    _logger.i('STABILITY_CHECK [$point] - Uptime: ${_uptime.elapsed.inSeconds}s - RAM: ${rss.toStringAsFixed(2)} MB$extra');
   }
 
   static void logEvent(String event, {Map<String, dynamic>? data}) {

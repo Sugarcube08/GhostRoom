@@ -82,7 +82,9 @@ class IdentityService {
 
   Identity? _currentIdentity;
 
-  IdentityService(this.sodium, this._storage);
+  IdentityService(this.sodium, this._storage) {
+    _logger.i('GHOST_LOG: IdentityService constructor invoked (Singleton verification)');
+  }
 
   Identity? get currentIdentity => _currentIdentity;
 
