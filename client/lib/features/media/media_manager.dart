@@ -12,6 +12,7 @@ import 'package:logger/logger.dart';
 import 'attachment_envelope.dart';
 import '../../core/network/relay_manager.dart';
 import 'media_service.dart';
+import '../../core/stability_tracker.dart';
 
 import 'lru_memory_cache.dart';
 
@@ -615,6 +616,20 @@ class MediaManager {
     _states.remove(mediaId);
     _thumbStates.remove(mediaId);
     _logger.i('GHOST_LOG: Local media deleted for $mediaId');
+  }
+
+  void logMemoryUsage() {
+    final stats = {
+      'initialized': _initCompleter.isCompleted,
+      'activeDownloadsCount': _activeDownloads.length,
+      'statesCacheSize': _states.currentSizeBytes,
+      'statesCacheCount': _states.length,
+      'thumbStatesCacheSize': _thumbStates.currentSizeBytes,
+      'thumbStatesCacheCount': _thumbStates.length,
+      'cacheIndexKeysCount': _initCompleter.isCompleted ? _cacheIndex.length : 0,
+      'thumbnailQueueLength': _thumbnailQueue._queue.length,
+    };
+    StabilityTracker.logComponentMemory('MediaManager', stats);
   }
 }
 

@@ -361,4 +361,13 @@ class IdentityService {
   Future<String?> getDeviceId() async {
     return _currentIdentity?.deviceId ?? await _storage.read(key: _deviceIdKey);
   }
+
+  void logMemoryUsage() {
+    final stats = {
+      'hasIdentity': _currentIdentity != null,
+      'deviceId': _currentIdentity?.deviceId,
+      'publicId': _currentIdentity?.publicId,
+    };
+    StabilityTracker.logComponentMemory('IdentityService', stats);
+  }
 }

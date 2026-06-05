@@ -99,10 +99,10 @@ class RelayManager {
     // Add default relay if not present
     if (relays.isEmpty) {
       final defaultRelay = RelayProfile(
-        id: 'render-default',
-        label: 'GhostRoom Global (Render)',
-        websocketUrl: 'https://ghostroom-vdd6.onrender.com',
-        apiUrl: 'https://ghostroom-vdd6.onrender.com',
+        id: 'ghostroom-global',
+        label: 'GhostRoom Global',
+        websocketUrl: 'https://relay.ghostroom.app',
+        apiUrl: 'https://relay.ghostroom.app',
       );
       relays.add(defaultRelay);
     }

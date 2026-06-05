@@ -369,8 +369,10 @@ export class MediaService {
   async incrementReferenceCount(mediaId: string): Promise<void> {
     const metadata = await this.mediaRepo.findOne({ where: { id: mediaId } });
     if (!metadata) {
-      this.logger.warn(`incrementReferenceCount: Media ${mediaId} not found`);
-      return;
+      throw new Error(`Media ${mediaId} not found`);
+    }
+    if (metadata.state === "UPLOADING") {
+      throw new Error(`Media ${mediaId} upload is not confirmed`);
     }
 
     metadata.reference_count = (metadata.reference_count || 0) + 1;

@@ -1051,5 +1051,19 @@ class ChatRepository {
     await _msgBox?.clear();
     await _syncBox?.clear();
   }
+
+  void logMemoryUsage() {
+    final stats = {
+      'initialized': _isInitialized,
+      'activeConversationId': _activeConversationId,
+      'messagesBoxCount': _msgBox?.length ?? 0,
+      'statesBoxCount': _stateBox?.length ?? 0,
+      'syncBoxCount': _syncBox?.length ?? 0,
+      'processedBoxCount': _processedBox?.length ?? 0,
+      'offlineQueueBoxCount': _queueBox?.length ?? 0,
+      'pendingDeletionsBoxCount': Hive.isBoxOpen(_pendingDeletionsBoxName) ? Hive.box<bool>(_pendingDeletionsBoxName).length : 0,
+    };
+    StabilityTracker.logComponentMemory('ChatRepository', stats);
+  }
 }
 

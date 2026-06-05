@@ -299,4 +299,18 @@ class WebSocketService {
     
     return completer.future.timeout(const Duration(seconds: 5), onTimeout: () => []);
   }
+
+  void logMemoryUsage() {
+    final stats = {
+      'isConnected': isConnected,
+      'isAuthenticated': _isAuthenticated,
+      'isConnecting': _isConnecting,
+      'activeUrl': _activeUrl,
+      'callbacksCount': _callbacks.length,
+      'connectCount': _connectCount,
+      'disconnectCount': _disconnectCount,
+      'reconnectCount': _reconnectCount,
+    };
+    StabilityTracker.logComponentMemory('WebSocketService', stats);
+  }
 }

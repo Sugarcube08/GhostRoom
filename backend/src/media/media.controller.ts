@@ -42,11 +42,11 @@ export class MediaController {
     }
 
     // Limit enforcement
-    if (body.mime.startsWith("image/") && body.size > 10 * 1024 * 1024) {
-      throw new BadRequestException("Image too large (Max 10MB)");
+    if (body.mime.startsWith("image/") && body.size > 25 * 1024 * 1024) {
+      throw new BadRequestException("Image too large (Max 25MB)");
     }
-    if (body.mime.startsWith("video/") && body.size > 30 * 1024 * 1024) {
-      throw new BadRequestException("Video too large (Max 30MB)");
+    if (body.mime.startsWith("video/") && body.size > 250 * 1024 * 1024) {
+      throw new BadRequestException("Video too large (Max 250MB)");
     }
 
     try {

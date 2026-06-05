@@ -95,6 +95,7 @@ describe("InboxService", () => {
 
   describe("queueMessage", () => {
     it("should store message in Postgres and Redis", async () => {
+      mockMessageRepo.findOne.mockResolvedValue(null);
       const publicId = "test-id";
       const payload = { id: "msg-id", n: "nonce", c: "ciphertext" };
 

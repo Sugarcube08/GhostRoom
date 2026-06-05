@@ -104,6 +104,23 @@ export class InboxService {
 
     const mediaId = payload.media_id || null;
 
+    // Check if message already exists in database first (idempotent path)
+    const existingMsg = await this.messageRepo.findOne({
+      where: { id: messageId },
+    });
+    if (existingMsg) {
+      this.logger.log(
+        `Idempotent queue: Message ${messageId} already exists in database.`,
+      );
+      return envelope;
+    }
+
+    if (mediaId) {
+      // Increment reference count first. If this throws (e.g. Media not found / upload not confirmed),
+      // the error propagates and we abort queueMessage before saving the message.
+      await this.mediaService.incrementReferenceCount(mediaId);
+    }
+
     try {
       const msgEntity = this.messageRepo.create({
         id: messageId,
@@ -116,16 +133,6 @@ export class InboxService {
         media_id: mediaId,
       });
       await this.messageRepo.save(msgEntity);
-
-      if (mediaId) {
-        try {
-          await this.mediaService.incrementReferenceCount(mediaId);
-        } catch (err: any) {
-          this.logger.error(
-            `Failed to increment media reference count for ${mediaId}: ${err?.message}`,
-          );
-        }
-      }
 
       const deliveryEntity = this.deliveryRepo.create({
         message_id: messageId,
@@ -150,6 +157,15 @@ export class InboxService {
           `Idempotent queue: Message ${messageId} already exists in database.`,
         );
       } else {
+        if (mediaId) {
+          try {
+            await this.mediaService.decrementReferenceCount(mediaId);
+          } catch (decErr) {
+            this.logger.error(
+              `Failed to rollback media reference for ${mediaId}: ${decErr}`,
+            );
+          }
+        }
         this.logger.error(`Failed to save message to Postgres: ${e?.message}`);
         throw e;
       }

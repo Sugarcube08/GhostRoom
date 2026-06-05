@@ -66,6 +66,14 @@ void main() async {
     if (!kReleaseMode) {
       Timer.periodic(const Duration(seconds: 30), (_) {
         StabilityTracker.logMemory('Periodic_Monitor');
+        try {
+          container.read(identityServiceProvider).logMemoryUsage();
+          container.read(chatRepositoryProvider).logMemoryUsage();
+          container.read(mediaManagerProvider).logMemoryUsage();
+          container.read(webSocketServiceProvider).logMemoryUsage();
+        } catch (e) {
+          debugPrint('GHOST_ERROR: Periodic monitor failed to log component memory: $e');
+        }
       });
     }
 
