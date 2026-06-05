@@ -12,6 +12,8 @@ import '../../../design_system/typography.dart';
 import '../../../design_system/spacing.dart';
 import '../../../design_system/haptics.dart';
 
+import '../../../core/stability_tracker.dart';
+
 class VoiceMessageBubble extends ConsumerStatefulWidget {
   final Message message;
   final bool isMe;
@@ -42,6 +44,7 @@ class _VoiceMessageBubbleState extends ConsumerState<VoiceMessageBubble> {
   @override
   void initState() {
     super.initState();
+    StabilityTracker.activeVoiceMessageBubbles++;
     _initMedia();
     
     _statePlayerSub = _player.onPlayerStateChanged.listen((state) {
@@ -59,6 +62,7 @@ class _VoiceMessageBubbleState extends ConsumerState<VoiceMessageBubble> {
 
   @override
   void dispose() {
+    StabilityTracker.activeVoiceMessageBubbles--;
     _stateSub?.cancel();
     _statePlayerSub?.cancel();
     _durSub?.cancel();

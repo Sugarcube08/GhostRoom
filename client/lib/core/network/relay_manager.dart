@@ -123,8 +123,13 @@ class RelayManager {
       }
     }
     if (migrated) {
-      debugPrint('GHOST_LOG: Migrated relay URLs to https://ghostroom-vdd6.onrender.com');
-      await _storage.write(key: _relaysKey, value: jsonEncode(relays.map((r) => r.toJson()).toList()));
+      debugPrint(
+        'GHOST_LOG: Migrated relay URLs to https://ghostroom-vdd6.onrender.com',
+      );
+      await _storage.write(
+        key: _relaysKey,
+        value: jsonEncode(relays.map((r) => r.toJson()).toList()),
+      );
     }
 
     // Add default relay if not present
@@ -137,7 +142,7 @@ class RelayManager {
       );
       relays.add(defaultRelay);
     }
-    
+
     return relays;
   }
 

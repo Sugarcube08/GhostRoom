@@ -618,7 +618,37 @@ class MediaManager {
     _logger.i('GHOST_LOG: Local media deleted for $mediaId');
   }
 
+  Map<String, int> getCacheSizes() {
+    if (!_initCompleter.isCompleted) return {'thumbnailBytes': 0, 'mediaBytes': 0, 'thumbnailCount': 0, 'mediaCount': 0};
+    int thumbBytes = 0;
+    int mediaBytes = 0;
+    int thumbCount = 0;
+    int mediaCount = 0;
+    try {
+      for (final key in _cacheIndex.keys) {
+        final val = _cacheIndex.get(key);
+        if (val != null) {
+          final cached = CachedMedia.fromMap(val as Map);
+          if (cached.isThumbnail) {
+            thumbBytes += cached.size;
+            thumbCount++;
+          } else {
+            mediaBytes += cached.size;
+            mediaCount++;
+          }
+        }
+      }
+    } catch (_) {}
+    return {
+      'thumbnailBytes': thumbBytes,
+      'mediaBytes': mediaBytes,
+      'thumbnailCount': thumbCount,
+      'mediaCount': mediaCount,
+    };
+  }
+
   void logMemoryUsage() {
+    final cacheStats = getCacheSizes();
     final stats = {
       'initialized': _initCompleter.isCompleted,
       'activeDownloadsCount': _activeDownloads.length,
@@ -628,6 +658,10 @@ class MediaManager {
       'thumbStatesCacheCount': _thumbStates.length,
       'cacheIndexKeysCount': _initCompleter.isCompleted ? _cacheIndex.length : 0,
       'thumbnailQueueLength': _thumbnailQueue._queue.length,
+      'thumbnailCount': cacheStats['thumbnailCount'],
+      'thumbnailBytes': cacheStats['thumbnailBytes'],
+      'previewCount': cacheStats['mediaCount'],
+      'previewBytes': cacheStats['mediaBytes'],
     };
     StabilityTracker.logComponentDiagnostics('MediaManager', stats);
   }

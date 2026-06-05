@@ -127,6 +127,7 @@ class _ChatsScreenState extends ConsumerState<ChatsScreen> with ContactActions {
                       : ConversationScreen(
                           key: ValueKey(_selectedConversation!.contactId),
                           conversation: _selectedConversation!,
+                          onBack: () => setState(() => _selectedConversation = null),
                         ),
                 ),
               ],

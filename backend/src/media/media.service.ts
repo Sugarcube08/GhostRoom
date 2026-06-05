@@ -7,6 +7,7 @@ import {
   PutObjectCommand,
   GetObjectCommand,
   DeleteObjectCommand,
+  HeadObjectCommand,
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import Redis from "ioredis";
@@ -44,8 +45,8 @@ export class MediaService {
       endpoint ||
       (accountId ? `https://${accountId}.r2.cloudflarestorage.com` : "") ||
       (publicEndpoint &&
-      !publicEndpoint.includes("localhost") &&
-      !publicEndpoint.includes("127.0.0.1")
+        !publicEndpoint.includes("localhost") &&
+        !publicEndpoint.includes("127.0.0.1")
         ? publicEndpoint
         : "");
     const redactedAccessKey = accessKeyId
@@ -216,6 +217,23 @@ export class MediaService {
 
     if (!metadata || metadata.owner_id !== ownerId) {
       throw new Error("Forbidden: Not the media owner");
+    }
+
+    // Verify actual object presence in R2 bucket (P1 Media Integrity)
+    try {
+      await this.s3Client.send(
+        new HeadObjectCommand({
+          Bucket: this.bucketName,
+          Key: `media/${mediaId}`,
+        }),
+      );
+    } catch (err: any) {
+      this.logger.error(
+        `Failed to confirm media upload for ${mediaId}: file not found in storage. Error: ${err?.message}`,
+      );
+      throw new Error(
+        `Bad Request: Media file has not been uploaded to storage yet`,
+      );
     }
 
     metadata.state = metadata.reference_count > 0 ? "REFERENCED" : "UPLOADED";

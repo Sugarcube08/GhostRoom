@@ -25,11 +25,18 @@ import '../../design_system/haptics.dart';
 import 'widgets/voice_recorder.dart';
 import 'widgets/voice_message_bubble.dart';
 import 'package:logger/logger.dart';
+import '../../core/stability_tracker.dart';
 
 class ConversationScreen extends ConsumerStatefulWidget {
   final Conversation conversation;
   final bool isRequestMode;
-  const ConversationScreen({super.key, required this.conversation, this.isRequestMode = false});
+  final VoidCallback? onBack;
+  const ConversationScreen({
+    super.key,
+    required this.conversation,
+    this.isRequestMode = false,
+    this.onBack,
+  });
 
   @override
   ConsumerState<ConversationScreen> createState() => _ConversationScreenState();
@@ -203,7 +210,7 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
                 centerTitle: true,
                 leading: IconButton(
                   icon: const Icon(Icons.arrow_back_ios_new, size: 20),
-                  onPressed: () => Navigator.pop(context),
+                  onPressed: widget.onBack ?? () => Navigator.pop(context),
                 ),
                 title: GestureDetector(
                   onTap: () => _showSafetyNumbers(context),
@@ -851,11 +858,13 @@ class _AttachmentWidgetState extends ConsumerState<AttachmentWidget> {
   @override
   void initState() {
     super.initState();
+    StabilityTracker.activeMediaAttachmentBubbles++;
     _initMedia();
   }
 
   @override
   void dispose() {
+    StabilityTracker.activeMediaAttachmentBubbles--;
     _stateSub?.cancel();
     super.dispose();
   }
@@ -1035,10 +1044,27 @@ class _AttachmentWidgetState extends ConsumerState<AttachmentWidget> {
   }
 }
 
-class FullScreenMediaViewer extends StatelessWidget {
+class FullScreenMediaViewer extends StatefulWidget {
   final File file;
   final MessageType type;
   const FullScreenMediaViewer({super.key, required this.file, required this.type});
+
+  @override
+  State<FullScreenMediaViewer> createState() => _FullScreenMediaViewerState();
+}
+
+class _FullScreenMediaViewerState extends State<FullScreenMediaViewer> {
+  @override
+  void initState() {
+    super.initState();
+    StabilityTracker.activeFullScreenViews++;
+  }
+
+  @override
+  void dispose() {
+    StabilityTracker.activeFullScreenViews--;
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1048,12 +1074,12 @@ class FullScreenMediaViewer extends StatelessWidget {
         backgroundColor: Colors.transparent, 
         elevation: 0, 
         leading: IconButton(icon: const Icon(Icons.close, color: Colors.white), onPressed: () => Navigator.pop(context)),
-        actions: [IconButton(icon: const Icon(Icons.share, color: Colors.white), onPressed: () => Share.shareXFiles([XFile(file.path)]))],
+        actions: [IconButton(icon: const Icon(Icons.share, color: Colors.white), onPressed: () => Share.shareXFiles([XFile(widget.file.path)]))],
       ),
       body: Center(
-        child: type == MessageType.video 
-            ? _VideoPreview(file: file) 
-            : InteractiveViewer(minScale: 0.5, maxScale: 4.0, child: Image.file(file, fit: BoxFit.contain)),
+        child: widget.type == MessageType.video 
+            ? _VideoPreview(file: widget.file) 
+            : InteractiveViewer(minScale: 0.5, maxScale: 4.0, child: Image.file(widget.file, fit: BoxFit.contain)),
       ),
     );
   }
@@ -1073,6 +1099,7 @@ class _VideoPreviewState extends State<_VideoPreview> {
   @override
   void initState() {
     super.initState();
+    StabilityTracker.activeVideoControllers++;
     _initPlayer();
   }
 
@@ -1091,6 +1118,7 @@ class _VideoPreviewState extends State<_VideoPreview> {
   void dispose() {
     _controller?.dispose();
     _chewieController?.dispose();
+    StabilityTracker.activeVideoControllers--;
     super.dispose();
   }
 

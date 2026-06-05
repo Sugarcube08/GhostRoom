@@ -28,8 +28,8 @@ void main() async {
     WidgetsFlutterBinding.ensureInitialized();
     
     // Memory discipline: limit image cache size to prevent unbounded RAM growth
-    PaintingBinding.instance.imageCache.maximumSize = 100;
-    PaintingBinding.instance.imageCache.maximumSizeBytes = 50 * 1024 * 1024; // 50MB
+    PaintingBinding.instance.imageCache.maximumSize = 20;
+    PaintingBinding.instance.imageCache.maximumSizeBytes = 10 * 1024 * 1024; // 10MB
     
     // Global Error Handlers
     FlutterError.onError = (details) {
@@ -64,8 +64,20 @@ void main() async {
 
     // Periodic Memory Monitor (P0 Stability)
     if (!kReleaseMode) {
-      Timer.periodic(const Duration(seconds: 30), (_) {
+      Timer.periodic(const Duration(seconds: 60), (_) {
         StabilityTracker.logMemory('Periodic_Monitor');
+        try {
+          final cache = PaintingBinding.instance.imageCache;
+          debugPrint('GHOST_LOG: IMAGE_CACHE entries=${cache.currentSize} bytes=${cache.currentSizeBytes}');
+          debugPrint(
+            'GHOST_LOG: ACTIVE_WIDGETS '
+            'activeVideoControllers=${StabilityTracker.activeVideoControllers} '
+            'activeMediaAttachmentBubbles=${StabilityTracker.activeMediaAttachmentBubbles} '
+            'activeFullScreenViews=${StabilityTracker.activeFullScreenViews} '
+            'activeVoiceMessageBubbles=${StabilityTracker.activeVoiceMessageBubbles} '
+            'activeMemoryImages=${StabilityTracker.activeMemoryImages}'
+          );
+        } catch (_) {}
         try {
           container.read(identityServiceProvider).logMemoryUsage();
           container.read(chatRepositoryProvider).logMemoryUsage();

@@ -6,6 +6,13 @@ class StabilityTracker {
   static final Logger _logger = Logger();
   static final Stopwatch _uptime = Stopwatch()..start();
 
+  // Static counters for active controllers/widgets (forensics)
+  static int activeVideoControllers = 0;
+  static int activeMediaAttachmentBubbles = 0;
+  static int activeFullScreenViews = 0;
+  static int activeVoiceMessageBubbles = 0;
+  static int activeMemoryImages = 0;
+
   static void logMemory(String point) {
     if (kReleaseMode) return;
     

@@ -1,5 +1,6 @@
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/painting.dart';
 import 'package:sodium/sodium_sumo.dart' hide Box;
 import 'message.dart';
 import 'dm_service.dart';
@@ -67,6 +68,15 @@ class ChatRepository {
     if (contactId != null) {
       // Immediate sync to prevent drift
       markConversationAsRead(contactId);
+    } else {
+      // Clear image cache when leaving conversation to free up memory (MEM-3)
+      try {
+        PaintingBinding.instance.imageCache.clear();
+        PaintingBinding.instance.imageCache.clearLiveImages();
+        _logger.i('GHOST_LOG: ImageCache cleared on navigation');
+      } catch (e) {
+        _logger.e('GHOST_ERROR: Failed to clear ImageCache on navigation: $e');
+      }
     }
   }
 
