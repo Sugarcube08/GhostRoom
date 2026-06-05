@@ -23,9 +23,8 @@ class StabilityTracker {
     _logger.d('RESOURCE: $type -> $action');
   }
 
-  static void logComponentMemory(String componentName, Map<String, dynamic> stats) {
+  static void logComponentDiagnostics(String componentName, Map<String, dynamic> stats) {
     if (kReleaseMode) return;
-    final rss = ProcessInfo.currentRss / (1024 * 1024);
-    _logger.i('COMPONENT_MEMORY [$componentName] - Uptime: ${_uptime.elapsed.inSeconds}s - Stats: $stats - Total RAM: ${rss.toStringAsFixed(2)} MB');
+    _logger.i('COMPONENT_STATS [$componentName] - Uptime: ${_uptime.elapsed.inSeconds}s - Stats: $stats');
   }
 }

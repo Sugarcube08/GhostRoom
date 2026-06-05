@@ -311,6 +311,6 @@ class WebSocketService {
       'disconnectCount': _disconnectCount,
       'reconnectCount': _reconnectCount,
     };
-    StabilityTracker.logComponentMemory('WebSocketService', stats);
+    StabilityTracker.logComponentDiagnostics('WebSocketService', stats);
   }
 }

@@ -368,6 +368,6 @@ class IdentityService {
       'deviceId': _currentIdentity?.deviceId,
       'publicId': _currentIdentity?.publicId,
     };
-    StabilityTracker.logComponentMemory('IdentityService', stats);
+    StabilityTracker.logComponentDiagnostics('IdentityService', stats);
   }
 }

@@ -1063,7 +1063,7 @@ class ChatRepository {
       'offlineQueueBoxCount': _queueBox?.length ?? 0,
       'pendingDeletionsBoxCount': Hive.isBoxOpen(_pendingDeletionsBoxName) ? Hive.box<bool>(_pendingDeletionsBoxName).length : 0,
     };
-    StabilityTracker.logComponentMemory('ChatRepository', stats);
+    StabilityTracker.logComponentDiagnostics('ChatRepository', stats);
   }
 }
 

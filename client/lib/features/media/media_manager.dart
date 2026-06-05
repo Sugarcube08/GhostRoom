@@ -629,7 +629,7 @@ class MediaManager {
       'cacheIndexKeysCount': _initCompleter.isCompleted ? _cacheIndex.length : 0,
       'thumbnailQueueLength': _thumbnailQueue._queue.length,
     };
-    StabilityTracker.logComponentMemory('MediaManager', stats);
+    StabilityTracker.logComponentDiagnostics('MediaManager', stats);
   }
 }
 

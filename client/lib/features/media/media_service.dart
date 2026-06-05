@@ -30,6 +30,7 @@ class MediaService {
   MediaService(this.sodium, this._idService);
 
   Future<File> compressImage(File file) async {
+    final startTime = DateTime.now();
     _logger.i('GHOST_LOG: MEDIA_COMPRESS_START kind: image source_size: ${file.lengthSync()}');
     
     // Skip compression on desktop (libraries not supported)
@@ -50,20 +51,24 @@ class MediaService {
         targetPath,
         quality: 70,
         format: CompressFormat.jpeg,
-      );
+      ).timeout(const Duration(seconds: 30));
+      
       if (result == null) throw Exception('FlutterImageCompress returned null');
       final compressedFile = File(result.path);
-      _logger.i('GHOST_LOG: MEDIA_COMPRESS_SUCCESS compressed_size: ${compressedFile.lengthSync()}');
+      final elapsed = DateTime.now().difference(startTime).inMilliseconds;
+      _logger.i('GHOST_LOG: MEDIA_COMPRESS_SUCCESS elapsed=${elapsed}ms compressed_size: ${compressedFile.lengthSync()}');
       _logger.i('GHOST_LOG: MEDIA_COMPRESSED size: ${compressedFile.lengthSync()}');
       return compressedFile;
     } catch (e) {
-      _logger.w('GHOST_LOG: MEDIA_COMPRESS_FAIL error: $e. Falling back to original image.');
+      final elapsed = DateTime.now().difference(startTime).inMilliseconds;
+      _logger.w('GHOST_LOG: MEDIA_COMPRESS_FAILED elapsed=${elapsed}ms error: $e. Falling back to original image.');
       _logger.i('GHOST_LOG: MEDIA_COMPRESSED size: ${file.lengthSync()}');
       return file;
     }
   }
 
   Future<Uint8List> generateImageThumbnail(File file) async {
+    final startTime = DateTime.now();
     // Basic fallback for desktop
     if (!Platform.isAndroid && !Platform.isIOS) {
       return await file.readAsBytes(); // Just use original as thumb on desktop for now
@@ -76,16 +81,18 @@ class MediaService {
         minHeight: 100,
         quality: 50,
         format: CompressFormat.jpeg,
-      );
+      ).timeout(const Duration(seconds: 30));
       if (result == null) throw Exception('FlutterImageCompress returned null');
       return result;
     } catch (e) {
-      _logger.w('GHOST_LOG: MEDIA_THUMBNAIL_FAIL error: $e. Falling back to original bytes.');
+      final elapsed = DateTime.now().difference(startTime).inMilliseconds;
+      _logger.w('GHOST_LOG: MEDIA_THUMBNAIL_FAILED elapsed=${elapsed}ms error: $e. Falling back to original bytes.');
       return await file.readAsBytes();
     }
   }
 
   Future<File> compressVideo(File file) async {
+    final startTime = DateTime.now();
     _logger.i('GHOST_LOG: MEDIA_COMPRESS_START kind: video source_size: ${file.lengthSync()}');
     
     if (!Platform.isAndroid && !Platform.isIOS) {
@@ -101,30 +108,35 @@ class MediaService {
         quality: VideoQuality.Res1280x720Quality,
         deleteOrigin: false,
         includeAudio: true,
-      );
+      ).timeout(const Duration(seconds: 30));
       if (info == null || info.file == null) throw Exception('VideoCompress returned null');
-      _logger.i('GHOST_LOG: MEDIA_COMPRESS_SUCCESS compressed_size: ${info.file!.lengthSync()}');
+      final elapsed = DateTime.now().difference(startTime).inMilliseconds;
+      _logger.i('GHOST_LOG: MEDIA_COMPRESS_SUCCESS elapsed=${elapsed}ms compressed_size: ${info.file!.lengthSync()}');
       _logger.i('GHOST_LOG: MEDIA_COMPRESSED size: ${info.file!.lengthSync()}');
       return info.file!;
     } catch (e) {
-      _logger.w('GHOST_LOG: MEDIA_COMPRESS_FAIL error: $e. Falling back to original video.');
+      final elapsed = DateTime.now().difference(startTime).inMilliseconds;
+      _logger.w('GHOST_LOG: MEDIA_COMPRESS_FAILED elapsed=${elapsed}ms error: $e. Falling back to original video.');
       _logger.i('GHOST_LOG: MEDIA_COMPRESSED size: ${file.lengthSync()}');
       return file;
     }
   }
 
   Future<Uint8List> generateVideoThumbnail(File file) async {
+    final startTime = DateTime.now();
     if (!Platform.isAndroid && !Platform.isIOS) {
       // Hard fallback: we might need a desktop-compatible way to get a video frame
       // For now, return empty or a placeholder if desktop
       return Uint8List(0);
     }
     try {
-      final result = await VideoCompress.getByteThumbnail(file.path, quality: 50);
+      final result = await VideoCompress.getByteThumbnail(file.path, quality: 50)
+          .timeout(const Duration(seconds: 30));
       if (result == null) throw Exception('VideoCompress.getByteThumbnail returned null');
       return result;
     } catch (e) {
-      _logger.w('GHOST_LOG: MEDIA_THUMBNAIL_FAIL error: $e. Returning empty thumbnail.');
+      final elapsed = DateTime.now().difference(startTime).inMilliseconds;
+      _logger.w('GHOST_LOG: MEDIA_THUMBNAIL_FAILED elapsed=${elapsed}ms error: $e. Returning empty thumbnail.');
       return Uint8List(0);
     }
   }
