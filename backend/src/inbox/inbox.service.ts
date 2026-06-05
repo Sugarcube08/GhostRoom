@@ -140,8 +140,19 @@ export class InboxService {
         `Audit: Message ${messageId} queued for ${publicId} device ${recipientDeviceId || "default"}`,
       );
     } catch (e: any) {
-      this.logger.error(`Failed to save message to Postgres: ${e?.message}`);
-      throw e;
+      if (
+        e?.code === "23505" ||
+        e?.message?.includes("unique constraint") ||
+        e?.message?.includes("duplicate key") ||
+        e?.message?.includes("UniqueConstraintError")
+      ) {
+        this.logger.log(
+          `Idempotent queue: Message ${messageId} already exists in database.`,
+        );
+      } else {
+        this.logger.error(`Failed to save message to Postgres: ${e?.message}`);
+        throw e;
+      }
     }
 
     // Cache in Redis (Device Specific)

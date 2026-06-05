@@ -45,6 +45,7 @@ class ChatRepository {
   static const String _processedBoxName = 'processed_envelopes';
   static const String _thumbCacheName = 'thumbnail_cache';
   static const String _offlineQueueBoxName = 'offline_send_queue';
+  static const String _pendingDeletionsBoxName = 'pending_deletions';
   static const String _lastSyncKey = 'last_sync_t';
 
   ChatRepository(
@@ -109,6 +110,10 @@ class ChatRepository {
       await Hive.openBox<Map>(_offlineQueueBoxName);
       StabilityTracker.logResource('HiveBox', 'Opened_$_offlineQueueBoxName');
     }
+    if (!Hive.isBoxOpen(_pendingDeletionsBoxName)) {
+      await Hive.openBox<bool>(_pendingDeletionsBoxName);
+      StabilityTracker.logResource('HiveBox', 'Opened_$_pendingDeletionsBoxName');
+    }
 
     // Register WebSocket Callbacks
     _wsService.onIdentityVerified(_handleIdentityVerified);
@@ -120,6 +125,7 @@ class ChatRepository {
 
     // Process offline queue on startup
     unawaited(processOfflineQueue());
+    unawaited(syncPendingDeletions());
 
     _logger.i('GHOST_LOG: ChatRepository initialized and listeners registered.');
     StabilityTracker.logMemory('ChatRepo_Init_End');
@@ -131,6 +137,7 @@ class ChatRepository {
 
     // Process offline queue on reconnect
     unawaited(processOfflineQueue());
+    unawaited(syncPendingDeletions());
   }
 
   void _handleNewMessage(dynamic data) {
@@ -824,7 +831,21 @@ class ChatRepository {
     } catch (e) {
       _logger.e('GHOST_LOG: Error processing queue item $id: $e');
       final errStr = e.toString();
-      if (errStr.contains('Missing recipient public key') || errStr.contains('Contact not found')) {
+      final isPermanent = errStr.contains('Missing recipient public key') ||
+          errStr.contains('Contact not found') ||
+          errStr.contains('"statusCode":40') ||
+          errStr.contains('statusCode: 40') ||
+          errStr.contains('statusCode:40') ||
+          errStr.contains('"statusCode": 40') ||
+          errStr.contains('too large') ||
+          errStr.contains('Too large') ||
+          errStr.contains('Bad Request') ||
+          errStr.contains('400') ||
+          errStr.contains('413') ||
+          errStr.contains('403') ||
+          errStr.contains('401');
+
+      if (isPermanent) {
         await _updateMessageStatus(id, 'FAILED', error: errStr);
         await box.delete(id);
         _currentlySendingIds.remove(id);
@@ -886,9 +907,14 @@ class ChatRepository {
     }
     if (deletedIds.isNotEmpty) {
       _logger.i('GHOST_LOG: Local ghost messages flushed for $contactId: $deletedIds');
+      final delBox = Hive.box<bool>(_pendingDeletionsBoxName);
+      for (final id in deletedIds) {
+        await delBox.put(id, true);
+      }
       _wsService.socket?.emit('message.delete', {
         'message_ids': deletedIds,
       });
+      unawaited(syncPendingDeletions());
     }
   }
 
@@ -911,9 +937,60 @@ class ChatRepository {
     }
     if (deletedIds.isNotEmpty) {
       _logger.i('GHOST_LOG: Global ghost flush complete. Pruned ${deletedIds.length} messages.');
+      final delBox = Hive.box<bool>(_pendingDeletionsBoxName);
+      for (final id in deletedIds) {
+        await delBox.put(id, true);
+      }
       _wsService.socket?.emit('message.delete', {
         'message_ids': deletedIds,
       });
+      unawaited(syncPendingDeletions());
+    }
+  }
+
+  bool _isSyncingDeletions = false;
+
+  Future<void> syncPendingDeletions() async {
+    if (_isSyncingDeletions) return;
+    _isSyncingDeletions = true;
+
+    try {
+      if (!Hive.isBoxOpen(_pendingDeletionsBoxName)) return;
+      final delBox = Hive.box<bool>(_pendingDeletionsBoxName);
+      if (delBox.isEmpty) return;
+
+      if (!_wsService.isConnected || !_wsService.isAuthenticated) {
+        return;
+      }
+
+      final ids = delBox.keys.cast<String>().toList();
+      _logger.i('GHOST_LOG: Syncing ${ids.length} pending deletions to relay...');
+
+      final completer = Completer<bool>();
+      _wsService.socket?.emitWithAck('message.delete', {
+        'message_ids': ids,
+      }, ack: (response) {
+        if (response != null && (response['status'] == 'success' || response['status'] == 'ok')) {
+          completer.complete(true);
+        } else {
+          _logger.w('GHOST_LOG: Relay rejected delete sync: $response');
+          completer.complete(false);
+        }
+      });
+
+      final success = await completer.future.timeout(
+        const Duration(seconds: 10),
+        onTimeout: () => false,
+      );
+
+      if (success) {
+        await delBox.clear();
+        _logger.i('GHOST_LOG: Successfully synced deletions to relay.');
+      }
+    } catch (e) {
+      _logger.e('GHOST_LOG: Error syncing deletions: $e');
+    } finally {
+      _isSyncingDeletions = false;
     }
   }
 
