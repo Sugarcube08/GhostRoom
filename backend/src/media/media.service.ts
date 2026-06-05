@@ -36,12 +36,24 @@ export class MediaService {
       "R2_SECRET_ACCESS_KEY",
     );
     const endpoint = this.configService.get<string>("R2_ENDPOINT");
+    const publicEndpoint = this.configService.get<string>("R2_PUBLIC_ENDPOINT");
     this.bucketName =
       this.configService.get<string>("R2_BUCKET_NAME") || "ghostroom-media";
 
-    const clientEndpoint = endpoint || (accountId ? `https://${accountId}.r2.cloudflarestorage.com` : "");
-    const redactedAccessKey = accessKeyId ? (accessKeyId.length > 6 ? `${accessKeyId.substring(0, 6)}...` : '***') : 'undefined';
-    
+    const clientEndpoint =
+      endpoint ||
+      (accountId ? `https://${accountId}.r2.cloudflarestorage.com` : "") ||
+      (publicEndpoint &&
+      !publicEndpoint.includes("localhost") &&
+      !publicEndpoint.includes("127.0.0.1")
+        ? publicEndpoint
+        : "");
+    const redactedAccessKey = accessKeyId
+      ? accessKeyId.length > 6
+        ? `${accessKeyId.substring(0, 6)}...`
+        : "***"
+      : "undefined";
+
     this.logger.log(`GHOST_LOG: R2_ENDPOINT=${clientEndpoint}`);
     this.logger.log(`GHOST_LOG: R2_BUCKET=${this.bucketName}`);
     this.logger.log(`GHOST_LOG: R2_ACCESS_KEY=${redactedAccessKey}`);
@@ -60,10 +72,17 @@ export class MediaService {
       this.configService.get<string>("MEDIA_DAILY_COUNT_LIMIT") || "50",
     );
 
+    const isS3Compatible =
+      !!clientEndpoint &&
+      (!!endpoint ||
+        !!accountId ||
+        clientEndpoint.includes("r2.cloudflarestorage.com") ||
+        clientEndpoint.includes("minio"));
+
     this.s3Client = new S3Client({
       region: "auto",
       endpoint: clientEndpoint || undefined,
-      forcePathStyle: !!endpoint, // Mandatory for MinIO
+      forcePathStyle: isS3Compatible,
       credentials: {
         accessKeyId: accessKeyId || "",
         secretAccessKey: secretAccessKey || "",
@@ -96,7 +115,9 @@ export class MediaService {
     hash: string,
     dynamicPublicEndpoint?: string,
   ) {
-    this.logger.log(`GHOST_LOG: MEDIA_CREATE_REQUEST ownerId=${ownerId} size=${size} mime=${mime} hash=${hash}`);
+    this.logger.log(
+      `GHOST_LOG: MEDIA_CREATE_REQUEST ownerId=${ownerId} size=${size} mime=${mime} hash=${hash}`,
+    );
     await this.checkQuotas(ownerId, size);
 
     const mediaId = uuidv4();
@@ -109,7 +130,9 @@ export class MediaService {
       `GHOST_LOG: UPLOAD_URL REQUEST: ownerId=${ownerId} mediaId=${mediaId} bucket=${this.bucketName} key=${bulkKey} size=${size} mime=${mime} hash=${hash}`,
     );
 
-    this.logger.log(`GHOST_LOG: MEDIA_PRESIGN_REQUEST mediaId=${mediaId} bucket=${this.bucketName} key=${bulkKey}`);
+    this.logger.log(
+      `GHOST_LOG: MEDIA_PRESIGN_REQUEST mediaId=${mediaId} bucket=${this.bucketName} key=${bulkKey}`,
+    );
 
     const s3SigningClient = this.getS3ClientForSigning(dynamicPublicEndpoint);
 
@@ -134,10 +157,15 @@ export class MediaService {
       expiresIn: 3600,
     });
 
-    const mappedUploadUrl = this.mapToPublicUrl(uploadUrl, dynamicPublicEndpoint);
+    const mappedUploadUrl = this.mapToPublicUrl(
+      uploadUrl,
+      dynamicPublicEndpoint,
+    );
     const mappedThumbUrl = this.mapToPublicUrl(thumbUrl, dynamicPublicEndpoint);
 
-    this.logger.log(`GHOST_LOG: MEDIA_PRESIGN_SUCCESS mediaId=${mediaId} bucket=${this.bucketName} key=${bulkKey}`);
+    this.logger.log(
+      `GHOST_LOG: MEDIA_PRESIGN_SUCCESS mediaId=${mediaId} bucket=${this.bucketName} key=${bulkKey}`,
+    );
     this.logger.log(
       `GHOST_LOG: UPLOAD_URLS GENERATED: mediaId=${mediaId} uploadUrl=${mappedUploadUrl} thumbUrl=${mappedThumbUrl}`,
     );
@@ -192,7 +220,9 @@ export class MediaService {
 
     metadata.state = metadata.reference_count > 0 ? "REFERENCED" : "UPLOADED";
     await this.mediaRepo.save(metadata);
-    this.logger.log(`GHOST_LOG: R2_UPLOAD_CONFIRMED mediaId=${mediaId} ownerId=${ownerId}`);
+    this.logger.log(
+      `GHOST_LOG: R2_UPLOAD_CONFIRMED mediaId=${mediaId} ownerId=${ownerId}`,
+    );
     await this.auditService.log("media_upload_confirmed", {
       media_id: mediaId,
       owner: ownerId,
@@ -212,14 +242,20 @@ export class MediaService {
 
     metadata.state = "REFERENCED";
     await this.mediaRepo.save(metadata);
-    this.logger.log(`GHOST_LOG: MEDIA_REFERENCE_CREATED mediaId=${mediaId} ownerId=${ownerId}`);
+    this.logger.log(
+      `GHOST_LOG: MEDIA_REFERENCE_CREATED mediaId=${mediaId} ownerId=${ownerId}`,
+    );
     await this.auditService.log("media_referenced", {
       media_id: mediaId,
       owner: ownerId,
     });
   }
 
-  async generateDownloadUrl(mediaId: string, dynamicPublicEndpoint?: string, isThumbnail = false) {
+  async generateDownloadUrl(
+    mediaId: string,
+    dynamicPublicEndpoint?: string,
+    isThumbnail = false,
+  ) {
     const metadata = await this.mediaRepo.findOne({ where: { id: mediaId } });
     if (
       !metadata ||
@@ -245,7 +281,9 @@ export class MediaService {
     });
 
     const publicUrl = this.mapToPublicUrl(downloadUrl, dynamicPublicEndpoint);
-    this.logger.log(`GHOST_LOG: DOWNLOAD_URL GENERATED: mediaId=${mediaId} downloadUrl=${publicUrl}`);
+    this.logger.log(
+      `GHOST_LOG: DOWNLOAD_URL GENERATED: mediaId=${mediaId} downloadUrl=${publicUrl}`,
+    );
 
     return {
       downloadUrl: publicUrl,
@@ -255,12 +293,22 @@ export class MediaService {
 
   private mapToPublicUrl(url: string, dynamicPublicEndpoint?: string): string {
     let publicEndpoint = this.configService.get<string>("R2_PUBLIC_ENDPOINT");
-    if (!publicEndpoint || publicEndpoint.includes("localhost") || publicEndpoint.includes("127.0.0.1")) {
+    if (
+      !publicEndpoint ||
+      publicEndpoint.includes("localhost") ||
+      publicEndpoint.includes("127.0.0.1")
+    ) {
       if (dynamicPublicEndpoint) {
         publicEndpoint = dynamicPublicEndpoint;
       }
     }
-    if (!publicEndpoint || publicEndpoint.includes("r2.cloudflarestorage.com")) return url;
+    if (!publicEndpoint) return url;
+    if (
+      publicEndpoint.includes("r2.cloudflarestorage.com") &&
+      url.includes("r2.cloudflarestorage.com")
+    ) {
+      return url;
+    }
 
     try {
       const parsedUrl = new URL(url);
@@ -275,25 +323,39 @@ export class MediaService {
 
   private getS3ClientForSigning(dynamicPublicEndpoint?: string): S3Client {
     let publicEndpoint = this.configService.get<string>("R2_PUBLIC_ENDPOINT");
-    if (!publicEndpoint || publicEndpoint.includes("localhost") || publicEndpoint.includes("127.0.0.1")) {
+    if (
+      !publicEndpoint ||
+      publicEndpoint.includes("localhost") ||
+      publicEndpoint.includes("127.0.0.1")
+    ) {
       if (dynamicPublicEndpoint) {
         publicEndpoint = dynamicPublicEndpoint;
       }
     }
 
-    if (publicEndpoint && !publicEndpoint.includes("r2.cloudflarestorage.com")) {
+    if (
+      publicEndpoint &&
+      !publicEndpoint.includes("r2.cloudflarestorage.com")
+    ) {
       const accessKeyId = this.configService.get<string>("R2_ACCESS_KEY_ID");
       const secretAccessKey = this.configService.get<string>(
         "R2_SECRET_ACCESS_KEY",
       );
       const endpoint = this.configService.get<string>("R2_ENDPOINT");
-      
+      const accountId = this.configService.get<string>("R2_ACCOUNT_ID");
+      const isS3Compatible =
+        !!endpoint ||
+        !!accountId ||
+        publicEndpoint.includes("minio") ||
+        publicEndpoint.includes("localhost") ||
+        publicEndpoint.includes("127.0.0.1");
+
       // If we are using a custom endpoint (like MinIO) and we need to sign for a public IP,
       // we must configure the signing client with the public endpoint so Host signatures match.
       return new S3Client({
         region: "auto",
         endpoint: publicEndpoint,
-        forcePathStyle: !!endpoint,
+        forcePathStyle: isS3Compatible,
         credentials: {
           accessKeyId: accessKeyId || "",
           secretAccessKey: secretAccessKey || "",
@@ -312,17 +374,23 @@ export class MediaService {
     }
 
     metadata.reference_count = (metadata.reference_count || 0) + 1;
-    
+
     // If state is UPLOADED, ORPHANED or PENDING_DELETE, move it to REFERENCED
-    if (metadata.state === "UPLOADED" || metadata.state === "ORPHANED" || metadata.state === "PENDING_DELETE") {
+    if (
+      metadata.state === "UPLOADED" ||
+      metadata.state === "ORPHANED" ||
+      metadata.state === "PENDING_DELETE"
+    ) {
       metadata.state = "REFERENCED";
     }
-    
+
     // Clear expiration if it was scheduled for deletion
     metadata.expires_at = null;
 
     await this.mediaRepo.save(metadata);
-    this.logger.log(`GHOST_LOG: MEDIA_REFERENCE_INCREMENTED: ${mediaId} (refcount=${metadata.reference_count})`);
+    this.logger.log(
+      `GHOST_LOG: MEDIA_REFERENCE_INCREMENTED: ${mediaId} (refcount=${metadata.reference_count})`,
+    );
   }
 
   async decrementReferenceCount(mediaId: string): Promise<void> {
@@ -341,12 +409,19 @@ export class MediaService {
       metadata.expires_at = expiresAt;
 
       await this.auditService.log("MEDIA_ORPHANED", { media_id: mediaId });
-      await this.auditService.log("MEDIA_DELETE_SCHEDULED", { media_id: mediaId, delete_after: expiresAt });
-      this.logger.log(`GHOST_LOG: MEDIA_ORPHANED: ${mediaId} (Expires at: ${expiresAt.toISOString()})`);
+      await this.auditService.log("MEDIA_DELETE_SCHEDULED", {
+        media_id: mediaId,
+        delete_after: expiresAt,
+      });
+      this.logger.log(
+        `GHOST_LOG: MEDIA_ORPHANED: ${mediaId} (Expires at: ${expiresAt.toISOString()})`,
+      );
     }
 
     await this.mediaRepo.save(metadata);
-    this.logger.log(`GHOST_LOG: MEDIA_REFERENCE_DECREMENTED: ${mediaId} (refcount=${metadata.reference_count})`);
+    this.logger.log(
+      `GHOST_LOG: MEDIA_REFERENCE_DECREMENTED: ${mediaId} (refcount=${metadata.reference_count})`,
+    );
   }
 
   async deleteMedia(mediaId: string) {
@@ -401,12 +476,14 @@ export class MediaService {
     const expiredOrOrphanedMedia = await this.mediaRepo.find({
       where: [
         { expires_at: LessThan(now) },
-        { state: "ORPHANED", expires_at: LessThan(now) }
+        { state: "ORPHANED", expires_at: LessThan(now) },
       ],
     });
 
     for (const media of expiredOrOrphanedMedia) {
-      this.logger.log(`Pruning expired/orphaned media: ${media.id} (State: ${media.state})`);
+      this.logger.log(
+        `Pruning expired/orphaned media: ${media.id} (State: ${media.state})`,
+      );
       await this.deleteMedia(media.id);
       await this.auditService.log("media_pruned", {
         media_id: media.id,

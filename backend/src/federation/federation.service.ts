@@ -22,10 +22,12 @@ export class FederationService implements OnModuleInit {
       const seed = bs58.decode(privKeyBase58);
       this.relayKeyPair = nacl.sign.keyPair.fromSeed(seed);
     } else {
-      this.logger.warn("RELAY_PRIVATE_KEY not found in config. Generating ephemeral keypair.");
+      this.logger.warn(
+        "RELAY_PRIVATE_KEY not found in config. Generating ephemeral keypair.",
+      );
       this.relayKeyPair = nacl.sign.keyPair();
     }
-    
+
     this.relayPublicId = this.derivePublicId(this.relayKeyPair.publicKey);
     this.logger.log(`Relay Identity: ${this.relayPublicId}`);
   }
@@ -81,8 +83,13 @@ export class FederationService implements OnModuleInit {
     return await this.redis.smembers(key);
   }
 
-  async getDeviceRelay(publicId: string, deviceId: string): Promise<string | null> {
-    return await this.redis.get(`registry:device_relay:${publicId}:${deviceId}`);
+  async getDeviceRelay(
+    publicId: string,
+    deviceId: string,
+  ): Promise<string | null> {
+    return await this.redis.get(
+      `registry:device_relay:${publicId}:${deviceId}`,
+    );
   }
 
   // Signing for S2S
@@ -92,13 +99,17 @@ export class FederationService implements OnModuleInit {
     return bs58.encode(Buffer.from(signature));
   }
 
-  verifyFederationSignature(payload: any, signature: string, publicKey: string): boolean {
+  verifyFederationSignature(
+    payload: any,
+    signature: string,
+    publicKey: string,
+  ): boolean {
     try {
       const message = Buffer.from(JSON.stringify(payload));
       const sigBytes = bs58.decode(signature);
       const pubKeyBytes = bs58.decode(publicKey);
       return nacl.sign.detached.verify(message, sigBytes, pubKeyBytes);
-    } catch (e) {
+    } catch {
       return false;
     }
   }

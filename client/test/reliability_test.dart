@@ -9,6 +9,8 @@ import 'package:ghostroom/features/contacts/contact.dart';
 import 'package:ghostroom/core/network/websocket_service.dart';
 import 'package:ghostroom/core/notification_service.dart';
 import 'package:ghostroom/features/media/media_manager.dart';
+import 'package:ghostroom/features/media/media_service.dart';
+import 'package:ghostroom/core/network/relay_manager.dart';
 import 'dart:convert';
 import 'dart:typed_data';
 import 'package:bip39/bip39.dart' as bip39;
@@ -45,6 +47,11 @@ class ManualMockWebSocketService implements WebSocketService {
   void onInboxMessages(Function(List<dynamic>) callback) {}
 
   @override
+  bool get isConnected => false;
+  @override
+  bool get isAuthenticated => false;
+
+  @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
@@ -78,6 +85,16 @@ class ManualMockIdentityService implements IdentityService {
     }
     return 'id-bob'; // Fallback for test sender
   }
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class ManualMockMediaService implements MediaService {
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class ManualMockRelayManager implements RelayManager {
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
@@ -139,7 +156,18 @@ void main() {
     );
     mockContacts.contacts.add(bobContact);
 
-    final repo = ChatRepository(idService, dmService, mockContacts, mockWs, mockNotifications, mockMedia);
+    final mockMediaService = ManualMockMediaService();
+    final mockRelayManager = ManualMockRelayManager();
+    final repo = ChatRepository(
+      idService, 
+      dmService, 
+      mockContacts, 
+      mockWs, 
+      mockNotifications, 
+      mockMedia,
+      mockMediaService,
+      mockRelayManager,
+    );
     await repo.init();
     await repo.dangerouslyClearAll();
 

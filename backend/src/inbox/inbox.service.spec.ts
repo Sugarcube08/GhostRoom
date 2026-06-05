@@ -75,8 +75,12 @@ describe("InboxService", () => {
         {
           provide: MediaService,
           useValue: {
-            incrementReferenceCount: jest.fn().mockImplementation(async () => {}),
-            decrementReferenceCount: jest.fn().mockImplementation(async () => {}),
+            incrementReferenceCount: jest
+              .fn()
+              .mockImplementation(async () => {}),
+            decrementReferenceCount: jest
+              .fn()
+              .mockImplementation(async () => {}),
           },
         },
       ],

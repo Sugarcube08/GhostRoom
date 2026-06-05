@@ -39,22 +39,28 @@ class MediaService {
       return file;
     }
 
-    final ext = p.extension(file.path).toLowerCase();
-    final isJpeg = ext == '.jpg' || ext == '.jpeg';
-    final targetName = 'compressed_${p.basenameWithoutExtension(file.path)}${isJpeg ? ext : '.jpg'}';
-    final targetPath = p.join(p.dirname(file.path), targetName);
-    
-    final result = await FlutterImageCompress.compressAndGetFile(
-      file.absolute.path,
-      targetPath,
-      quality: 70,
-      format: CompressFormat.jpeg,
-    );
-    if (result == null) throw Exception('Image compression failed');
-    final compressedFile = File(result.path);
-    _logger.i('GHOST_LOG: MEDIA_COMPRESS_SUCCESS compressed_size: ${compressedFile.lengthSync()}');
-    _logger.i('GHOST_LOG: MEDIA_COMPRESSED size: ${compressedFile.lengthSync()}');
-    return compressedFile;
+    try {
+      final ext = p.extension(file.path).toLowerCase();
+      final isJpeg = ext == '.jpg' || ext == '.jpeg';
+      final targetName = 'compressed_${p.basenameWithoutExtension(file.path)}${isJpeg ? ext : '.jpg'}';
+      final targetPath = p.join(p.dirname(file.path), targetName);
+      
+      final result = await FlutterImageCompress.compressAndGetFile(
+        file.absolute.path,
+        targetPath,
+        quality: 70,
+        format: CompressFormat.jpeg,
+      );
+      if (result == null) throw Exception('FlutterImageCompress returned null');
+      final compressedFile = File(result.path);
+      _logger.i('GHOST_LOG: MEDIA_COMPRESS_SUCCESS compressed_size: ${compressedFile.lengthSync()}');
+      _logger.i('GHOST_LOG: MEDIA_COMPRESSED size: ${compressedFile.lengthSync()}');
+      return compressedFile;
+    } catch (e) {
+      _logger.w('GHOST_LOG: MEDIA_COMPRESS_FAIL error: $e. Falling back to original image.');
+      _logger.i('GHOST_LOG: MEDIA_COMPRESSED size: ${file.lengthSync()}');
+      return file;
+    }
   }
 
   Future<Uint8List> generateImageThumbnail(File file) async {
@@ -63,15 +69,20 @@ class MediaService {
       return await file.readAsBytes(); // Just use original as thumb on desktop for now
     }
 
-    final result = await FlutterImageCompress.compressWithFile(
-      file.absolute.path,
-      minWidth: 100,
-      minHeight: 100,
-      quality: 50,
-      format: CompressFormat.jpeg,
-    );
-    if (result == null) throw Exception('Thumbnail generation failed');
-    return result;
+    try {
+      final result = await FlutterImageCompress.compressWithFile(
+        file.absolute.path,
+        minWidth: 100,
+        minHeight: 100,
+        quality: 50,
+        format: CompressFormat.jpeg,
+      );
+      if (result == null) throw Exception('FlutterImageCompress returned null');
+      return result;
+    } catch (e) {
+      _logger.w('GHOST_LOG: MEDIA_THUMBNAIL_FAIL error: $e. Falling back to original bytes.');
+      return await file.readAsBytes();
+    }
   }
 
   Future<File> compressVideo(File file) async {
@@ -83,17 +94,23 @@ class MediaService {
       return file;
     }
 
-    // video_compress handles 720p / H264 via qualities.
-    final info = await VideoCompress.compressVideo(
-      file.path,
-      quality: VideoQuality.Res1280x720Quality,
-      deleteOrigin: false,
-      includeAudio: true,
-    );
-    if (info == null || info.file == null) throw Exception('Video compression failed');
-    _logger.i('GHOST_LOG: MEDIA_COMPRESS_SUCCESS compressed_size: ${info.file!.lengthSync()}');
-    _logger.i('GHOST_LOG: MEDIA_COMPRESSED size: ${info.file!.lengthSync()}');
-    return info.file!;
+    try {
+      // video_compress handles 720p / H264 via qualities.
+      final info = await VideoCompress.compressVideo(
+        file.path,
+        quality: VideoQuality.Res1280x720Quality,
+        deleteOrigin: false,
+        includeAudio: true,
+      );
+      if (info == null || info.file == null) throw Exception('VideoCompress returned null');
+      _logger.i('GHOST_LOG: MEDIA_COMPRESS_SUCCESS compressed_size: ${info.file!.lengthSync()}');
+      _logger.i('GHOST_LOG: MEDIA_COMPRESSED size: ${info.file!.lengthSync()}');
+      return info.file!;
+    } catch (e) {
+      _logger.w('GHOST_LOG: MEDIA_COMPRESS_FAIL error: $e. Falling back to original video.');
+      _logger.i('GHOST_LOG: MEDIA_COMPRESSED size: ${file.lengthSync()}');
+      return file;
+    }
   }
 
   Future<Uint8List> generateVideoThumbnail(File file) async {
@@ -102,9 +119,14 @@ class MediaService {
       // For now, return empty or a placeholder if desktop
       return Uint8List(0);
     }
-    final result = await VideoCompress.getByteThumbnail(file.path, quality: 50);
-    if (result == null) throw Exception('Video thumbnail failed');
-    return result;
+    try {
+      final result = await VideoCompress.getByteThumbnail(file.path, quality: 50);
+      if (result == null) throw Exception('VideoCompress.getByteThumbnail returned null');
+      return result;
+    } catch (e) {
+      _logger.w('GHOST_LOG: MEDIA_THUMBNAIL_FAIL error: $e. Returning empty thumbnail.');
+      return Uint8List(0);
+    }
   }
 
   Future<Map<String, dynamic>> getVideoMetadata(File file) async {

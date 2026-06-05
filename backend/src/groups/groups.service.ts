@@ -11,13 +11,15 @@ export class GroupsService {
   async createGroup(creatorId: string, members: string[]): Promise<string> {
     const groupId = `group_${uuidv4()}`;
     const key = `group:members:${groupId}`;
-    
+
     // Add creator as member
     const allMembers = Array.from(new Set([creatorId, ...members]));
     await this.redis.sadd(key, ...allMembers);
     await this.redis.expire(key, 86400 * 30); // 30 days default group life if inactive
-    
-    this.logger.log(`Group created: ${groupId} with ${allMembers.length} members`);
+
+    this.logger.log(
+      `Group created: ${groupId} with ${allMembers.length} members`,
+    );
     return groupId;
   }
 

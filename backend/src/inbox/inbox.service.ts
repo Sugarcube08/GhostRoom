@@ -53,10 +53,10 @@ export class InboxService {
   ): Promise<MessageEnvelope> {
     // Enforcement 1: Global Inbox Cap (Device Specific)
     const pendingCount = await this.deliveryRepo.count({
-      where: { 
-        recipient_id: publicId, 
+      where: {
+        recipient_id: publicId,
         recipient_device_id: recipientDeviceId || IsNull(),
-        status: "PENDING" 
+        status: "PENDING",
       },
     });
     if (pendingCount >= this.INBOX_MAX_MESSAGES) {
@@ -121,7 +121,9 @@ export class InboxService {
         try {
           await this.mediaService.incrementReferenceCount(mediaId);
         } catch (err: any) {
-          this.logger.error(`Failed to increment media reference count for ${mediaId}: ${err?.message}`);
+          this.logger.error(
+            `Failed to increment media reference count for ${mediaId}: ${err?.message}`,
+          );
         }
       }
 
@@ -135,7 +137,7 @@ export class InboxService {
       await this.deliveryRepo.save(deliveryEntity);
 
       this.logger.log(
-        `Audit: Message ${messageId} queued for ${publicId} device ${recipientDeviceId || 'default'}`,
+        `Audit: Message ${messageId} queued for ${publicId} device ${recipientDeviceId || "default"}`,
       );
     } catch (e: any) {
       this.logger.error(`Failed to save message to Postgres: ${e?.message}`);
@@ -143,7 +145,9 @@ export class InboxService {
     }
 
     // Cache in Redis (Device Specific)
-    const inboxKey = recipientDeviceId ? `inbox:${publicId}:${recipientDeviceId}` : `inbox:${publicId}`;
+    const inboxKey = recipientDeviceId
+      ? `inbox:${publicId}:${recipientDeviceId}`
+      : `inbox:${publicId}`;
     const msgKey = `msg:${messageId}`;
 
     const pipeline = this.redis.pipeline();
@@ -191,7 +195,11 @@ export class InboxService {
     return [];
   }
 
-  async acknowledgeMessage(publicId: string, messageId: string, deviceId?: string): Promise<void> {
+  async acknowledgeMessage(
+    publicId: string,
+    messageId: string,
+    deviceId?: string,
+  ): Promise<void> {
     try {
       const message = await this.messageRepo.findOne({
         where: { id: messageId },
@@ -203,7 +211,9 @@ export class InboxService {
           try {
             await this.mediaService.decrementReferenceCount(message.media_id);
           } catch (e: any) {
-            this.logger.error(`Failed to decrement media refcount for VIEW_ONCE message: ${e?.message}`);
+            this.logger.error(
+              `Failed to decrement media refcount for VIEW_ONCE message: ${e?.message}`,
+            );
           }
         }
         await this.messageRepo.delete(messageId);
@@ -226,7 +236,9 @@ export class InboxService {
     }
 
     // Remove from Redis cache
-    const inboxKey = deviceId ? `inbox:${publicId}:${deviceId}` : `inbox:${publicId}`;
+    const inboxKey = deviceId
+      ? `inbox:${publicId}:${deviceId}`
+      : `inbox:${publicId}`;
     const msgKey = `msg:${messageId}`;
 
     const pipeline = this.redis.pipeline();
@@ -261,7 +273,9 @@ export class InboxService {
           try {
             await this.mediaService.decrementReferenceCount(msg.media_id);
           } catch (e: any) {
-            this.logger.error(`Failed to decrement media refcount on expiry: ${e?.message}`);
+            this.logger.error(
+              `Failed to decrement media refcount on expiry: ${e?.message}`,
+            );
           }
         }
       }
@@ -292,7 +306,9 @@ export class InboxService {
             try {
               await this.mediaService.decrementReferenceCount(msg.media_id);
             } catch (e: any) {
-              this.logger.error(`Failed to decrement media refcount on delete: ${e?.message}`);
+              this.logger.error(
+                `Failed to decrement media refcount on delete: ${e?.message}`,
+              );
             }
           }
 
@@ -305,7 +321,9 @@ export class InboxService {
           pipeline.del(`msg:${msg.id}`);
           await pipeline.exec();
 
-          this.logger.log(`GHOST_LOG: Message ${msg.id} deleted by recipient ${publicId}`);
+          this.logger.log(
+            `GHOST_LOG: Message ${msg.id} deleted by recipient ${publicId}`,
+          );
         }
       }
     } catch (e: any) {

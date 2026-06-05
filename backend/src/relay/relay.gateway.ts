@@ -111,7 +111,7 @@ export class RelayGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
     client.data.publicId = payload.public_id;
     client.data.deviceId = payload.device_id;
-    
+
     // Join both primary and device-specific inbox
     await client.join(`inbox:${payload.public_id}`);
     if (payload.device_id) {
@@ -128,7 +128,9 @@ export class RelayGateway implements OnGatewayConnection, OnGatewayDisconnect {
       );
     }
 
-    this.logger.log(`Client ${client.id} verified as ${payload.public_id} (${payload.device_id || 'no-device-id'})`);
+    this.logger.log(
+      `Client ${client.id} verified as ${payload.public_id} (${payload.device_id || "no-device-id"})`,
+    );
     await this.auditService.log("identity_verified", {
       public_id: payload.public_id,
       device_id: payload.device_id,
@@ -146,7 +148,10 @@ export class RelayGateway implements OnGatewayConnection, OnGatewayDisconnect {
     const creatorId = client.data.publicId;
     if (!creatorId) return { status: "error", error: "Unauthenticated" };
 
-    const groupId = await this.groupsService.createGroup(creatorId, payload.members);
+    const groupId = await this.groupsService.createGroup(
+      creatorId,
+      payload.members,
+    );
     return { status: "ok", groupId };
   }
 
@@ -168,7 +173,9 @@ export class RelayGateway implements OnGatewayConnection, OnGatewayDisconnect {
       return { status: "error", error: "Not a group member" };
     }
 
-    this.logger.log(`Group message to ${payload.group_id} from ${senderId}. Fanning out to ${members.length} members.`);
+    this.logger.log(
+      `Group message to ${payload.group_id} from ${senderId}. Fanning out to ${members.length} members.`,
+    );
 
     for (const memberId of members) {
       if (memberId === senderId) continue;
@@ -176,8 +183,8 @@ export class RelayGateway implements OnGatewayConnection, OnGatewayDisconnect {
       try {
         // Find member's devices for fan-out
         const devices = await this.federationService.getActiveDevices(memberId);
-        
-        for (const deviceId of (devices.length > 0 ? devices : [undefined])) {
+
+        for (const deviceId of devices.length > 0 ? devices : [undefined]) {
           const envelope = await this.inboxService.queueMessage(
             memberId,
             {
@@ -193,17 +200,19 @@ export class RelayGateway implements OnGatewayConnection, OnGatewayDisconnect {
             deviceId as string,
           );
 
-          const targetRoom = deviceId 
-              ? `inbox:${memberId}:${deviceId}` 
-              : `inbox:${memberId}`;
-              
+          const targetRoom = deviceId
+            ? `inbox:${memberId}:${deviceId}`
+            : `inbox:${memberId}`;
+
           this.server.to(targetRoom).emit("message.receive", {
             ...envelope,
             group_id: payload.group_id,
           });
         }
       } catch (e: any) {
-        this.logger.error(`Failed to deliver group message to ${memberId}: ${e.message}`);
+        this.logger.error(
+          `Failed to deliver group message to ${memberId}: ${e.message}`,
+        );
       }
     }
 
@@ -264,7 +273,7 @@ export class RelayGateway implements OnGatewayConnection, OnGatewayDisconnect {
       deviceId,
     );
     this.logger.log(
-      `Message ${payload.message_id} acknowledged by ${publicId} (${deviceId || 'default'})`,
+      `Message ${payload.message_id} acknowledged by ${publicId} (${deviceId || "default"})`,
     );
     await this.auditService.log("message_acked", {
       message_id: payload.message_id,
@@ -439,7 +448,7 @@ export class RelayGateway implements OnGatewayConnection, OnGatewayDisconnect {
           this.logger.log(
             `Forwarding message to remote relay: ${homeRelayUrl}`,
           );
-          await this.forwardToRemote(homeRelayUrl, payload, senderPublicId);
+          await this.forwardToRemote(homeRelayUrl, payload);
           await this.auditService.log("message_forwarded", {
             target: payload.target_id,
             device_id: targetDeviceId,
@@ -578,11 +587,7 @@ export class RelayGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
   }
 
-  private async forwardToRemote(
-    relayUrl: string,
-    envelope: any,
-    senderId: string,
-  ) {
+  private async forwardToRemote(relayUrl: string, envelope: any) {
     let client = this.remoteRelays.get(relayUrl);
 
     if (!client || !client.connected) {

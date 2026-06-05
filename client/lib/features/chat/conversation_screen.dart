@@ -269,11 +269,17 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
       child: VoiceRecorder(
         onRecordingComplete: (file, durationMs) async {
           setState(() => _isRecording = false);
-          await ref.read(conversationServiceProvider).sendVoiceNote(
-            widget.conversation.contactId, 
-            file, 
-            durationMs: durationMs
-          );
+          final messenger = ScaffoldMessenger.of(context);
+          try {
+            await ref.read(conversationServiceProvider).sendVoiceNote(
+              widget.conversation.contactId, 
+              file, 
+              durationMs: durationMs
+            );
+          } catch (e) {
+            _logger.e('GHOST_LOG: VOICE_SEND_ERROR voice_recorder: $e');
+            messenger.showSnackBar(SnackBar(content: Text('Failed to send voice note: $e')));
+          }
         },
         onCancel: () => setState(() => _isRecording = false),
       ),
@@ -578,12 +584,17 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
           ElevatedButton(
             onPressed: () async {
               Navigator.pop(dialogContext);
-              if (isVideo) {
-                scaffoldMessenger.showSnackBar(const SnackBar(content: Text('Compressing & Uploading Video...')));
-                await convService.sendVideo(contactId, file);
-              } else {
-                scaffoldMessenger.showSnackBar(const SnackBar(content: Text('Encrypting & Uploading Image...')));
-                await convService.sendImage(contactId, file);
+              try {
+                if (isVideo) {
+                  scaffoldMessenger.showSnackBar(const SnackBar(content: Text('Compressing & Uploading Video...')));
+                  await convService.sendVideo(contactId, file);
+                } else {
+                  scaffoldMessenger.showSnackBar(const SnackBar(content: Text('Encrypting & Uploading Image...')));
+                  await convService.sendImage(contactId, file);
+                }
+              } catch (e) {
+                _logger.e('GHOST_LOG: MEDIA_SEND_ERROR confirm_dialog: $e');
+                scaffoldMessenger.showSnackBar(SnackBar(content: Text('Failed to send media: $e')));
               }
             },
             child: const Text('Send'),

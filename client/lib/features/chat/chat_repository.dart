@@ -9,8 +9,13 @@ import '../../core/network/websocket_service.dart';
 import '../../core/notification_service.dart';
 import '../contacts/contact_service.dart';
 import 'dart:convert';
+import 'dart:async';
+import 'dart:io';
 import 'package:logger/logger.dart';
 import '../media/media_manager.dart';
+import '../media/media_service.dart';
+import '../media/attachment_envelope.dart';
+import '../../core/network/relay_manager.dart';
 import '../../core/stability_tracker.dart';
 
 class ChatRepository {
@@ -20,6 +25,8 @@ class ChatRepository {
   final WebSocketService _wsService;
   final NotificationService _notificationService;
   final MediaManager _mediaManager;
+  final MediaService _mediaService;
+  final RelayManager _relayManager;
   String? _activeConversationId;
   final Logger _logger = Logger(
     level: kReleaseMode ? Level.warning : Level.info,
@@ -37,6 +44,7 @@ class ChatRepository {
   static const String _syncBoxName = 'sync_metadata';
   static const String _processedBoxName = 'processed_envelopes';
   static const String _thumbCacheName = 'thumbnail_cache';
+  static const String _offlineQueueBoxName = 'offline_send_queue';
   static const String _lastSyncKey = 'last_sync_t';
 
   ChatRepository(
@@ -46,6 +54,8 @@ class ChatRepository {
     this._wsService,
     this._notificationService,
     this._mediaManager,
+    this._mediaService,
+    this._relayManager,
   );
 
   String get myPublicId => _idService.currentIdentity?.publicId ?? '';
@@ -95,6 +105,10 @@ class ChatRepository {
       await Hive.openBox(_processedBoxName);
       StabilityTracker.logResource('HiveBox', 'Opened_$_processedBoxName');
     }
+    if (!Hive.isBoxOpen(_offlineQueueBoxName)) {
+      await Hive.openBox<Map>(_offlineQueueBoxName);
+      StabilityTracker.logResource('HiveBox', 'Opened_$_offlineQueueBoxName');
+    }
 
     // Register WebSocket Callbacks
     _wsService.onIdentityVerified(_handleIdentityVerified);
@@ -104,6 +118,9 @@ class ChatRepository {
     // Global Cleanup
     await flushAllGhosts();
 
+    // Process offline queue on startup
+    unawaited(processOfflineQueue());
+
     _logger.i('GHOST_LOG: ChatRepository initialized and listeners registered.');
     StabilityTracker.logMemory('ChatRepo_Init_End');
   }
@@ -111,6 +128,9 @@ class ChatRepository {
   void _handleIdentityVerified(dynamic data) {
     _logger.i('GHOST_LOG: Identity verified. Triggering inbox sync...');
     _wsService.fetchInbox(since: lastSyncTimestamp);
+
+    // Process offline queue on reconnect
+    unawaited(processOfflineQueue());
   }
 
   void _handleNewMessage(dynamic data) {
@@ -430,6 +450,38 @@ class ChatRepository {
     }
   }
 
+  Box<Map>? get _queueBox {
+    if (!Hive.isBoxOpen(_offlineQueueBoxName)) return null;
+    return Hive.box<Map>(_offlineQueueBoxName);
+  }
+
+  bool _isProcessingQueue = false;
+  final List<String> _currentlySendingIds = [];
+
+  Future<void> queueMediaSend({
+    required String messageId,
+    required String recipientId,
+    required String text,
+    required MessageType type,
+    required File file,
+    required String retention,
+    Map<String, dynamic>? metadata,
+  }) async {
+    final queueItem = {
+      'id': messageId,
+      'recipientId': recipientId,
+      'text': text,
+      'type': type.name,
+      'retention': retention,
+      'metadata': metadata ?? {},
+      'filePath': file.path,
+      'status': 'pending_upload',
+      'timestamp': DateTime.now().millisecondsSinceEpoch,
+    };
+    await _queueBox?.put(messageId, queueItem);
+    unawaited(processOfflineQueue());
+  }
+
   Future<void> sendMessage({
     required String recipientId,
     required String text,
@@ -440,126 +492,352 @@ class ChatRepository {
   }) async {
     _logger.i('GHOST_LOG: SEND_START for recipient: $recipientId');
     
+    final messageId = existingId ?? 'pending_${DateTime.now().microsecondsSinceEpoch}';
     final identity = _idService.currentIdentity;
-    if (identity == null) throw Exception('Identity not ready');
-
-    // Attempt to find XID for encryption
-    final contact = _contactService.getContact(recipientId);
-    final String? recipientXidBase64 = contact?.xid;
-
-    if (recipientXidBase64 == null || recipientXidBase64.isEmpty) {
-      _logger.e('GHOST_FATAL: Cannot send E2EE message to $recipientId - missing X25519 public key.');
-      throw Exception('Cannot send E2EE message without recipient public key. Please scan their Identity Package QR.');
-    }
-
-    final payload = {
-      'type': type.name,
-      'text': text,
-      'sender_eid': base64Encode(identity.ed25519KeyPair.publicKey),
-      'sender_xid': base64Encode(identity.x25519KeyPair.publicKey),
-      'metadata': metadata ?? {},
-    };
-
-    if (metadata?['system_type'] == 'mode_change') {
-      _logger.i('MODE_CHANGE_SENT: ${metadata?['mode']}');
-    }
-
-    final envelope = await _dmService.encryptDM(
-      plaintext: jsonEncode(payload),
-      recipientPublicId: recipientId,
-      recipientXid: base64Decode(recipientXidBase64),
-      senderIdentity: identity,
-    );
-    _logger.i('GHOST_LOG: SEND_ENCRYPT_SUCCESS');
-
-    // MULTI-DEVICE FAN-OUT
-    try {
-      final recipientDevices = await _wsService.getDevices(recipientId);
-      final myDevices = await _wsService.getDevices(identity.publicId);
-
-      _logger.i('GHOST_LOG: FAN_OUT_START rec=${recipientDevices.length} self=${myDevices.length}');
-
-      final List<Map<String, dynamic>> targets = [];
-      
-      // Target Recipient Devices
-      if (recipientDevices.isEmpty) {
-        // Fallback for V1/Legacy
-        targets.add({'device_id': null, 'relay_url': null});
-      } else {
-        for (final d in recipientDevices) {
-          targets.add({'device_id': d['device_id'], 'relay_url': d['relay_url']});
-        }
-      }
-
-      // Target Self Devices (Sync)
-      for (final d in myDevices) {
-        if (d['device_id'] != identity.deviceId) {
-          targets.add({'device_id': d['device_id'], 'relay_url': d['relay_url']});
-        }
-      }
-
-      for (final target in targets) {
-        final Map<String, dynamic> msgPayload = {
-          ...envelope.toJson(),
-          'retention': retention,
-          'target_device_id': target['device_id'],
-        };
-        if (type == MessageType.image || type == MessageType.video || type == MessageType.voice) {
-          if (metadata != null && metadata['media_id'] != null) {
-            msgPayload['media_id'] = metadata['media_id'];
-          }
-        }
-
-        // TODO: Handle remote relay delivery explicitly if relay_url is different
-        // For now, our Home Relay handles S2S forwarding automatically
-        _wsService.sendMessage(recipientId, msgPayload, version: 2, ack: (ackData) {
-          _logger.i('GHOST_LOG: SEND_ACK_RECEIVED for device ${target['device_id']}');
-        });
-      }
-
-    } catch (e) {
-      _logger.e('GHOST_LOG: FAN_OUT_FAILED error: $e');
-      // Fallback to single delivery if fan-out lookup fails
-      final Map<String, dynamic> msgPayload = {
-        ...envelope.toJson(),
-        'retention': retention,
-      };
-      _wsService.sendMessage(recipientId, msgPayload, version: 2);
-    }
-
-    _logger.i('GHOST_LOG: SEND_SOCKET_EMIT_COMPLETE');
-    _logger.i("MESSAGE_SENT");
-
-    // Update Activity
-    final state = _stateBox?.get(recipientId) ?? ConversationState(
-      contactId: recipientId,
-      lastChangedBy: identity.publicId,
-      lastChangedAt: DateTime.now(),
-      lastActivityAt: DateTime.now(),
-    );
-    state.lastActivityAt = DateTime.now();
-    if (type != MessageType.system) {
-      state.lastMessageId = envelope.id;
-    }
-    await _stateBox?.put(recipientId, state);
-
-    if (type != MessageType.system) {
+    
+    if (existingId == null && type != MessageType.system) {
       final message = Message(
-        id: envelope.id,
-        senderId: identity.publicId,
+        id: messageId,
+        senderId: identity?.publicId ?? '',
         recipientId: recipientId,
         plaintext: text,
         timestamp: DateTime.now(),
         isRead: true,
         type: type,
-        metadata: metadata,
+        metadata: {
+          'status': 'PENDING',
+          'is_ghost': retention == 'EPHEMERAL',
+          ...?metadata,
+        },
       );
-      
-      if (existingId != null && existingId != envelope.id) {
-        await _msgBox?.delete(existingId);
-      }
-      await _msgBox?.put(message.id, message);
+      await saveMessage(message);
     }
+
+    final queueItem = {
+      'id': messageId,
+      'recipientId': recipientId,
+      'text': text,
+      'type': type.name,
+      'retention': retention,
+      'metadata': metadata ?? {},
+      'filePath': null,
+      'status': 'pending_send',
+      'timestamp': DateTime.now().millisecondsSinceEpoch,
+    };
+
+    await _queueBox?.put(messageId, queueItem);
+    unawaited(processOfflineQueue());
+  }
+
+  Future<void> _updateMessageStatus(String messageId, String status, {String? error}) async {
+    final message = _msgBox?.get(messageId);
+    if (message != null) {
+      final newMetadata = Map<String, dynamic>.from(message.metadata ?? {});
+      newMetadata['status'] = status;
+      if (error != null) {
+        newMetadata['error'] = error;
+      }
+      final updatedMessage = Message(
+        id: message.id,
+        senderId: message.senderId,
+        recipientId: message.recipientId,
+        plaintext: message.plaintext,
+        timestamp: message.timestamp,
+        isRead: message.isRead,
+        type: message.type,
+        metadata: newMetadata,
+        isRequest: message.isRequest,
+        groupId: message.groupId,
+      );
+      await _msgBox?.put(messageId, updatedMessage);
+    }
+  }
+
+  Future<void> processOfflineQueue() async {
+    if (_isProcessingQueue) return;
+    _isProcessingQueue = true;
+
+    try {
+      while (true) {
+        final box = _queueBox;
+        if (box == null || box.isEmpty) break;
+
+        // Ensure we are connected and authenticated
+        if (!_wsService.isConnected || !_wsService.isAuthenticated) {
+          _logger.d('GHOST_LOG: Queue processing paused - offline or unauthenticated');
+          break;
+        }
+
+        // Get and sort the first pending item
+        final items = box.values.toList().cast<Map>()
+          ..sort((a, b) => (a['timestamp'] as int).compareTo(b['timestamp'] as int));
+
+        if (items.isEmpty) break;
+        final item = items.first;
+
+        // Process this single item
+        final success = await _processQueueItem(item);
+        if (!success) {
+          // If a transient error occurs, we break to avoid infinite loop / blocking
+          break;
+        }
+      }
+    } finally {
+      _isProcessingQueue = false;
+    }
+  }
+
+  Future<bool> _processQueueItem(Map item) async {
+    final box = _queueBox;
+    if (box == null) return false;
+
+    final String id = item['id'] as String;
+    if (_currentlySendingIds.contains(id)) return false;
+    _currentlySendingIds.add(id);
+
+    try {
+      final String recipientId = item['recipientId'] as String;
+      final String text = item['text'] as String;
+      final MessageType type = MessageType.values.firstWhere((e) => e.name == item['type']);
+      final String retention = item['retention'] as String;
+      final Map<String, dynamic> metadata = Map<String, dynamic>.from(item['metadata'] ?? {});
+      final String? filePath = item['filePath'] as String?;
+      String status = item['status'] as String;
+
+      _logger.i('GHOST_LOG: Processing queue item $id (type: ${type.name}, status: $status)');
+
+      // Step 1: Media Upload if pending
+      if (status == 'pending_upload' && filePath != null) {
+        final file = File(filePath);
+        if (!file.existsSync()) {
+          _logger.e('GHOST_LOG: Media file not found for queue item $id: $filePath');
+          await _updateMessageStatus(id, 'FAILED', error: 'Local file missing');
+          await box.delete(id);
+          _currentlySendingIds.remove(id);
+          return true; // Proceed to next item
+        }
+
+        _logger.i('GHOST_LOG: Uploading media for offline queue item $id');
+        await _updateMessageStatus(id, 'UPLOADING');
+
+        final activeRelay = await _relayManager.getActiveRelay();
+        if (activeRelay == null) {
+          _logger.w('GHOST_LOG: No active relay for upload. Halting queue.');
+          _currentlySendingIds.remove(id);
+          return false; // Halt queue
+        }
+
+        final contact = _contactService.getContact(recipientId);
+        if (contact == null) {
+          _logger.e('GHOST_LOG: Contact $recipientId not found for queue item $id');
+          await _updateMessageStatus(id, 'FAILED', error: 'Contact not found');
+          await box.delete(id);
+          _currentlySendingIds.remove(id);
+          return true; // Proceed to next item
+        }
+
+        AttachmentKind kind = AttachmentKind.image;
+        if (type == MessageType.video) kind = AttachmentKind.video;
+        if (type == MessageType.voice) kind = AttachmentKind.voice;
+
+        final (envelope, thumbnailBytes) = await _mediaService.uploadMedia(
+          file: file,
+          kind: kind,
+          relay: activeRelay,
+          recipientXid: base64Decode(contact.xid),
+          messageId: id,
+        );
+
+        await _mediaManager.cacheSentMedia(
+          mediaId: envelope.mediaId,
+          originalFile: file,
+          thumbnailBytes: thumbnailBytes,
+        );
+
+        // Update queue item to pending_send with envelope meta
+        final updatedItem = Map<String, dynamic>.from(item);
+        updatedItem['status'] = 'pending_send';
+        final newMetadata = Map<String, dynamic>.from(item['metadata'] ?? {});
+        newMetadata.addAll(envelope.toJson());
+        newMetadata['relay_url'] = activeRelay.apiUrl;
+        newMetadata['is_ghost'] = retention == 'EPHEMERAL';
+        updatedItem['metadata'] = newMetadata;
+        
+        await box.put(id, updatedItem);
+        
+        await updateMessageMetadata(id, {
+          ...newMetadata,
+          'status': 'UPLOADED',
+        });
+
+        // Update local variables for Step 2
+        status = 'pending_send';
+        metadata.addAll(newMetadata);
+        _logger.i('GHOST_LOG: Media upload complete for queue item $id');
+      }
+
+      // Step 2: Encrypt and Send Envelope
+      if (status == 'pending_send') {
+        await _updateMessageStatus(id, 'SENDING');
+
+        final contact = _contactService.getContact(recipientId);
+        final String? recipientXidBase64 = contact?.xid;
+
+        if (recipientXidBase64 == null || recipientXidBase64.isEmpty) {
+          throw Exception('Missing recipient public key');
+        }
+
+        final identity = _idService.currentIdentity;
+        if (identity == null) throw Exception('Identity not ready');
+
+        final payload = {
+          'type': type.name,
+          'text': text,
+          'sender_eid': base64Encode(identity.ed25519KeyPair.publicKey),
+          'sender_xid': base64Encode(identity.x25519KeyPair.publicKey),
+          'metadata': metadata,
+        };
+
+        final envelope = await _dmService.encryptDM(
+          plaintext: jsonEncode(payload),
+          recipientPublicId: recipientId,
+          recipientXid: base64Decode(recipientXidBase64),
+          senderIdentity: identity,
+        );
+
+        List<Map<String, dynamic>> targets = [];
+        try {
+          final recipientDevices = await _wsService.getDevices(recipientId);
+          final myDevices = await _wsService.getDevices(identity.publicId);
+
+          if (recipientDevices.isEmpty) {
+            targets.add({'device_id': null});
+          } else {
+            for (final d in recipientDevices) {
+              targets.add({'device_id': d['device_id']});
+            }
+          }
+          for (final d in myDevices) {
+            if (d['device_id'] != identity.deviceId) {
+              targets.add({'device_id': d['device_id']});
+            }
+          }
+        } catch (e) {
+          _logger.w('GHOST_LOG: Fan-out lookup failed: $e. Using fallback single target.');
+          targets.add({'device_id': null});
+        }
+
+        bool allSent = true;
+        for (final target in targets) {
+          final Map<String, dynamic> msgPayload = {
+            ...envelope.toJson(),
+            'retention': retention,
+            'target_device_id': target['device_id'],
+          };
+          if (type == MessageType.image || type == MessageType.video || type == MessageType.voice) {
+            if (metadata['media_id'] != null) {
+              msgPayload['media_id'] = metadata['media_id'];
+            }
+          }
+
+          final completer = Completer<bool>();
+          _wsService.sendMessage(recipientId, msgPayload, version: 2, ack: (response) {
+            if (response != null && response['status'] == 'ok') {
+              completer.complete(true);
+            } else {
+              _logger.w('GHOST_LOG: Server rejected message emit: $response');
+              completer.complete(false);
+            }
+          });
+
+          final success = await completer.future.timeout(
+            const Duration(seconds: 10),
+            onTimeout: () {
+              _logger.w('GHOST_LOG: Timeout waiting for message send acknowledgment');
+              return false;
+            },
+          );
+
+          if (!success) {
+            allSent = false;
+            break;
+          }
+        }
+
+        if (allSent) {
+          // Update Activity
+          final state = _stateBox?.get(recipientId) ?? ConversationState(
+            contactId: recipientId,
+            lastChangedBy: identity.publicId,
+            lastChangedAt: DateTime.now(),
+            lastActivityAt: DateTime.now(),
+          );
+          state.lastActivityAt = DateTime.now();
+          if (type != MessageType.system) {
+            state.lastMessageId = envelope.id;
+          }
+          await _stateBox?.put(recipientId, state);
+
+          if (type != MessageType.system) {
+            final message = Message(
+              id: envelope.id,
+              senderId: identity.publicId,
+              recipientId: recipientId,
+              plaintext: text,
+              timestamp: DateTime.now(),
+              isRead: true,
+              type: type,
+              metadata: {
+                ...metadata,
+                'status': 'SENT',
+              },
+            );
+            
+            if (id != envelope.id) {
+              await _msgBox?.delete(id);
+            }
+            await _msgBox?.put(message.id, message);
+          }
+
+          if (type == MessageType.image || type == MessageType.video) {
+            final mediaId = metadata['media_id'] ?? '';
+            final relayUrl = metadata['relay_url'] ?? '';
+            final mediaKind = type == MessageType.image ? 'image' : 'video';
+            _logger.i('GHOST_LOG: MEDIA_MESSAGE_SENT messageId: ${envelope.id} mediaId: $mediaId mediaKind: $mediaKind url: $relayUrl');
+            _logger.i('GHOST_LOG: MEDIA_ENVELOPE_SENT id: $mediaId');
+          } else if (type == MessageType.voice) {
+            final mediaId = metadata['media_id'] ?? '';
+            _logger.i('GHOST_LOG: VOICE_ENVELOPE_SENT id: $mediaId');
+          }
+
+          // Remove from queue
+          await box.delete(id);
+          _logger.i('GHOST_LOG: Message $id successfully sent and removed from queue');
+          _currentlySendingIds.remove(id);
+          return true; // Success
+        } else {
+          _logger.w('GHOST_LOG: Send failed for item $id. Halting queue.');
+          _currentlySendingIds.remove(id);
+          return false; // Transient failure, halt
+        }
+      }
+    } catch (e) {
+      _logger.e('GHOST_LOG: Error processing queue item $id: $e');
+      final errStr = e.toString();
+      if (errStr.contains('Missing recipient public key') || errStr.contains('Contact not found')) {
+        await _updateMessageStatus(id, 'FAILED', error: errStr);
+        await box.delete(id);
+        _currentlySendingIds.remove(id);
+        return true; // Proceed to next
+      } else {
+        await _updateMessageStatus(id, 'PENDING', error: errStr);
+        _currentlySendingIds.remove(id);
+        return false; // Transient failure, halt
+      }
+    }
+
+    _currentlySendingIds.remove(id);
+    return false;
   }
 
   Future<void> updateConversationMode(String contactId, ConversationMode mode) async {

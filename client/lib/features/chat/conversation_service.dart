@@ -8,10 +8,8 @@ import '../contacts/contact_resolver.dart';
 import '../contacts/contact_service.dart';
 import '../contacts/contact.dart';
 import '../../core/crypto/identity_service.dart';
-import '../../core/network/relay_manager.dart';
 import 'conversation_state.dart';
 import '../media/media_service.dart';
-import '../media/attachment_envelope.dart';
 
 class Conversation {
   final Contact? contact;
@@ -41,7 +39,6 @@ class ConversationService {
   final ContactService _contactService;
   final IdentityService _idService;
   final MediaService _mediaService;
-  final RelayManager _relayManager;
   final Logger _logger = Logger(
     level: Level.info,
     printer: PrettyPrinter(
@@ -58,7 +55,6 @@ class ConversationService {
     this._contactService,
     this._idService,
     this._mediaService,
-    this._relayManager,
   );
 
   List<Conversation> getConversations() {
@@ -225,9 +221,6 @@ class ConversationService {
     final contact = _contactService.getContact(recipientId);
     if (contact == null) throw Exception('Contact not found');
 
-    final activeRelay = await _relayManager.getActiveRelay();
-    if (activeRelay == null) throw Exception('No active relay');
-
     final mode = getConversationMode(recipientId);
     final isGhost = mode == ConversationMode.ghost;
 
@@ -264,45 +257,19 @@ class ConversationService {
         'status': 'UPLOADING',
       });
 
-      // 3. Upload (includes encryption)
-      final (envelope, thumbnailBytes) = await _mediaService.uploadMedia(
-        file: compressed,
-        kind: AttachmentKind.image,
-        relay: activeRelay,
-        recipientXid: base64Decode(contact.xid),
+      // 3. Queue Media Send
+      await _chatRepository.queueMediaSend(
         messageId: placeholderId,
-      );
-      
-      await _chatRepository.updateMessageMetadata(placeholderId, {
-        'status': 'UPLOADED',
-      });
-      
-      await _chatRepository.mediaManager.cacheSentMedia(
-        mediaId: envelope.mediaId,
-        originalFile: compressed,
-        thumbnailBytes: thumbnailBytes,
-      );
-      await _chatRepository.updateMessageMetadata(placeholderId, {
-        'status': 'SENDING',
-      });
-
-      // 3. Send Message
-      await _chatRepository.sendMessage(
         recipientId: recipientId,
         text: '[Image]',
         type: MessageType.image,
-        existingId: placeholderId,
+        file: compressed,
         retention: isGhost ? 'EPHEMERAL' : 'PERSISTENT',
         metadata: {
-          ...envelope.toJson(),
-          'relay_url': activeRelay.apiUrl,
           'is_ghost': isGhost,
-          'status': 'SENT',
+          'size': compressed.lengthSync(),
         },
       );
-
-      _logger.i('GHOST_LOG: MEDIA_MESSAGE_SENT messageId: $placeholderId mediaId: ${envelope.mediaId} mediaKind: image url: ${activeRelay.apiUrl}');
-      _logger.i('GHOST_LOG: MEDIA_ENVELOPE_SENT id: ${envelope.mediaId}');
     } catch (e) {
       await _chatRepository.updateMessageMetadata(placeholderId, {
         'status': 'FAILED',
@@ -315,9 +282,6 @@ class ConversationService {
   Future<void> sendVideo(String recipientId, File file) async {
     final contact = _contactService.getContact(recipientId);
     if (contact == null) throw Exception('Contact not found');
-
-    final activeRelay = await _relayManager.getActiveRelay();
-    if (activeRelay == null) throw Exception('No active relay');
 
     final mode = getConversationMode(recipientId);
     final isGhost = mode == ConversationMode.ghost;
@@ -352,43 +316,22 @@ class ConversationService {
       _logger.i('GHOST_LOG: MEDIA_COMPRESS_SUCCESS messageId: $placeholderId mediaId: pending mediaKind: video url: pending');
 
       await _chatRepository.updateMessageMetadata(placeholderId, {
-        'status': 'ENCRYPTING',
+        'status': 'UPLOADING',
       });
 
-      // 3. Upload
-      final (envelope, thumbnailBytes) = await _mediaService.uploadMedia(
-        file: compressed,
-        kind: AttachmentKind.video,
-        relay: activeRelay,
-        recipientXid: base64Decode(contact.xid),
+      // 3. Queue Media Send
+      await _chatRepository.queueMediaSend(
         messageId: placeholderId,
-      );
-      await _chatRepository.mediaManager.cacheSentMedia(
-        mediaId: envelope.mediaId,
-        originalFile: compressed,
-        thumbnailBytes: thumbnailBytes,
-      );
-      await _chatRepository.updateMessageMetadata(placeholderId, {
-        'status': 'SENDING',
-      });
-
-      // 3. Send Message
-      await _chatRepository.sendMessage(
         recipientId: recipientId,
         text: '[Video]',
         type: MessageType.video,
-        existingId: placeholderId,
+        file: compressed,
         retention: isGhost ? 'EPHEMERAL' : 'PERSISTENT',
         metadata: {
-          ...envelope.toJson(),
-          'relay_url': activeRelay.apiUrl,
           'is_ghost': isGhost,
-          'status': 'SENT',
+          'size': compressed.lengthSync(),
         },
       );
-
-      _logger.i('GHOST_LOG: MEDIA_MESSAGE_SENT messageId: $placeholderId mediaId: ${envelope.mediaId} mediaKind: video url: ${activeRelay.apiUrl}');
-      _logger.i('GHOST_LOG: MEDIA_ENVELOPE_SENT id: ${envelope.mediaId}');
     } catch (e) {
       await _chatRepository.updateMessageMetadata(placeholderId, {
         'status': 'FAILED',
@@ -406,9 +349,6 @@ class ConversationService {
     final contact = _contactService.getContact(recipientId);
     if (contact == null) throw Exception('Contact not found');
 
-    final activeRelay = await _relayManager.getActiveRelay();
-    if (activeRelay == null) throw Exception('No active relay');
-
     final mode = getConversationMode(recipientId);
     final isGhost = mode == ConversationMode.ghost;
 
@@ -422,7 +362,7 @@ class ConversationService {
       timestamp: DateTime.now(),
       type: MessageType.voice,
       metadata: {
-        'status': 'ENCRYPTING',
+        'status': 'UPLOADING',
         'is_ghost': isGhost,
         'size': file.lengthSync(),
         'duration_ms': durationMs,
@@ -431,33 +371,20 @@ class ConversationService {
     await _chatRepository.saveMessage(placeholder);
 
     try {
-      // 2. Upload (includes encryption)
-      final (envelope, _) = await _mediaService.uploadMedia(
-        file: file,
-        kind: AttachmentKind.voice,
-        relay: activeRelay,
-        recipientXid: base64Decode(contact.xid),
-      );
-
-      await _chatRepository.updateMessageMetadata(placeholderId, {
-        'status': 'SENDING',
-      });
-
-      // 3. Send Message
-      await _chatRepository.sendMessage(
+      // 2. Queue Media Send
+      await _chatRepository.queueMediaSend(
+        messageId: placeholderId,
         recipientId: recipientId,
         text: '[Voice Note]',
         type: MessageType.voice,
-        existingId: placeholderId,
+        file: file,
         retention: isGhost ? 'EPHEMERAL' : 'PERSISTENT',
         metadata: {
-          ...envelope.toJson(),
-          'relay_url': activeRelay.apiUrl,
           'is_ghost': isGhost,
-          'status': 'SENT',
+          'size': file.lengthSync(),
+          'duration_ms': durationMs,
         },
       );
-      _logger.i('GHOST_LOG: VOICE_ENVELOPE_SENT id: ${envelope.mediaId}');
     } catch (e) {
       await _chatRepository.updateMessageMetadata(placeholderId, {
         'status': 'FAILED',

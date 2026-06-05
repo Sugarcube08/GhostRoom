@@ -27,6 +27,10 @@ void main() async {
   runZonedGuarded(() async {
     WidgetsFlutterBinding.ensureInitialized();
     
+    // Memory discipline: limit image cache size to prevent unbounded RAM growth
+    PaintingBinding.instance.imageCache.maximumSize = 100;
+    PaintingBinding.instance.imageCache.maximumSizeBytes = 50 * 1024 * 1024; // 50MB
+    
     // Global Error Handlers
     FlutterError.onError = (details) {
       FlutterError.presentError(details);
