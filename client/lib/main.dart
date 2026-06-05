@@ -4,7 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sodium/sodium_sumo.dart';
 import 'core/theme/ghost_theme.dart';
 import 'core/providers.dart';
-import 'core/widgets/privacy_overlay.dart';
+
 import 'core/widgets/navigation_shell.dart';
 import 'features/home/onboarding_screen.dart';
 import 'core/app_initializer.dart';
@@ -19,17 +19,13 @@ import 'package:app_links/app_links.dart';
 import 'dart:convert';
 import 'core/crypto/identity_service.dart';
 import 'features/contacts/contact_actions.dart';
-import 'package:window_manager/window_manager.dart';
+
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
 void main() async {
   runZonedGuarded(() async {
     WidgetsFlutterBinding.ensureInitialized();
-    
-    if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
-      await windowManager.ensureInitialized();
-    }
     
     // Global Error Handlers
     FlutterError.onError = (details) {
@@ -252,7 +248,7 @@ class _GhostAppState extends ConsumerState<GhostApp> with WidgetsBindingObserver
           ),
         );
 
-        return PrivacyOverlay(child: child);
+        return child;
       },
       home: const SplashScreen(),
     );

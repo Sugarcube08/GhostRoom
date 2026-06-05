@@ -15,13 +15,14 @@ import 'media_service.dart';
 
 import 'lru_memory_cache.dart';
 
+// ignore_for_file: constant_identifier_names
 enum MediaState {
-  notDownloaded,
-  downloading,
-  decrypting,
-  verifying,
-  ready,
-  failed,
+  NOT_DOWNLOADED,
+  DOWNLOADING,
+  DECRYPTING,
+  VERIFYING,
+  READY,
+  FAILED,
 }
 
 class MediaStateUpdate {
@@ -154,7 +155,7 @@ class MediaManager {
 
   MediaState getMediaState(String mediaId, {bool isThumbnail = false}) {
     if (!_initCompleter.isCompleted) {
-      return MediaState.notDownloaded;
+      return MediaState.NOT_DOWNLOADED;
     }
     final state = isThumbnail ? _thumbStates.get(mediaId) : _states.get(mediaId);
     if (state != null) return state;
@@ -164,10 +165,10 @@ class MediaManager {
     if (cached != null) {
       final cachedMedia = CachedMedia.fromMap(cached as Map);
       if (File(cachedMedia.localPath).existsSync()) {
-        return MediaState.ready;
+        return MediaState.READY;
       }
     }
-    return MediaState.notDownloaded;
+    return MediaState.NOT_DOWNLOADED;
   }
 
   Future<bool> isThumbnailCached(String mediaId) async {
@@ -211,25 +212,25 @@ class MediaManager {
       isThumbnail: true,
     );
     await _cacheIndex.put('${mediaId}_thumb', entry.toMap());
-    _updateState(mediaId, MediaState.ready, isThumbnail: true);
+    _updateState(mediaId, MediaState.READY, isThumbnail: true);
   }
 
   bool _isValidTransition(MediaState? from, MediaState to) {
     if (from == null) return true;
     if (from == to) return true;
     switch (from) {
-      case MediaState.notDownloaded:
-        return to == MediaState.downloading || to == MediaState.ready || to == MediaState.failed;
-      case MediaState.downloading:
-        return to == MediaState.decrypting || to == MediaState.failed;
-      case MediaState.decrypting:
-        return to == MediaState.verifying || to == MediaState.failed;
-      case MediaState.verifying:
-        return to == MediaState.ready || to == MediaState.failed;
-      case MediaState.ready:
-        return to == MediaState.notDownloaded;
-      case MediaState.failed:
-        return to == MediaState.downloading || to == MediaState.notDownloaded;
+      case MediaState.NOT_DOWNLOADED:
+        return to == MediaState.DOWNLOADING || to == MediaState.READY || to == MediaState.FAILED;
+      case MediaState.DOWNLOADING:
+        return to == MediaState.DECRYPTING || to == MediaState.FAILED;
+      case MediaState.DECRYPTING:
+        return to == MediaState.VERIFYING || to == MediaState.FAILED;
+      case MediaState.VERIFYING:
+        return to == MediaState.READY || to == MediaState.FAILED;
+      case MediaState.READY:
+        return to == MediaState.NOT_DOWNLOADED;
+      case MediaState.FAILED:
+        return to == MediaState.DOWNLOADING || to == MediaState.NOT_DOWNLOADED;
     }
   }
 
@@ -298,7 +299,7 @@ class MediaManager {
             _logger.i('GHOST_LOG: Media cache hit for $key');
             _updateState(
               envelope.mediaId,
-              MediaState.ready,
+              MediaState.READY,
               isThumbnail: isThumbnail,
             );
             return file;
@@ -325,7 +326,7 @@ class MediaManager {
       } catch (e) {
         _updateState(
           envelope.mediaId,
-          MediaState.failed,
+          MediaState.FAILED,
           isThumbnail: isThumbnail,
         );
         rethrow;
@@ -354,7 +355,7 @@ class MediaManager {
       File? tempFile;
       try {
         // Step 1: Downloading
-        _updateState(mediaId, MediaState.downloading, isThumbnail: isThumbnail);
+        _updateState(mediaId, MediaState.DOWNLOADING, isThumbnail: isThumbnail);
 
         final urlString = isThumbnail
             ? '${relay.apiUrl}/media/download-url/$mediaId?thumbnail=true'
@@ -391,7 +392,7 @@ class MediaManager {
         _logger.i('GHOST_LOG: MEDIA_DOWNLOAD_SUCCESS messageId: ${messageId ?? "unknown"} mediaId: $mediaId mediaKind: ${envelope.kind.name} url: $downloadUrl');
 
         // Step 2: Decrypting
-        _updateState(mediaId, MediaState.decrypting, isThumbnail: isThumbnail);
+        _updateState(mediaId, MediaState.DECRYPTING, isThumbnail: isThumbnail);
         _logger.i('GHOST_LOG: MEDIA_DECRYPT_START messageId: ${messageId ?? "unknown"} mediaId: $mediaId mediaKind: ${envelope.kind.name} url: $downloadUrl');
 
         late final Uint8List decrypted;
@@ -422,7 +423,7 @@ class MediaManager {
         }
 
         // Step 3: Verifying
-        _updateState(mediaId, MediaState.verifying, isThumbnail: isThumbnail);
+        _updateState(mediaId, MediaState.VERIFYING, isThumbnail: isThumbnail);
 
         if (!isThumbnail) {
           final actualHash = crypto.sha256.convert(decrypted).toString();
@@ -465,7 +466,7 @@ class MediaManager {
         await _cacheIndex.put(indexKey, entry.toMap());
 
         // Step 5: Ready
-        _updateState(mediaId, MediaState.ready, isThumbnail: isThumbnail);
+        _updateState(mediaId, MediaState.READY, isThumbnail: isThumbnail);
         return finalFile;
       } catch (e) {
         // Clean up temp file if it exists
@@ -559,7 +560,8 @@ class MediaManager {
       isThumbnail: false,
     );
     await _cacheIndex.put('${mediaId}_original', originalEntry.toMap());
-    _updateState(mediaId, MediaState.ready, isThumbnail: false);
+    _updateState(mediaId, MediaState.READY, isThumbnail: false);
+    _logger.i('GHOST_LOG: LOCAL_MEDIA_READY messageId: pending mediaId: $mediaId');
 
     // 2. If thumbnail bytes are present, save them
     if (thumbnailBytes != null) {

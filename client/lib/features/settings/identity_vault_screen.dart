@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import '../../core/providers.dart';
-import '../../core/security/privacy_protection_service.dart';
+
 import 'relay_settings_screen.dart';
 import 'identity_actions.dart';
 import '../contacts/my_passport_screen.dart';
@@ -20,18 +20,13 @@ class IdentityVaultScreen extends ConsumerStatefulWidget {
 }
 
 class _IdentityVaultScreenState extends ConsumerState<IdentityVaultScreen> with IdentityActions {
-  late final PrivacyProtectionService _privacyService;
-
   @override
   void initState() {
     super.initState();
-    _privacyService = ref.read(privacyProtectionProvider);
-    _privacyService.enableScreenshotProtection();
   }
 
   @override
   void dispose() {
-    _privacyService.disableScreenshotProtection();
     super.dispose();
   }
 

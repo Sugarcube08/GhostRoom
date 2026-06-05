@@ -33,7 +33,7 @@ class _VoiceMessageBubbleState extends ConsumerState<VoiceMessageBubble> {
   Duration _position = Duration.zero;
   
   File? _audioFile;
-  MediaState _mediaState = MediaState.notDownloaded;
+  MediaState _mediaState = MediaState.NOT_DOWNLOADED;
   StreamSubscription? _stateSub;
   StreamSubscription? _posSub;
   StreamSubscription? _durSub;
@@ -84,16 +84,16 @@ class _VoiceMessageBubbleState extends ConsumerState<VoiceMessageBubble> {
       if (update.mediaId == mediaId && !update.isThumbnail) {
         if (mounted) {
           setState(() => _mediaState = update.state);
-          if (update.state == MediaState.ready) {
+          if (update.state == MediaState.READY) {
             _loadAudioFile();
-          } else if (update.state == MediaState.failed) {
+          } else if (update.state == MediaState.FAILED) {
             debugPrint('GHOST_LOG: MEDIA_RENDER_FAILED messageId: ${widget.message.id} mediaId: $mediaId mediaKind: ${envelope.kind.name} url: $urlHint error: Media state transitioned to failed');
           }
         }
       }
     });
 
-    if (_mediaState == MediaState.ready) {
+    if (_mediaState == MediaState.READY) {
       _loadAudioFile();
     }
   }
@@ -145,9 +145,9 @@ class _VoiceMessageBubbleState extends ConsumerState<VoiceMessageBubble> {
 
   void _download() async {
     if (widget.message.metadata == null || widget.message.metadata?['media_id'] == null) return;
-    if (_mediaState == MediaState.downloading || 
-        _mediaState == MediaState.decrypting || 
-        _mediaState == MediaState.verifying) {
+    if (_mediaState == MediaState.DOWNLOADING || 
+        _mediaState == MediaState.DECRYPTING || 
+        _mediaState == MediaState.VERIFYING) {
       return;
     }
 
@@ -173,7 +173,7 @@ class _VoiceMessageBubbleState extends ConsumerState<VoiceMessageBubble> {
       if (mounted) {
         setState(() {
           _audioFile = file;
-          _mediaState = MediaState.ready;
+          _mediaState = MediaState.READY;
         });
         debugPrint('GHOST_LOG: MEDIA_RENDER_READY messageId: ${widget.message.id} mediaId: $mediaId mediaKind: ${envelope.kind.name} url: $urlHint (Voice downloaded)');
         await _player.play(DeviceFileSource(file.path));
@@ -193,9 +193,9 @@ class _VoiceMessageBubbleState extends ConsumerState<VoiceMessageBubble> {
   Widget build(BuildContext context) {
     final colors = AppColors.of(context);
     final isPlaying = _playerState == PlayerState.playing;
-    final isProcessing = _mediaState == MediaState.downloading || 
-                         _mediaState == MediaState.decrypting || 
-                         _mediaState == MediaState.verifying;
+    final isProcessing = _mediaState == MediaState.DOWNLOADING || 
+                         _mediaState == MediaState.DECRYPTING || 
+                         _mediaState == MediaState.VERIFYING;
                          
     final durationMs = widget.message.metadata?['duration_ms'] as int? ?? 0;
     final displayDuration = _duration > Duration.zero ? _duration : Duration(milliseconds: durationMs);
@@ -273,3 +273,4 @@ class _VoiceMessageBubbleState extends ConsumerState<VoiceMessageBubble> {
     );
   }
 }
+

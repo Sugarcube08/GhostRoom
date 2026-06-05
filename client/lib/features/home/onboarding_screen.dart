@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:file_picker/file_picker.dart';
 import '../../core/providers.dart';
-import '../../core/security/privacy_protection_service.dart';
+
 import '../../core/widgets/navigation_shell.dart';
 import 'dart:io';
 
@@ -15,18 +15,14 @@ class OnboardingScreen extends ConsumerStatefulWidget {
 
 class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
   final PageController _pageController = PageController();
-  late final PrivacyProtectionService _privacyService;
 
   @override
   void initState() {
     super.initState();
-    _privacyService = ref.read(privacyProtectionProvider);
-    _privacyService.enableScreenshotProtection();
   }
 
   @override
   void dispose() {
-    _privacyService.disableScreenshotProtection();
     _pageController.dispose();
     super.dispose();
   }

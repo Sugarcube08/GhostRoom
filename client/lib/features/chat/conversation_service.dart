@@ -253,12 +253,15 @@ class ConversationService {
 
     try {
       // 2. Compress
+      await _chatRepository.updateMessageMetadata(placeholderId, {
+        'status': 'COMPRESSING',
+      });
       _logger.i('GHOST_LOG: MEDIA_COMPRESS_START messageId: $placeholderId mediaId: pending mediaKind: image url: pending');
       final compressed = await _mediaService.compressImage(file);
       _logger.i('GHOST_LOG: MEDIA_COMPRESS_SUCCESS messageId: $placeholderId mediaId: pending mediaKind: image url: pending');
 
       await _chatRepository.updateMessageMetadata(placeholderId, {
-        'status': 'ENCRYPTING',
+        'status': 'UPLOADING',
       });
 
       // 3. Upload (includes encryption)
@@ -269,6 +272,11 @@ class ConversationService {
         recipientXid: base64Decode(contact.xid),
         messageId: placeholderId,
       );
+      
+      await _chatRepository.updateMessageMetadata(placeholderId, {
+        'status': 'UPLOADED',
+      });
+      
       await _chatRepository.mediaManager.cacheSentMedia(
         mediaId: envelope.mediaId,
         originalFile: compressed,

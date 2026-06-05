@@ -18,7 +18,6 @@ import 'conversation_service.dart';
 import 'conversation_state.dart';
 import 'message.dart';
 import 'messages_provider.dart';
-import '../../core/security/privacy_protection_service.dart';
 import '../../design_system/colors.dart';
 import '../../design_system/typography.dart';
 import '../../design_system/components/components.dart';
@@ -112,7 +111,6 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
   bool _isRecording = false;
   late final ChatRepository _chatRepository;
   final Logger _logger = Logger();
-  late final PrivacyProtectionService _privacyService;
   int _lastMessageCount = 0;
   int _buildCount = 0;
 
@@ -123,10 +121,6 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
     _chatRepository.setActiveConversation(widget.conversation.contactId);
     _chatRepository.markConversationAsRead(widget.conversation.contactId);
     _scrollController.addListener(_onScroll);
-    
-    // Enable screenshot protection for active chat
-    _privacyService = ref.read(privacyProtectionProvider);
-    _privacyService.enableScreenshotProtection();
   }
 
   void _onScroll() {
@@ -150,10 +144,7 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
     Future.microtask(() => _chatRepository.flushGhostMessages(contactId));
     _controller.dispose();
     _scrollController.dispose();
-    
-    // Disable screenshot protection using local reference
-    _privacyService.disableScreenshotProtection();
-    
+
     super.dispose();
   }
 
@@ -842,8 +833,8 @@ class AttachmentWidget extends ConsumerStatefulWidget {
 class _AttachmentWidgetState extends ConsumerState<AttachmentWidget> {
   File? _decryptedFile;
   File? _thumbFile;
-  MediaState _mediaState = MediaState.notDownloaded;
-  MediaState _thumbState = MediaState.notDownloaded;
+  MediaState _mediaState = MediaState.NOT_DOWNLOADED;
+  MediaState _thumbState = MediaState.NOT_DOWNLOADED;
   StreamSubscription? _stateSub;
 
   @override
@@ -882,9 +873,9 @@ class _AttachmentWidgetState extends ConsumerState<AttachmentWidget> {
               _mediaState = update.state;
             }
           });
-          if (update.state == MediaState.ready) {
+          if (update.state == MediaState.READY) {
             _loadFiles();
-          } else if (update.state == MediaState.failed) {
+          } else if (update.state == MediaState.FAILED) {
             debugPrint('GHOST_LOG: MEDIA_RENDER_FAILED messageId: ${widget.message.id} mediaId: $mediaId mediaKind: ${envelope.kind.name} url: $urlHint error: Media state transitioned to failed');
           }
         }
@@ -910,7 +901,7 @@ class _AttachmentWidgetState extends ConsumerState<AttachmentWidget> {
       return;
     }
 
-    if (_thumbState == MediaState.ready) {
+    if (_thumbState == MediaState.READY) {
       try {
         final file = await mediaManager.getMedia(
           envelope: envelope,
@@ -926,7 +917,7 @@ class _AttachmentWidgetState extends ConsumerState<AttachmentWidget> {
       } catch (e) {
         debugPrint('GHOST_LOG: MEDIA_RENDER_FAILED messageId: ${widget.message.id} mediaId: $mediaId mediaKind: ${envelope.kind.name} url: $urlHint error: Failed loading ready thumbnail: $e');
       }
-    } else if (_thumbState == MediaState.notDownloaded) {
+    } else if (_thumbState == MediaState.NOT_DOWNLOADED) {
       try {
         final file = await mediaManager.getMedia(
           envelope: envelope,
@@ -936,7 +927,7 @@ class _AttachmentWidgetState extends ConsumerState<AttachmentWidget> {
           messageId: widget.message.id,
         );
         if (mounted) {
-          setState(() { _thumbFile = file; _thumbState = MediaState.ready; });
+          setState(() { _thumbFile = file; _thumbState = MediaState.READY; });
           debugPrint('GHOST_LOG: MEDIA_RENDER_READY messageId: ${widget.message.id} mediaId: $mediaId mediaKind: ${envelope.kind.name} url: $urlHint (Thumbnail downloaded)');
         }
       } catch (e) {
@@ -944,7 +935,7 @@ class _AttachmentWidgetState extends ConsumerState<AttachmentWidget> {
       }
     }
 
-    if (_mediaState == MediaState.ready) {
+    if (_mediaState == MediaState.READY) {
       try {
         final file = await mediaManager.getMedia(
           envelope: envelope,
@@ -965,7 +956,7 @@ class _AttachmentWidgetState extends ConsumerState<AttachmentWidget> {
 
   void _download() async {
     if (widget.message.metadata == null || widget.message.metadata?['media_id'] == null) return;
-    if (_mediaState == MediaState.downloading || _mediaState == MediaState.decrypting || _mediaState == MediaState.verifying) return;
+    if (_mediaState == MediaState.DOWNLOADING || _mediaState == MediaState.DECRYPTING || _mediaState == MediaState.VERIFYING) return;
 
     final mediaManager = ref.read(mediaManagerProvider);
     final envelope = AttachmentEnvelope.fromJson(widget.message.metadata!);
@@ -989,7 +980,7 @@ class _AttachmentWidgetState extends ConsumerState<AttachmentWidget> {
         messageId: widget.message.id,
       );
       if (mounted) {
-        setState(() { _decryptedFile = file; _mediaState = MediaState.ready; });
+        setState(() { _decryptedFile = file; _mediaState = MediaState.READY; });
         debugPrint('GHOST_LOG: MEDIA_RENDER_READY messageId: ${widget.message.id} mediaId: $mediaId mediaKind: ${envelope.kind.name} url: $urlHint (Downloaded Original)');
         _showFullScreen();
       }
@@ -1006,7 +997,7 @@ class _AttachmentWidgetState extends ConsumerState<AttachmentWidget> {
     final status = meta?['status'] as String?;
     final isPending = status != null && status != 'SENT';
     final isFailed = status == 'FAILED';
-    final isProcessing = _mediaState == MediaState.downloading || _mediaState == MediaState.decrypting || _mediaState == MediaState.verifying;
+    final isProcessing = _mediaState == MediaState.DOWNLOADING || _mediaState == MediaState.DECRYPTING || _mediaState == MediaState.VERIFYING;
 
     return GestureDetector(
       onTap: (!isPending && _decryptedFile != null) ? _showFullScreen : (!isPending && !isProcessing ? _download : null),
@@ -1098,3 +1089,4 @@ class _VideoPreviewState extends State<_VideoPreview> {
     return AspectRatio(aspectRatio: _controller!.value.aspectRatio, child: Chewie(controller: _chewieController!));
   }
 }
+
