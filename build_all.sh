@@ -69,14 +69,14 @@ if [ "$OS" = "Linux" ]; then
 
     echo "📦 Packaging Linux (.deb)..."
     if command -v dpkg-deb &> /dev/null; then
-        DEB_DIR="build/linux/deb/ghostroom_1.0.0-1_amd64"
+        DEB_DIR="build/linux/deb/ghostroom_2.0.0-1_amd64"
         mkdir -p "$DEB_DIR/DEBIAN" "$DEB_DIR/usr/bin" "$DEB_DIR/opt/ghostroom" "$DEB_DIR/usr/share/applications" "$DEB_DIR/usr/share/icons/hicolor/512x512/apps"
         cp -r build/linux/x64/release/bundle/* "$DEB_DIR/opt/ghostroom/"
         ln -sf /opt/ghostroom/ghostroom "$DEB_DIR/usr/bin/ghostroom"
         
         cat <<CTRL > "$DEB_DIR/DEBIAN/control"
 Package: ghostroom
-Version: 1.0.0-1
+Version: 2.0.0-1
 Section: utils
 Priority: optional
 Architecture: amd64
@@ -87,7 +87,7 @@ CTRL
 
         cat <<DESK > "$DEB_DIR/usr/share/applications/ghostroom.desktop"
 [Desktop Entry]
-Version=1.0
+Version=2.0.0
 Name=GhostRoom
 GenericName=GhostRoom
 Comment=Privacy-First Ephemeral Communication

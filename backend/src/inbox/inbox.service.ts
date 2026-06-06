@@ -193,6 +193,8 @@ export class InboxService {
     deviceId?: string,
   ): Promise<MessageEnvelope[]> {
     try {
+      const deviceFilter = deviceId ? [deviceId, IsNull()] : [IsNull()];
+      
       const messages = await this.messageRepo.find({
         where: [
           {
@@ -202,7 +204,17 @@ export class InboxService {
           },
           {
             recipient_id: publicId,
+            recipient_device_id: IsNull(),
+            delivered_at: IsNull(),
+          },
+          {
+            recipient_id: publicId,
             recipient_device_id: deviceId || IsNull(),
+            created_at: MoreThan(new Date(since)),
+          },
+          {
+            recipient_id: publicId,
+            recipient_device_id: IsNull(),
             created_at: MoreThan(new Date(since)),
           },
         ],

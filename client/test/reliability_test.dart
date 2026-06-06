@@ -112,6 +112,7 @@ bool listEquals(Uint8List a, Uint8List b) {
 
 void main() {
   setUpAll(() async {
+    TestWidgetsFlutterBinding.ensureInitialized();
     Hive.init('.');
   });
 

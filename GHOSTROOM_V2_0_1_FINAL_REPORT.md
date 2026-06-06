@@ -1,55 +1,27 @@
-# GHOSTROOM V2.0.1 FINAL IMPLEMENTATION REPORT
+# GhostRoom V2.0.1 Final Release Report
 
-GhostRoom has been successfully overhauled from a transient V1 prototype into a durable, identity-based, end-to-end encrypted messaging platform.
-
----
-
-## 1. CORE ARCHITECTURE (DURABLE RELAY)
-
-The system has migrated to a **System of Record** model:
-*   **PostgreSQL**: Durable storage for encrypted message envelopes, media metadata, and delivery states. Supports multi-year offline delivery.
-*   **Redis**: Performance cache for hot inboxes, presence tracking, and identity rate limiting.
-*   **Cloudflare R2**: Secure blob storage for encrypted images and videos.
+## Objective
+Address critical flaws in message delivery and notification reliability when the application is in a background or offline state.
 
 ---
 
-## 2. CRYPTOGRAPHIC PRIMITIVES
+## Technical Audit of Fixes
 
-*   **Identity**: 24-word BIP39 seeds deriving Ed25519 (Signing) and X25519 (Encryption) keypairs.
-*   **Messaging**: Hybrid Encryption (XChaCha20-Poly1305 content key wrapped via X25519 `crypto_box_seal`).
-*   **Integrity**: Mandatory SHA256 hashing of all media before encryption, verified upon download.
-*   **Authentication**: Automated Ed25519 challenge/response for WebSocket session binding.
+### 1. Backend: Unified Inbox Query
+**Problem:** The `fetchMessages` query in `inbox.service.ts` used a strict equality check for `recipient_device_id`. If a message was queued for a user's global inbox (null device ID) but the user's client registered with a specific `deviceId`, the message would be excluded from the sync results.
+**Fix:** Refactored the TypeORM query to use an `OR` condition that explicitly includes messages where `recipient_device_id` is either the requesting device's ID OR `NULL`.
+**Status:** ✅ Verified. All offline messages are now included in the sync batch.
 
----
-
-## 3. RESILIENCE & ABUSE PROTECTION
-
-*   **Trust Layer**: Message Requests inbox for unknown senders; automatic dropping of media from non-contacts.
-*   **Block Lists**: Local silent rejection of blocked identities.
-*   **Quotas**: 100MB/50 uploads per day per identity; 64KB max payload size; 5000 message inbox capacity.
-*   **Retention**: Support for PERSISTENT, EPHEMERAL (30 days), and VIEW_ONCE (immediate delete) modes.
+### 2. Client: Lifecycle Observer Sync
+**Problem:** The client relied on the WebSocket's `onIdentityVerified` event to trigger an inbox sync. If the socket connection persisted while the app was in the background but events were missed (due to OS throttling), the user would see no new messages upon opening the app until a *new* socket event occurred.
+**Fix:** Implemented `WidgetsBindingObserver` in `ChatRepository`. The app now detects the `AppLifecycleState.resumed` state (Foreground Resume) and manually invokes `fetchInbox` using the `lastSyncTimestamp`.
+**Status:** ✅ Verified. Returning to the app now forces a proactive check for missed messages.
 
 ---
 
-## 4. USER MIGRATION
+## Versioning & Metadata
+- **Pubspec Version:** `2.0.1+1`
+- **Manifest Version:** `2.0.1`
+- **Core Stability:** Hardened for real-world background usage.
 
-*   **Encrypted Backups**: `.ghostroombackup` archives protected by Argon2id, allowing full migration of Identity, Contacts, Block Lists, and Settings between devices.
-
----
-
-## 5. OPERATIONAL VISIBILITY
-
-*   **Health**: `/health` endpoint for monitoring infrastructure status.
-*   **Metrics**: Prometheus `/metrics` for real-time traffic analysis (sent, acked, rate-limit hits).
-*   **Audit**: `relay_audit` table for non-PII operational event tracking.
-
----
-
-## 6. PROJECT STATUS: V2.0.1 COMPLETE
-
-All success criteria have been met. The system preserves backward compatibility with V1 Temporary Spaces while providing a robust, decentralized, and durable direct messaging network.
-
-**Build Artifacts**:
-*   `docker-compose.prod.yml`: Ready for deployment.
-*   `.env.example`: Fully documented for production environments.
-*   `docs/context/`: Complete protocol and architecture specifications.
+**GhostRoom V2.0.1 restores full trust in message delivery durability.**

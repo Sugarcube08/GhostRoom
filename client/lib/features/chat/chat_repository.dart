@@ -1,5 +1,6 @@
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 import 'package:flutter/painting.dart';
 import 'package:sodium/sodium_sumo.dart' hide Box;
 import 'package:path_provider/path_provider.dart';
@@ -23,7 +24,7 @@ import '../../core/network/relay_manager.dart';
 import '../../core/stability_tracker.dart';
 import '../../core/providers.dart';
 
-class ChatRepository {
+class ChatRepository with WidgetsBindingObserver {
   final Ref? _ref;
   IdentityService? _idServiceField;
   DMService? _dmServiceField;
@@ -84,14 +85,30 @@ class ChatRepository {
       _mediaServiceField = mediaService,
       _relayManagerField = relayManager {
     _logger.i('GHOST_LOG: ChatRepository constructor invoked (Singleton verification)');
+    WidgetsBinding.instance.addObserver(this);
   }
 
   ChatRepository.lazy(Ref ref) : _ref = ref {
     _logger.i('GHOST_LOG: ChatRepository lazy constructor invoked (Singleton verification)');
+    WidgetsBinding.instance.addObserver(this);
   }
 
   String get myPublicId => _idService.currentIdentity?.publicId ?? '';
   MediaManager get mediaManager => _mediaManager;
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _logger.i('GHOST_LOG: App resumed. Triggering proactive inbox sync.');
+      if (_wsService.isConnected && _wsService.isAuthenticated) {
+        _wsService.fetchInbox(since: lastSyncTimestamp);
+      }
+    }
+  }
+
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+  }
 
   void setActiveConversation(String? contactId) {
     _activeConversationId = contactId;
