@@ -2,58 +2,40 @@ import 'package:socket_io_client/socket_io_client.dart' as io;
 import 'relay_manager.dart';
 import 'package:logger/logger.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter/foundation.dart';
 import '../providers.dart';
-import 'dart:convert';
 import 'dart:async';
+import 'dart:convert';
 import '../stability_tracker.dart';
 
 class WebSocketService {
   final Ref _ref;
-  final Logger _logger = Logger(
-    level: kReleaseMode ? Level.warning : Level.info,
-  );
   io.Socket? _socket;
+  final Logger _logger = Logger();
+  bool _isConnected = false;
   bool _isAuthenticated = false;
-  bool _isConnecting = false;
   String? _activeUrl;
-
-  // Persistent callback registry to survive socket replacement
-  final Map<String, dynamic> _callbacks = {};
-
+  bool _isConnecting = false;
   bool _listenerSetupDone = false;
+
+  // Diagnostics
   int _connectCount = 0;
   int _disconnectCount = 0;
   int _reconnectCount = 0;
   int _listenerInitCount = 0;
 
-  WebSocketService(this._ref) {
-    _logger.i('GHOST_LOG: WebSocketService constructor invoked (Singleton verification)');
-  }
+  final Map<String, Function> _callbacks = {};
 
-  bool get isConnected => _socket?.connected ?? false;
+  WebSocketService(this._ref);
+
+  bool get isConnected => _isConnected;
   bool get isAuthenticated => _isAuthenticated;
   io.Socket? get socket => _socket;
 
-  DateTime? _lastConnectAttempt;
-  static const _minConnectInterval = Duration(seconds: 3);
-
-  void connect(RelayProfile profile) async {
-    final now = DateTime.now();
-    if (_lastConnectAttempt != null && now.difference(_lastConnectAttempt!) < _minConnectInterval) {
-      _logger.d('WebSocket connection attempt throttled for ${profile.label}');
-      return;
-    }
-    _lastConnectAttempt = now;
-
-    if (_isConnecting) {
-      _logger.d('WebSocket connection already in progress for ${profile.label}');
-      StabilityTracker.logEvent('WS_Connect_Skipped_Busy');
-      return;
-    }
-
-    // Ensure the URL is in a format socket_io_client likes
+  Future<void> connect(RelayProfile profile) async {
+    if (_isConnecting) return;
+    
     String connectionUrl = profile.websocketUrl;
+    // Socket.IO client expects http/https but will upgrade to ws
     if (connectionUrl.startsWith('ws://')) {
       connectionUrl = connectionUrl.replaceFirst('ws://', 'http://');
     } else if (connectionUrl.startsWith('wss://')) {
@@ -99,12 +81,34 @@ class WebSocketService {
 
       _activeUrl = connectionUrl;
       _setupInternalListeners(profile);
-      
+
     } catch (e) {
       _logger.e('Failed to initiate WebSocket connection: $e');
     } finally {
       _isConnecting = false;
     }
+  }
+
+  static io.Socket createRawSocket(RelayProfile profile) {
+    String connectionUrl = profile.websocketUrl;
+    if (connectionUrl.startsWith('ws://')) {
+      connectionUrl = connectionUrl.replaceFirst('ws://', 'http://');
+    } else if (connectionUrl.startsWith('wss://')) {
+      connectionUrl = connectionUrl.replaceFirst('wss://', 'https://');
+    }
+
+    return io.io(
+      connectionUrl,
+      io.OptionBuilder()
+          .setTransports(['websocket'])
+          .disableAutoConnect() // Correct method
+          .setExtraHeaders(
+            profile.token != null
+                ? {'Authorization': 'Bearer ${profile.token}'}
+                : {},
+          )
+          .build(),
+    );
   }
 
   void _setupInternalListeners(RelayProfile profile) {
@@ -116,55 +120,63 @@ class WebSocketService {
     _listenerInitCount++;
     _logger.i('GHOST_LOG: WS_LISTENERS_INITIALIZED count: $_listenerInitCount');
 
-    _socket!.onConnect((_) {
+    _socket!.on('connect', (_) {
       _connectCount++;
       _logger.i('Connected to relay: ${profile.label}');
       _logger.i("SOCKET_CONNECTED");
       _logger.i('GHOST_LOG: WS_CONNECT count: $_connectCount');
       StabilityTracker.logEvent('WS_Connected');
+      
+      _isConnected = true;
+      _ref.invalidate(activeRelayProvider);
     });
 
     _socket!.on('reconnect', (_) {
       _reconnectCount++;
+      _logger.i('Reconnected to relay: ${profile.label}');
       _logger.i('GHOST_LOG: WS_RECONNECT count: $_reconnectCount');
+      StabilityTracker.logEvent('WS_Reconnected');
+    });
+
+    _socket!.on('disconnect', (reason) {
+      _disconnectCount++;
+      _isConnected = false;
+      _isAuthenticated = false;
+      _logger.w('Disconnected from relay: ${profile.label}. Reason: $reason');
+      _logger.i('GHOST_LOG: WS_DISCONNECT count: $_disconnectCount');
+      StabilityTracker.logEvent('WS_Disconnected', data: {'reason': reason});
+      _ref.invalidate(activeRelayProvider);
     });
 
     _socket!.on('identity.challenge', (data) async {
+      _logger.d('Received identity challenge');
       final nonce = data['nonce'] as String;
-      _logger.d('Received identity challenge. Solving...');
       
-      try {
-        final idService = _ref.read(identityServiceProvider);
-        final identity = idService.currentIdentity;
-        if (identity == null) {
-          _logger.w('Identity not ready. Cannot solve challenge.');
-          return;
-        }
-
-        final signature = idService.signChallenge(nonce);
-        
-        _socket!.emit('identity.prove', {
-          'public_id': identity.publicId,
-          'public_key': base64Encode(identity.ed25519KeyPair.publicKey),
-          'signature': signature,
-          'device_id': identity.deviceId,
-        });
-      } catch (e) {
-        _logger.e('Failed to solve identity challenge: $e');
+      final idService = _ref.read(identityServiceProvider);
+      final identity = idService.currentIdentity;
+      
+      if (identity == null) {
+        _logger.e('Cannot prove identity: No identity loaded');
+        return;
       }
+
+      final signature = idService.signChallenge(nonce);
+      
+      _socket!.emit('identity.prove', {
+        'public_id': identity.publicId,
+        'public_key': base64Encode(identity.ed25519KeyPair.publicKey),
+        'signature': signature,
+        'device_id': identity.deviceId,
+      });
     });
 
     _socket!.on('identity.verified', (data) {
+      _logger.i('GHOST_LOG: Identity verified successfully');
       _isAuthenticated = true;
-      _logger.i('Identity verified by relay: ${data['public_id']}');
       
       final callback = _callbacks['identity.verified'];
       if (callback != null) {
-        try {
-          callback(data);
-        } catch (e) {
-          _logger.e('Error in identity.verified callback: $e');
-        }
+        callback(data);
       }
     });
 
@@ -193,6 +205,10 @@ class WebSocketService {
       }
     });
 
+    _socket!.on('space.joined', (data) {
+      _logger.i('Joined space: ${data['roomId']}');
+    });
+
     _socket!.on('space.history', (data) {
       final callback = _callbacks['space.history'];
       if (callback != null) {
@@ -207,68 +223,19 @@ class WebSocketService {
       }
     });
 
-    _socket!.onDisconnect((reason) {
-      _disconnectCount++;
-      _logger.w('Disconnected from relay. Reason: $reason');
-      _logger.i('GHOST_LOG: WS_DISCONNECT count: $_disconnectCount');
-      _isAuthenticated = false;
+    _socket!.on('error', (data) {
+      _logger.e('WebSocket error: $data');
+      StabilityTracker.logEvent('WS_Error', data: {'error': data.toString()});
     });
 
     _socket!.onConnectError((err) {
       _logger.e('Connection error: $err');
+      StabilityTracker.logEvent('WS_Connect_Error', data: {'error': err.toString()});
     });
-
-    _socket!.onError((err) {
-      _logger.e('Socket error: $err');
-    });
-
-    _socket!.on('space.joined', (data) {
-      _logger.i('Successfully joined space: ${data['roomId']}');
-    });
-
-    _socket!.on('error', (data) {
-      _logger.e('Server error: ${data['message']}');
-    });
-  }
-
-  void joinSpace(String roomId, String deviceId) {
-    _socket?.emit('space.join', {'roomId': roomId, 'deviceId': deviceId});
-  }
-
-  void fetchInbox({int since = 0}) {
-    if (!_isAuthenticated) {
-      _logger.w('Cannot fetch inbox: Not authenticated');
-      return;
-    }
-    _socket?.emit('inbox.fetch', {'since': since});
-  }
-
-  void acknowledgeMessage(String messageId) {
-    if (!_isAuthenticated) return;
-    _socket?.emit('message.ack', {'message_id': messageId});
-  }
-
-  void sendMessage(String targetId, Map<String, dynamic> payload, {int version = 1, Function(dynamic)? ack}) {
-    final Map<String, dynamic> data = {
-      'target_id': targetId,
-      'v': version,
-      ...payload
-    };
-    if (ack != null) {
-      _socket?.emitWithAck('message.send', data, ack: (response) {
-        ack(response);
-      });
-    } else {
-      _socket?.emit('message.send', data);
-    }
   }
 
   void onIdentityVerified(Function(dynamic) callback) {
     _callbacks['identity.verified'] = callback;
-  }
-
-  void onInboxMessages(Function(List<dynamic>) callback) {
-    _callbacks['inbox.messages'] = callback;
   }
 
   void onMessage(Function(dynamic) callback) {
@@ -277,6 +244,10 @@ class WebSocketService {
 
   void onStatusUpdate(Function(dynamic) callback) {
     _callbacks['message.status_update'] = callback;
+  }
+
+  void onInboxMessages(Function(List<dynamic>) callback) {
+    _callbacks['inbox.messages'] = callback;
   }
 
   void onHistory(Function(dynamic) callback) {
@@ -307,6 +278,42 @@ class WebSocketService {
     _socket?.emit('message.seen', {'message_id': messageId});
   }
 
+  void acknowledgeMessage(String messageId) {
+    if (!_isAuthenticated) return;
+    _socket?.emit('message.ack', {'message_id': messageId});
+  }
+
+  void joinRoom(String roomId) {
+    if (!_isAuthenticated) return;
+    _socket?.emit('space.join', {'roomId': roomId});
+  }
+
+  void sendMessage(String recipientId, Map<String, dynamic> payload, {int version = 1, Function(dynamic)? ack}) {
+    if (!_isAuthenticated) {
+      _logger.w('Cannot send message: Not authenticated');
+      return;
+    }
+    
+    if (ack != null) {
+       _socket?.emitWithAck('message.send', {
+        'recipient_id': recipientId,
+        'payload': payload,
+        'version': version,
+      }, ack: ack);
+    } else {
+      _socket?.emit('message.send', {
+        'recipient_id': recipientId,
+        'payload': payload,
+        'version': version,
+      });
+    }
+  }
+
+  void fetchInbox({int since = 0}) {
+    if (!_isAuthenticated) return;
+    _socket?.emit('inbox.fetch', {'since': since});
+  }
+
   Future<List<Map<String, dynamic>>> getDevices(String publicId) async {
     if (!_isAuthenticated) return [];
     
@@ -325,10 +332,8 @@ class WebSocketService {
 
   void logMemoryUsage() {
     final stats = {
-      'isConnected': isConnected,
+      'isConnected': _isConnected,
       'isAuthenticated': _isAuthenticated,
-      'isConnecting': _isConnecting,
-      'activeUrl': _activeUrl,
       'callbacksCount': _callbacks.length,
       'connectCount': _connectCount,
       'disconnectCount': _disconnectCount,

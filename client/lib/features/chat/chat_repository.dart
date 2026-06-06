@@ -1,7 +1,6 @@
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
-import 'package:flutter/painting.dart';
 import 'package:sodium/sodium_sumo.dart' hide Box;
 import 'package:path_provider/path_provider.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -223,9 +222,7 @@ class ChatRepository with WidgetsBindingObserver {
       if (status == 'DELIVERED' && message.deliveredAt == null) {
         message.deliveredAt = DateTime.fromMillisecondsSinceEpoch(timestamp);
       } else if (status == 'SEEN' && message.seenAt == null) {
-        if (message.deliveredAt == null) {
-          message.deliveredAt = DateTime.fromMillisecondsSinceEpoch(timestamp);
-        }
+        message.deliveredAt ??= DateTime.fromMillisecondsSinceEpoch(timestamp);
         message.seenAt = DateTime.fromMillisecondsSinceEpoch(timestamp);
       }
       await message.save();
@@ -1212,4 +1209,3 @@ class ChatRepository with WidgetsBindingObserver {
     return total;
   }
 }
-

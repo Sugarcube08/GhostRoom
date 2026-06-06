@@ -30,7 +30,7 @@ class NotificationService {
     );
 
     await _notifications.initialize(
-      initSettings,
+      settings: initSettings,
       onDidReceiveNotificationResponse: (details) {
         debugPrint('Notification tapped: ${details.payload}');
         if (onNotificationTap != null) {
@@ -38,6 +38,22 @@ class NotificationService {
         }
       },
     );
+
+    // Create Background Channel for Android
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
+      final androidImplementation = _notifications.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+      if (androidImplementation != null) {
+        await androidImplementation.createNotificationChannel(
+          const AndroidNotificationChannel(
+            'ghostroom_background',
+            'Background Service',
+            description: 'Maintains secure connection in background',
+            importance: Importance.low,
+            showBadge: false,
+          ),
+        );
+      }
+    }
     
     _initialized = true;
     debugPrint('NotificationService initialized.');
@@ -72,10 +88,10 @@ class NotificationService {
     );
 
     await _notifications.show(
-      DateTime.now().millisecond, // Unique ID
-      title,
-      body,
-      notificationDetails,
+      id: DateTime.now().millisecond, // Unique ID
+      title: title,
+      body: body,
+      notificationDetails: notificationDetails,
       payload: payload,
     );
   }

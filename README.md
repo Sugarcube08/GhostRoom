@@ -2,7 +2,7 @@
 
 **Private messaging without accounts, phone numbers, or email addresses.**
 
-GhostRoom V2.0.1 is a premium, identity-based communication network designed for absolute privacy and long-term durability. It combines a sovereign identity system with a durable encrypted mailbox network.
+GhostRoom V2.0.2 is a premium, identity-based communication network designed for absolute privacy and long-term durability. It combines a sovereign identity system with a durable encrypted mailbox network.
 
 ---
 
@@ -10,6 +10,7 @@ GhostRoom V2.0.1 is a premium, identity-based communication network designed for
 
 *   **Client**: Flutter (Android, Linux, macOS, Windows)
 *   **Relay**: NestJS (TypeScript)
+*   **Background**: Persistent Foreground Service (Android)
 *   **Database**: PostgreSQL (System of Record) + Redis (Cache/Rate Limits)
 *   **Storage**: Cloudflare R2 / MinIO (Encrypted Blobs)
 *   **Crypto**: Libsodium (XChaCha20-Poly1305, X25519, Ed25519, Argon2id)
@@ -19,6 +20,7 @@ GhostRoom V2.0.1 is a premium, identity-based communication network designed for
 ## 🚀 Key Features
 
 *   **Identity Vault**: Your digital identity, secured by a 24-word seed and guarded by real-time security scoring.
+*   **Always-On Reliability**: Persistent background service for Android ensures instant message delivery even when the app is closed.
 *   **Real-Time Status**: Single, Double, and Blue ticks with precise "seen duration" metrics.
 *   **Durable Messaging**: Long-term offline delivery via PostgreSQL-backed inboxes.
 *   **Zero-Knowledge Media**: E2EE images, videos, and voice notes. The relay is 100% blind to content and thumbnails.

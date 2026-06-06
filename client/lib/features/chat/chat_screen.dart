@@ -54,13 +54,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     
     // Get device ID for sender-aware history filtering
     crypto.getDeviceId().then((deviceId) {
-      if (deviceId != null) {
-        ws.joinSpace(widget.config.roomId, deviceId);
-        debugPrint('GHOST_LOG: ChatScreen joinSpace called with DeviceID');
-      } else {
-        debugPrint('GHOST_LOG: ChatScreen Error: No DeviceID found');
-        ws.joinSpace(widget.config.roomId, 'unknown_device');
-      }
+      ws.joinRoom(widget.config.roomId);
+      debugPrint('GHOST_LOG: ChatScreen joinRoom called');
     });
     
     ws.onMessage((data) {

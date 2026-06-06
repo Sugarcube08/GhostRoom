@@ -19,6 +19,7 @@ import 'package:app_links/app_links.dart';
 import 'dart:convert';
 import 'core/crypto/identity_service.dart';
 import 'features/contacts/contact_actions.dart';
+import 'core/network/background_service.dart';
 
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
@@ -50,6 +51,15 @@ void main() async {
 
     final sodium = await SodiumSumoInit.init();
     await Hive.initFlutter();
+
+    // Initialize Persistent Background Service (V2.0.2 Reliability)
+    if (!kIsWeb && (Platform.isAndroid || Platform.isIOS)) {
+      try {
+        await GhostBackgroundService.initialize();
+      } catch (e) {
+        debugPrint('GHOST_ERROR: Failed to initialize background service: $e');
+      }
+    }
     
     late final ProviderContainer container;
     container = ProviderContainer(
