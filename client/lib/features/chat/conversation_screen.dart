@@ -423,6 +423,43 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
     );
   }
 
+  Widget _buildStatusTicks(Message msg) {
+    final colors = AppColors.of(context);
+    final isSent = msg.metadata?['status'] == 'SENT';
+    final isDelivered = msg.deliveredAt != null;
+    final isSeen = msg.seenAt != null;
+
+    IconData icon = Icons.access_time;
+    Color color = colors.secondaryText.withAlpha(80);
+    double size = 8;
+
+    if (isSeen) {
+      icon = Icons.done_all;
+      color = Colors.blueAccent;
+      size = 12;
+    } else if (isDelivered) {
+      icon = Icons.done_all;
+      size = 12;
+    } else if (isSent) {
+      icon = Icons.done;
+      size = 12;
+    }
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: size, color: color),
+        if (isSeen && msg.seenAt != null) ...[
+          const SizedBox(width: 2),
+          Text(
+            '${DateTime.now().difference(msg.seenAt!).inMinutes}m',
+            style: TextStyle(fontSize: 7, color: color.withAlpha(150)),
+          ),
+        ],
+      ],
+    );
+  }
+
   Widget _buildMessageBubble(Message msg, bool isMe) {
     final colors = AppColors.of(context);
     return Align(
@@ -459,6 +496,10 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
                   if (msg.metadata?['is_ghost'] == true) ...[
                     const SizedBox(width: 4), 
                     Icon(Icons.visibility_off_outlined, size: 8, color: colors.warning)
+                  ],
+                  if (isMe) ...[
+                    const SizedBox(width: 4),
+                    _buildStatusTicks(msg),
                   ],
                 ],
               ),

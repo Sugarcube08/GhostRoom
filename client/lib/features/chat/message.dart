@@ -50,6 +50,12 @@ class Message extends HiveObject {
   @HiveField(9)
   final String? groupId;
 
+  @HiveField(10)
+  DateTime? deliveredAt;
+
+  @HiveField(11)
+  DateTime? seenAt;
+
   Message({
     required this.id,
     required this.senderId,
@@ -61,6 +67,8 @@ class Message extends HiveObject {
     this.metadata,
     this.isRequest = false,
     this.groupId,
+    this.deliveredAt,
+    this.seenAt,
   });
 }
 

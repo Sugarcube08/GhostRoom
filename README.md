@@ -8,7 +8,7 @@ GhostRoom V2.0.0 is a premium, identity-based communication network designed for
 
 ## 🏛️ Architecture
 
-*   **Client**: Flutter (Android, iOS, Linux, macOS, Windows)
+*   **Client**: Flutter (Android, Linux, macOS, Windows)
 *   **Relay**: NestJS (TypeScript)
 *   **Database**: PostgreSQL (System of Record) + Redis (Cache/Rate Limits)
 *   **Storage**: Cloudflare R2 / MinIO (Encrypted Blobs)
@@ -18,12 +18,13 @@ GhostRoom V2.0.0 is a premium, identity-based communication network designed for
 
 ## 🚀 Key Features
 
-*   **Identity Vault**: Your digital soul, secured by a 24-word seed and guarded by real-time security scoring.
-*   **Durable Messaging**: Multi-year offline delivery via PostgreSQL-backed inboxes.
-*   **Digital Passports**: Peer-to-peer identity exchange via signed packages and Safety Numbers.
-*   **Flexible Retention**: Toggle between Persistent, Ephemeral, and View-Once modes per message.
-*   **Zero-Knowledge Media**: E2EE images and 720p videos. The relay is 100% blind to content and thumbnails.
-*   **Disposable Spaces**: Anonymous, symmetric rooms for transient conversations with zero footprint.
+*   **Identity Vault**: Your digital identity, secured by a 24-word seed and guarded by real-time security scoring.
+*   **Real-Time Status**: Single, Double, and Blue ticks with precise "seen duration" metrics.
+*   **Durable Messaging**: Long-term offline delivery via PostgreSQL-backed inboxes.
+*   **Zero-Knowledge Media**: E2EE images, videos, and voice notes. The relay is 100% blind to content and thumbnails.
+*   **Decentralized Federation**: Cross-relay message delivery for a resilient global network.
+*   **Automated Updates**: In-app version checks against GitHub for seamless security patching.
+*   **Disposable Spaces**: Anonymous, symmetric rooms for transient conversations.
 
 ---
 
@@ -38,7 +39,7 @@ GhostRoom is federated and easy to deploy.
 ### 2. Setup
 ```bash
 # Clone the repository
-git clone https://github.com/your-repo/ghostroom.git
+git clone https://github.com/Sugarcube08/GhostRoom.git
 cd ghostroom
 
 # Configure environment

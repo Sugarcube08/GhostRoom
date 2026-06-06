@@ -177,6 +177,14 @@ class WebSocketService {
       }
     });
 
+    _socket!.on('message.status_update', (data) {
+      _logger.d('Received status update: $data');
+      final callback = _callbacks['message.status_update'];
+      if (callback != null) {
+        callback(data);
+      }
+    });
+
     _socket!.on('inbox.messages', (data) {
       final callback = _callbacks['inbox.messages'];
       if (callback != null) {
@@ -267,6 +275,10 @@ class WebSocketService {
     _callbacks['message.receive'] = callback;
   }
 
+  void onStatusUpdate(Function(dynamic) callback) {
+    _callbacks['message.status_update'] = callback;
+  }
+
   void onHistory(Function(dynamic) callback) {
     _callbacks['space.history'] = callback;
   }
@@ -277,6 +289,7 @@ class WebSocketService {
 
   void clearRoomCallbacks() {
     _callbacks.remove('message.receive');
+    _callbacks.remove('message.status_update');
     _callbacks.remove('space.history');
     _callbacks.remove('space.expired');
   }
@@ -287,6 +300,11 @@ class WebSocketService {
     _socket = null;
     _isAuthenticated = false;
     _listenerSetupDone = false;
+  }
+
+  void sendSeen(String messageId) {
+    if (!_isAuthenticated) return;
+    _socket?.emit('message.seen', {'message_id': messageId});
   }
 
   Future<List<Map<String, dynamic>>> getDevices(String publicId) async {

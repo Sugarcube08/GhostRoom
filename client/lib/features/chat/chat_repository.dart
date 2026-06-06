@@ -164,6 +164,7 @@ class ChatRepository {
     _wsService.onIdentityVerified(_handleIdentityVerified);
     _wsService.onMessage(_handleNewMessage);
     _wsService.onInboxMessages(_handleInboxMessages);
+    _wsService.onStatusUpdate(_handleMessageStatusUpdate);
     
     // Global Cleanup
     await flushAllGhosts();
@@ -193,6 +194,36 @@ class ChatRepository {
   void _handleInboxMessages(List<dynamic> messages) {
     _logger.i('GHOST_LOG: Inbox batch received. Count: ${messages.length}');
     processEnvelopes(messages);
+  }
+
+  void _handleMessageStatusUpdate(dynamic data) async {
+    final String messageId = data['message_id'];
+    final String status = data['status'];
+    final int timestamp = data['timestamp'];
+
+    final message = _msgBox?.get(messageId);
+    if (message != null) {
+      if (status == 'DELIVERED' && message.deliveredAt == null) {
+        message.deliveredAt = DateTime.fromMillisecondsSinceEpoch(timestamp);
+      } else if (status == 'SEEN' && message.seenAt == null) {
+        if (message.deliveredAt == null) {
+          message.deliveredAt = DateTime.fromMillisecondsSinceEpoch(timestamp);
+        }
+        message.seenAt = DateTime.fromMillisecondsSinceEpoch(timestamp);
+      }
+      await message.save();
+      _logger.d('GHOST_LOG: Updated status for message $messageId to $status');
+    }
+  }
+
+  Future<void> markMessageAsSeen(String messageId) async {
+    final message = _msgBox?.get(messageId);
+    if (message != null && !message.isRead && message.senderId != myPublicId) {
+      message.isRead = true;
+      await message.save();
+      _wsService.sendSeen(messageId);
+      _logger.d('GHOST_LOG: Marked message $messageId as seen locally and sent update');
+    }
   }
 
   Box<Message>? get _msgBox {
@@ -789,12 +820,18 @@ class ChatRepository {
           if (type == MessageType.image || type == MessageType.video || type == MessageType.voice) {
             if (metadata['media_id'] != null) {
               msgPayload['media_id'] = metadata['media_id'];
+              _logger.i('GHOST_LOG: MEDIA_MESSAGE_CREATED messageId: $id mediaId: ${metadata['media_id']} mediaKind: ${type.name} url: ${msgPayload['relay_url'] ?? "active_relay"}');
             }
           }
 
           final completer = Completer<bool>();
           _wsService.sendMessage(recipientId, msgPayload, version: 2, ack: (response) {
             if (response != null && response['status'] == 'ok') {
+              if (type == MessageType.image || type == MessageType.video || type == MessageType.voice) {
+                 if (metadata['media_id'] != null) {
+                   _logger.i('GHOST_LOG: MEDIA_MESSAGE_SENT messageId: $id mediaId: ${metadata['media_id']} mediaKind: ${type.name} url: ${msgPayload['relay_url'] ?? "active_relay"}');
+                 }
+              }
               completer.complete(true);
             } else {
               _logger.w('GHOST_LOG: Server rejected message emit: $response');
@@ -1044,8 +1081,17 @@ class ChatRepository {
     if (state != null && (state.unreadCount ?? 0) > 0) {
       state.unreadCount = 0;
       await _stateBox?.put(contactId, state);
-      _logger.i('Conversation with $contactId marked as read.');
     }
+
+    // Mark individual messages as read and send seen notifications
+    final messages = _msgBox?.values.where((m) => m.senderId == contactId && !m.isRead).toList() ?? [];
+    for (final m in messages) {
+      m.isRead = true;
+      await m.save();
+      _wsService.sendSeen(m.id);
+    }
+    
+    _logger.i('Conversation with $contactId marked as read and seen events sent.');
   }
 
   Future<void> sendConsumptionReceipt(String recipientId, String messageId) async {

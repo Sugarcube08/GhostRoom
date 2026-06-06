@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../features/chat/chat_screens.dart';
 import '../../features/spaces/anonymous_rooms_screen.dart';
 import '../../features/settings/identity_vault_screen.dart';
@@ -7,6 +8,7 @@ import '../../features/contacts/contact_list_screen.dart';
 import '../../design_system/colors.dart';
 import '../../design_system/components/components.dart';
 import '../providers.dart';
+import '../network/update_service.dart';
 
 class NavigationShell extends ConsumerStatefulWidget {
   const NavigationShell({super.key});
@@ -17,6 +19,64 @@ class NavigationShell extends ConsumerStatefulWidget {
 
 class _NavigationShellState extends ConsumerState<NavigationShell> {
   int _currentIndex = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    // Check for updates on a slight delay to not block initial render
+    Future.delayed(const Duration(seconds: 2), _checkForUpdates);
+  }
+
+  void _checkForUpdates() async {
+    if (!mounted) return;
+    final updateService = ref.read(updateServiceProvider);
+    final manifest = await updateService.checkForUpdate();
+    
+    if (manifest != null && mounted) {
+      _showUpdateDialog(manifest);
+    }
+  }
+
+  void _showUpdateDialog(UpdateManifest manifest) {
+    showDialog(
+      context: context,
+      barrierDismissible: true,
+      builder: (context) => AlertDialog(
+        backgroundColor: AppColors.of(context).secondaryBackground,
+        title: const Text('UPDATE AVAILABLE', style: TextStyle(letterSpacing: 2, fontWeight: FontWeight.bold)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('A new version of GhostRoom (${manifest.version}) is ready.'),
+            const SizedBox(height: 16),
+            const Text('Download the latest release from GitHub to continue with optimized performance and security.'),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('LATER', style: TextStyle(color: Colors.white38)),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              // Ensure we use the correct GitHub releases URL from manifest or fallback
+              final url = manifest.releaseUrl.isNotEmpty 
+                ? manifest.releaseUrl 
+                : 'https://github.com/Sugarcube08/GhostRoom/releases';
+              launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+              Navigator.pop(context);
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.of(context).ghostAccent,
+              foregroundColor: Colors.black,
+            ),
+            child: const Text('UPDATE NOW'),
+          ),
+        ],
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {

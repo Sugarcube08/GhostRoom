@@ -226,12 +226,20 @@ export class InboxService {
     publicId: string,
     messageId: string,
     deviceId?: string,
-  ): Promise<void> {
+  ): Promise<{ senderId: string | null } | null> {
+    let senderId: string | null = null;
     try {
+      const delivery = await this.deliveryRepo.findOne({
+        where: { message_id: messageId, recipient_id: publicId },
+      });
+      if (delivery) {
+        senderId = delivery.sender_id;
+      }
+
       const message = await this.messageRepo.findOne({
         where: { id: messageId },
       });
-      if (!message) return;
+      if (!message) return senderId ? { senderId } : null;
 
       if (message.retention_mode === "VIEW_ONCE") {
         if (message.media_id) {
@@ -247,11 +255,13 @@ export class InboxService {
         await this.deliveryRepo.delete({ message_id: messageId });
       } else {
         // Mark as delivered
-        message.delivered_at = new Date();
-        if (message.retention_mode === "EPHEMERAL") {
-          message.expires_at = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+        if (!message.delivered_at) {
+          message.delivered_at = new Date();
+          if (message.retention_mode === "EPHEMERAL") {
+            message.expires_at = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+          }
+          await this.messageRepo.save(message);
         }
-        await this.messageRepo.save(message);
 
         await this.deliveryRepo.update(
           { message_id: messageId },
@@ -272,8 +282,36 @@ export class InboxService {
     pipeline.zrem(inboxKey, messageId);
     pipeline.del(msgKey);
     await pipeline.exec();
+
+    return senderId ? { senderId } : null;
   }
 
+  async markMessageSeen(
+    publicId: string,
+    messageId: string,
+  ): Promise<{ senderId: string | null } | null> {
+    try {
+      const message = await this.messageRepo.findOne({
+        where: { id: messageId, recipient_id: publicId },
+      });
+
+      if (!message) return null;
+
+      if (!message.viewed_at) {
+        message.viewed_at = new Date();
+        await this.messageRepo.save(message);
+      }
+
+      const delivery = await this.deliveryRepo.findOne({
+        where: { message_id: messageId },
+      });
+
+      return { senderId: delivery?.sender_id || null };
+    } catch (e: any) {
+      this.logger.error(`Failed to mark message as seen: ${e?.message}`);
+      return null;
+    }
+  }
   // Authentication Helpers
   async storeChallenge(socketId: string, nonce: string): Promise<void> {
     await this.redis.setex(`challenge:${socketId}`, 60, nonce);

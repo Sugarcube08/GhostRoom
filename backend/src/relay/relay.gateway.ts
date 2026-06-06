@@ -267,11 +267,21 @@ export class RelayGateway implements OnGatewayConnection, OnGatewayDisconnect {
     const deviceId = client.data.deviceId;
     if (!publicId) return;
 
-    await this.inboxService.acknowledgeMessage(
+    const result = await this.inboxService.acknowledgeMessage(
       publicId,
       payload.message_id,
       deviceId,
     );
+
+    if (result && result.senderId) {
+      this.server.to(`inbox:${result.senderId}`).emit("message.status_update", {
+        message_id: payload.message_id,
+        status: "DELIVERED",
+        recipient_id: publicId,
+        timestamp: Date.now(),
+      });
+    }
+
     this.logger.log(
       `Message ${payload.message_id} acknowledged by ${publicId} (${deviceId || "default"})`,
     );
@@ -281,6 +291,28 @@ export class RelayGateway implements OnGatewayConnection, OnGatewayDisconnect {
       device_id: deviceId,
     });
     this.metricsService.messagesAcked.inc();
+  }
+
+  @SubscribeMessage("message.seen")
+  async handleMessageSeen(client: Socket, payload: { message_id: string }) {
+    const publicId = client.data.publicId;
+    if (!publicId) return;
+
+    const result = await this.inboxService.markMessageSeen(
+      publicId,
+      payload.message_id,
+    );
+
+    if (result && result.senderId) {
+      this.server.to(`inbox:${result.senderId}`).emit("message.status_update", {
+        message_id: payload.message_id,
+        status: "SEEN",
+        recipient_id: publicId,
+        timestamp: Date.now(),
+      });
+    }
+
+    this.logger.log(`Message ${payload.message_id} seen by ${publicId}`);
   }
 
   @SubscribeMessage("message.delete")

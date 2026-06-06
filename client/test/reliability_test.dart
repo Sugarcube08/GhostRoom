@@ -44,6 +44,9 @@ class ManualMockWebSocketService implements WebSocketService {
   @override
   void onMessage(Function(dynamic) callback) {}
   @override
+  void onStatusUpdate(Function(dynamic) callback) {}
+
+  @override
   void onInboxMessages(Function(List<dynamic>) callback) {}
 
   @override
