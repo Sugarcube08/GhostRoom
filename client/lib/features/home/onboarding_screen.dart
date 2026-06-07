@@ -209,14 +209,14 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
     final nav = Navigator.of(context);
     
     try {
-      final result = await FilePicker.pickFiles(
+      final platformFile = await FilePicker.pickFile(
         type: FileType.any,
       );
 
-      if (result == null || result.files.single.path == null) return;
+      if (platformFile == null || platformFile.path == null) return;
       if (!context.mounted) return;
 
-      final fileBytes = await File(result.files.single.path!).readAsBytes();
+      final fileBytes = await File(platformFile.path!).readAsBytes();
       
       final passController = TextEditingController();
       if (!mounted) return;

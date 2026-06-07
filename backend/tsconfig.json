@@ -6,19 +6,17 @@
     "emitDecoratorMetadata": true,
     "experimentalDecorators": true,
     "allowSyntheticDefaultImports": true,
-    "target": "ES2021",
+    "target": "ES2022",
     "sourceMap": true,
     "outDir": "./dist",
     "rootDir": "src",
-    "baseUrl": "./",
     "incremental": false,
     "skipLibCheck": true,
     "strictNullChecks": false,
     "noImplicitAny": false,
     "strictBindCallApply": false,
     "forceConsistentCasingInFileNames": false,
-    "noFallthroughCasesInSwitch": false,
-    "ignoreDeprecations": "6.0"
+    "noFallthroughCasesInSwitch": false
     },
     "include": ["src/**/*"],
     "exclude": ["node_modules", "dist", "test"]

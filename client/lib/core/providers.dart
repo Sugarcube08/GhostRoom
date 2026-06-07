@@ -27,7 +27,6 @@ final sodiumProvider = Provider<SodiumSumo>((ref) => throw UnimplementedError())
 final secureStorageProvider = Provider<FlutterSecureStorage>((ref) {
   return const FlutterSecureStorage(
     aOptions: AndroidOptions(
-      encryptedSharedPreferences: true,
       // On some devices, the key might be lost if we don't use this
       resetOnError: true,
     ),

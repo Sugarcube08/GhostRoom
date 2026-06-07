@@ -45,8 +45,8 @@ export class MediaService {
       endpoint ||
       (accountId ? `https://${accountId}.r2.cloudflarestorage.com` : "") ||
       (publicEndpoint &&
-        !publicEndpoint.includes("localhost") &&
-        !publicEndpoint.includes("127.0.0.1")
+      !publicEndpoint.includes("localhost") &&
+      !publicEndpoint.includes("127.0.0.1")
         ? publicEndpoint
         : "");
     const redactedAccessKey = accessKeyId
@@ -233,6 +233,7 @@ export class MediaService {
       );
       throw new Error(
         `Bad Request: Media file has not been uploaded to storage yet`,
+        { cause: err },
       );
     }
 

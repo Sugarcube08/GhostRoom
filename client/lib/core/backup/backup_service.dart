@@ -74,7 +74,10 @@ class BackupService {
     final file = File('${tempDir.path}/ghostroom_${identity.publicId}.ghostroombackup');
     await file.writeAsBytes(archive);
     
-    await Share.shareXFiles([XFile(file.path)], text: 'GhostRoom Backup');
+    await SharePlus.instance.share(ShareParams(
+      files: [XFile(file.path)],
+      text: 'GhostRoom Backup',
+    ));
   }
 
   Future<void> importBackup(Uint8List archive, String password) async {

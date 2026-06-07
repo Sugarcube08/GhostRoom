@@ -768,13 +768,12 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
         }
       } else {
         // Desktop Fallback
-        final result = await FilePicker.pickFiles(
+        final platformFile = await FilePicker.pickFile(
           type: FileType.media,
-          allowMultiple: false,
         );
 
-        if (result != null && result.files.single.path != null) {
-          pickedFile = File(result.files.single.path!);
+        if (platformFile != null && platformFile.path != null) {
+          pickedFile = File(platformFile.path!);
         }
       }
 
@@ -1120,7 +1119,7 @@ class _FullScreenMediaViewerState extends State<FullScreenMediaViewer> {
         backgroundColor: Colors.transparent, 
         elevation: 0, 
         leading: IconButton(icon: const Icon(Icons.close, color: Colors.white), onPressed: () => Navigator.pop(context)),
-        actions: [IconButton(icon: const Icon(Icons.share, color: Colors.white), onPressed: () => Share.shareXFiles([XFile(widget.file.path)]))],
+        actions: [IconButton(icon: const Icon(Icons.share, color: Colors.white), onPressed: () => SharePlus.instance.share(ShareParams(files: [XFile(widget.file.path)])))],
       ),
       body: Center(
         child: widget.type == MessageType.video 

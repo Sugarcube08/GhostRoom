@@ -48,6 +48,9 @@ describe("InboxService", () => {
       save: (jest.fn() as any).mockResolvedValue({}),
       update: (jest.fn() as any).mockResolvedValue({}),
       count: (jest.fn() as any).mockResolvedValue(0),
+      findOne: (jest.fn() as any).mockResolvedValue({
+        sender_id: "sender-id",
+      }),
       delete: (jest.fn() as any).mockResolvedValue({}),
     };
 
