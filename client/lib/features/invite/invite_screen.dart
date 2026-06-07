@@ -110,7 +110,7 @@ class _InviteScreenState extends ConsumerState<InviteScreen> {
               OutlinedButton.icon(
                 icon: const Icon(Icons.share),
                 label: const Text('SHARE INVITE LINK'),
-                onPressed: () => Share.share(inviteLink),
+                onPressed: () => SharePlus.instance.share(ShareParams(text: inviteLink)),
                 style: OutlinedButton.styleFrom(
                   minimumSize: const Size.fromHeight(50),
                 ),

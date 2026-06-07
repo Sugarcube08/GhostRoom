@@ -20,6 +20,8 @@ import 'dart:convert';
 import 'core/crypto/identity_service.dart';
 import 'features/contacts/contact_actions.dart';
 import 'core/network/background_service.dart';
+import 'package:permission_handler/permission_handler.dart';
+import 'package:flutter_background_service/flutter_background_service.dart';
 
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
@@ -51,6 +53,18 @@ void main() async {
 
     final sodium = await SodiumSumoInit.init();
     await Hive.initFlutter();
+
+    // Request notification permission on Android before starting the background service
+    if (!kIsWeb && Platform.isAndroid) {
+      try {
+        final status = await Permission.notification.status;
+        if (!status.isGranted) {
+          await Permission.notification.request();
+        }
+      } catch (e) {
+        debugPrint('GHOST_ERROR: Failed to request notification permission: $e');
+      }
+    }
 
     // Initialize Persistent Background Service (V2.0.2 Reliability)
     if (!kIsWeb && (Platform.isAndroid || Platform.isIOS)) {
@@ -570,6 +584,9 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
       final relay = await activeRelayFuture;
       if (mounted && relay != null) {
         relayManager.wakeUpRelay(relay);
+        try {
+          FlutterBackgroundService().invoke('appForeground');
+        } catch (_) {}
         wsService.connect(relay);
         // Listeners are now handled by ChatRepository
       }

@@ -46,6 +46,12 @@ describe("InboxService", () => {
     mockDeliveryRepo = {
       create: jest.fn().mockImplementation((entity) => entity),
       save: (jest.fn() as any).mockResolvedValue({}),
+      findOne: (jest.fn() as any).mockResolvedValue({
+        sender_id: "sender-id",
+        message_id: "msg-id",
+        recipient_id: "recipient-id",
+        status: "PENDING",
+      }),
       update: (jest.fn() as any).mockResolvedValue({}),
       count: (jest.fn() as any).mockResolvedValue(0),
       delete: (jest.fn() as any).mockResolvedValue({}),

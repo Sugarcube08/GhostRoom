@@ -12,9 +12,11 @@ mixin IdentityActions {
     final customLink = 'ghostroom://identity/$encodedPkg';
     final webLink = 'https://ghostroom.app/i/$encodedPkg';
     
-    await Share.share(
-      'Connect with me on GhostRoom!\n\nApp Link: $customLink\nWeb Link: $webLink',
-      subject: 'GhostRoom Identity',
+    await SharePlus.instance.share(
+      ShareParams(
+        text: 'Connect with me on GhostRoom!\n\nApp Link: $customLink\nWeb Link: $webLink',
+        subject: 'GhostRoom Identity',
+      ),
     );
   }
 }

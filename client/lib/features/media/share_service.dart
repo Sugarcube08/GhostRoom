@@ -19,6 +19,9 @@ class ShareService {
       relay: relay,
       myXidKeyPair: myXidKeyPair,
     );
-    await Share.shareXFiles([XFile(file.path)], text: envelope.name);
+    await SharePlus.instance.share(ShareParams(
+      files: [XFile(file.path)],
+      text: envelope.name,
+    ));
   }
 }

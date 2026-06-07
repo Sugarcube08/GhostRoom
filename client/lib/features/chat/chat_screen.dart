@@ -28,6 +28,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   final List<Message> _messages = [];
   final TextEditingController _controller = TextEditingController();
   late final WebSocketService _webSocketService;
+  late final Function(dynamic) _onMessageCallback;
 
   @override
   void initState() {
@@ -40,6 +41,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
 
   @override
   void dispose() {
+    _webSocketService.offMessage(_onMessageCallback);
     _webSocketService.clearRoomCallbacks();
     _controller.dispose();
     super.dispose();
@@ -58,10 +60,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       debugPrint('GHOST_LOG: ChatScreen joinRoom called');
     });
     
-    ws.onMessage((data) {
+    _onMessageCallback = (data) {
       debugPrint('GHOST_LOG: ChatScreen onMessage received: $data');
       _processMessage(data, isMe: false);
-    });
+    };
+    ws.onMessage(_onMessageCallback);
 
     ws.onHistory((data) {
       debugPrint('GHOST_LOG: ChatScreen onHistory received. Messages: ${data['messages']?.length}');

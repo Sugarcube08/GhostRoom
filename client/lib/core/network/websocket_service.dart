@@ -23,7 +23,7 @@ class WebSocketService {
   int _reconnectCount = 0;
   int _listenerInitCount = 0;
 
-  final Map<String, Function> _callbacks = {};
+  final Map<String, Set<Function>> _callbacks = {};
 
   WebSocketService(this._ref);
 
@@ -174,34 +174,58 @@ class WebSocketService {
       _logger.i('GHOST_LOG: Identity verified successfully');
       _isAuthenticated = true;
       
-      final callback = _callbacks['identity.verified'];
-      if (callback != null) {
-        callback(data);
+      final callbacks = _callbacks['identity.verified'];
+      if (callbacks != null) {
+        for (final callback in List.from(callbacks)) {
+          try {
+            callback(data);
+          } catch (e) {
+            _logger.e('Error calling identity.verified callback: $e');
+          }
+        }
       }
     });
 
     _socket!.on('message.receive', (data) {
       _logger.i("GHOST_LOG: MESSAGE_RECEIVED_CLIENT");
 
-      final callback = _callbacks['message.receive'];
-      if (callback != null) {
-        callback(data);
+      final callbacks = _callbacks['message.receive'];
+      if (callbacks != null) {
+        for (final callback in List.from(callbacks)) {
+          try {
+            callback(data);
+          } catch (e) {
+            _logger.e('Error calling message.receive callback: $e');
+          }
+        }
       }
     });
 
     _socket!.on('message.status_update', (data) {
       _logger.d('Received status update: $data');
-      final callback = _callbacks['message.status_update'];
-      if (callback != null) {
-        callback(data);
+      final callbacks = _callbacks['message.status_update'];
+      if (callbacks != null) {
+        for (final callback in List.from(callbacks)) {
+          try {
+            callback(data);
+          } catch (e) {
+            _logger.e('Error calling message.status_update callback: $e');
+          }
+        }
       }
     });
 
     _socket!.on('inbox.messages', (data) {
-      final callback = _callbacks['inbox.messages'];
-      if (callback != null) {
+      final callbacks = _callbacks['inbox.messages'];
+      if (callbacks != null) {
         final messages = data['messages'] as List<dynamic>? ?? [];
-        callback(messages);
+        for (final callback in List.from(callbacks)) {
+          try {
+            callback(messages);
+          } catch (e) {
+            _logger.e('Error calling inbox.messages callback: $e');
+          }
+        }
       }
     });
 
@@ -210,16 +234,28 @@ class WebSocketService {
     });
 
     _socket!.on('space.history', (data) {
-      final callback = _callbacks['space.history'];
-      if (callback != null) {
-        callback(data);
+      final callbacks = _callbacks['space.history'];
+      if (callbacks != null) {
+        for (final callback in List.from(callbacks)) {
+          try {
+            callback(data);
+          } catch (e) {
+            _logger.e('Error calling space.history callback: $e');
+          }
+        }
       }
     });
 
     _socket!.on('space.expired', (data) {
-      final callback = _callbacks['space.expired'];
-      if (callback != null) {
-        callback(data);
+      final callbacks = _callbacks['space.expired'];
+      if (callbacks != null) {
+        for (final callback in List.from(callbacks)) {
+          try {
+            callback(data);
+          } catch (e) {
+            _logger.e('Error calling space.expired callback: $e');
+          }
+        }
       }
     });
 
@@ -235,32 +271,54 @@ class WebSocketService {
   }
 
   void onIdentityVerified(Function(dynamic) callback) {
-    _callbacks['identity.verified'] = callback;
+    _callbacks.putIfAbsent('identity.verified', () => {}).add(callback);
+  }
+
+  void offIdentityVerified(Function(dynamic) callback) {
+    _callbacks['identity.verified']?.remove(callback);
   }
 
   void onMessage(Function(dynamic) callback) {
-    _callbacks['message.receive'] = callback;
+    _callbacks.putIfAbsent('message.receive', () => {}).add(callback);
+  }
+
+  void offMessage(Function(dynamic) callback) {
+    _callbacks['message.receive']?.remove(callback);
   }
 
   void onStatusUpdate(Function(dynamic) callback) {
-    _callbacks['message.status_update'] = callback;
+    _callbacks.putIfAbsent('message.status_update', () => {}).add(callback);
+  }
+
+  void offStatusUpdate(Function(dynamic) callback) {
+    _callbacks['message.status_update']?.remove(callback);
   }
 
   void onInboxMessages(Function(List<dynamic>) callback) {
-    _callbacks['inbox.messages'] = callback;
+    _callbacks.putIfAbsent('inbox.messages', () => {}).add(callback);
+  }
+
+  void offInboxMessages(Function(List<dynamic>) callback) {
+    _callbacks['inbox.messages']?.remove(callback);
   }
 
   void onHistory(Function(dynamic) callback) {
-    _callbacks['space.history'] = callback;
+    _callbacks.putIfAbsent('space.history', () => {}).add(callback);
+  }
+
+  void offHistory(Function(dynamic) callback) {
+    _callbacks['space.history']?.remove(callback);
   }
 
   void onSpaceExpired(Function(dynamic) callback) {
-    _callbacks['space.expired'] = callback;
+    _callbacks.putIfAbsent('space.expired', () => {}).add(callback);
+  }
+
+  void offSpaceExpired(Function(dynamic) callback) {
+    _callbacks['space.expired']?.remove(callback);
   }
 
   void clearRoomCallbacks() {
-    _callbacks.remove('message.receive');
-    _callbacks.remove('message.status_update');
     _callbacks.remove('space.history');
     _callbacks.remove('space.expired');
   }

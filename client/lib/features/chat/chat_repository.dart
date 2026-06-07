@@ -4,6 +4,7 @@ import 'package:flutter/widgets.dart';
 import 'package:sodium/sodium_sumo.dart' hide Box;
 import 'package:path_provider/path_provider.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_background_service/flutter_background_service.dart';
 import 'message.dart';
 import 'dm_service.dart';
 import 'conversation_state.dart';
@@ -45,6 +46,29 @@ class ChatRepository with WidgetsBindingObserver {
 
   String? _activeConversationId;
   String? _hiveDbPath;
+  Timer? _heartbeatTimer;
+  Timer? _lifecycleTransitionTimer;
+
+  void _startHeartbeat() {
+    _stopHeartbeat();
+    try {
+      FlutterBackgroundService().invoke('heartbeat');
+    } catch (e) {
+      _logger.w('GHOST_WARNING: Failed to send initial heartbeat: $e');
+    }
+    _heartbeatTimer = Timer.periodic(const Duration(seconds: 5), (_) {
+      try {
+        FlutterBackgroundService().invoke('heartbeat');
+      } catch (e) {
+        _logger.w('GHOST_WARNING: Failed to send periodic heartbeat: $e');
+      }
+    });
+  }
+
+  void _stopHeartbeat() {
+    _heartbeatTimer?.cancel();
+    _heartbeatTimer = null;
+  }
   final Logger _logger = Logger(
     level: kReleaseMode ? Level.warning : Level.info,
     printer: PrettyPrinter(
@@ -98,14 +122,64 @@ class ChatRepository with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      _logger.i('GHOST_LOG: App resumed. Triggering proactive inbox sync.');
+      _logger.i('GHOST_LOG: App resumed. Cancelling background transition timer.');
+      _lifecycleTransitionTimer?.cancel();
+      _lifecycleTransitionTimer = null;
+
+      // If the UI websocket is disconnected, reconnect it and notify background service
+      if (!_wsService.isConnected) {
+        _logger.i('GHOST_LOG: Activating UI websocket and notifying background service.');
+        try {
+          FlutterBackgroundService().invoke('appForeground');
+        } catch (_) {}
+        _startHeartbeat();
+        _connectUIAndSync();
+      } else {
+        _logger.i('GHOST_LOG: Socket already connected on resume. Triggering proactive inbox sync.');
+        if (_wsService.isConnected && _wsService.isAuthenticated) {
+          _wsService.fetchInbox(since: lastSyncTimestamp);
+        }
+      }
+    } else if (state == AppLifecycleState.paused) {
+      _logger.i('GHOST_LOG: App paused. Scheduling background transition in 10 seconds.');
+      _lifecycleTransitionTimer?.cancel();
+      _lifecycleTransitionTimer = Timer(const Duration(seconds: 10), () {
+        _logger.i('GHOST_LOG: App paused for >10s. Disconnecting UI websocket and activating background service.');
+        _stopHeartbeat();
+        try {
+          FlutterBackgroundService().invoke('appBackground');
+        } catch (_) {}
+        _wsService.disconnect();
+      });
+    } else if (state == AppLifecycleState.detached) {
+      _logger.i('GHOST_LOG: App detached. Disconnecting UI websocket immediately.');
+      _lifecycleTransitionTimer?.cancel();
+      _lifecycleTransitionTimer = null;
+      _stopHeartbeat();
+      try {
+        FlutterBackgroundService().invoke('appBackground');
+      } catch (_) {}
+      _wsService.disconnect();
+    }
+  }
+
+  void _connectUIAndSync() async {
+    try {
+      final activeRelay = await _ref?.read(activeRelayProvider.future);
+      if (activeRelay != null) {
+        await _wsService.connect(activeRelay);
+      }
       if (_wsService.isConnected && _wsService.isAuthenticated) {
         _wsService.fetchInbox(since: lastSyncTimestamp);
       }
+    } catch (e) {
+      _logger.e('GHOST_ERROR: Failed to reconnect UI websocket on resume: $e');
     }
   }
 
   void dispose() {
+    _lifecycleTransitionTimer?.cancel();
+    _stopHeartbeat();
     WidgetsBinding.instance.removeObserver(this);
   }
 
@@ -181,6 +255,12 @@ class ChatRepository with WidgetsBindingObserver {
     _wsService.onMessage(_handleNewMessage);
     _wsService.onInboxMessages(_handleInboxMessages);
     _wsService.onStatusUpdate(_handleMessageStatusUpdate);
+
+    // If WebSocket is already authenticated (handling start-up race condition), sync inbox immediately
+    if (_wsService.isAuthenticated) {
+      _logger.i('GHOST_LOG: WebSocket already authenticated on ChatRepository init. Triggering inbox sync...');
+      _wsService.fetchInbox(since: lastSyncTimestamp);
+    }
     
     // Global Cleanup
     await flushAllGhosts();
@@ -191,6 +271,12 @@ class ChatRepository with WidgetsBindingObserver {
 
     _logger.i('GHOST_LOG: ChatRepository initialized and listeners registered.');
     StabilityTracker.logMemory('ChatRepo_Init_End');
+    
+    // Start heartbeat and notify background service that UI is active
+    _startHeartbeat();
+    try {
+      FlutterBackgroundService().invoke('appForeground');
+    } catch (_) {}
   }
 
   void _handleIdentityVerified(dynamic data) {

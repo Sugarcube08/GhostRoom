@@ -1,10 +1,14 @@
 import 'dart:async';
+import 'dart:io';
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:sodium/sodium_sumo.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'dart:convert';
+import 'package:socket_io_client/socket_io_client.dart' as io;
 
 // We import the core services to re-initialize them in the background isolate
 import '../crypto/identity_service.dart';
@@ -13,8 +17,36 @@ import 'websocket_service.dart';
 import '../notification_service.dart';
 import '../../features/chat/message.dart';
 
+@pragma('vm:entry-point')
 class GhostBackgroundService {
+  static io.Socket? _bgSocket;
+  static Timer? _heartbeatTimer;
+  static bool _uiAppActive = false;
+  static bool _isConnecting = false;
+
+  @pragma('vm:entry-point')
   static Future<void> initialize() async {
+    if (Platform.isAndroid) {
+      final flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
+      const androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
+      const initSettings = InitializationSettings(android: androidSettings);
+      await flutterLocalNotificationsPlugin.initialize(settings: initSettings);
+
+      final androidImplementation = flutterLocalNotificationsPlugin
+          .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+      if (androidImplementation != null) {
+        await androidImplementation.createNotificationChannel(
+          const AndroidNotificationChannel(
+            'ghostroom_background',
+            'Background Service',
+            description: 'Maintains secure connection in background',
+            importance: Importance.low,
+            showBadge: false,
+          ),
+        );
+      }
+    }
+
     final service = FlutterBackgroundService();
 
     // Configure for Android
@@ -45,6 +77,7 @@ class GhostBackgroundService {
   static void onStart(ServiceInstance service) async {
     // 1. Initialize Background Environment
     WidgetsFlutterBinding.ensureInitialized();
+    DartPluginRegistrant.ensureInitialized();
     await Hive.initFlutter();
     
     if (!Hive.isAdapterRegistered(MessageTypeAdapter().typeId)) {
@@ -55,17 +88,71 @@ class GhostBackgroundService {
     }
 
     final sodium = await SodiumSumoInit.init();
-    const storage = FlutterSecureStorage(
-      aOptions: AndroidOptions(encryptedSharedPreferences: true),
-    );
+    const storage = FlutterSecureStorage();
     
     final idService = IdentityService(sodium, storage);
     final relayManager = RelayManager(storage);
     final notificationService = NotificationService();
     await notificationService.init();
 
-    // 2. Connect to Relay
-    _connectBackground(idService, relayManager, notificationService, sodium);
+    // Setup communication with UI App
+    service.on('appForeground').listen((event) {
+      debugPrint('BG_SERVICE: Received appForeground. Disconnecting background socket.');
+      _uiAppActive = true;
+      _disconnectBackground();
+      _resetHeartbeatTimeout(idService, relayManager, notificationService, sodium);
+    });
+
+    service.on('appBackground').listen((event) {
+      debugPrint('BG_SERVICE: Received appBackground. Connecting background socket.');
+      _uiAppActive = false;
+      _cancelHeartbeatTimeout();
+      _connectBackground(idService, relayManager, notificationService, sodium);
+    });
+
+    service.on('heartbeat').listen((event) {
+      debugPrint('BG_SERVICE: Received heartbeat. UI App is active.');
+      _uiAppActive = true;
+      _disconnectBackground();
+      _resetHeartbeatTimeout(idService, relayManager, notificationService, sodium);
+    });
+
+    // Startup behavior: wait 15 seconds for a heartbeat / foreground event
+    _heartbeatTimer = Timer(const Duration(seconds: 15), () {
+      if (!_uiAppActive) {
+        debugPrint('BG_SERVICE: Startup timeout reached without UI heartbeat. Connecting...');
+        _connectBackground(idService, relayManager, notificationService, sodium);
+      }
+    });
+  }
+
+  static void _resetHeartbeatTimeout(
+    IdentityService idService,
+    RelayManager relayManager,
+    NotificationService notificationService,
+    SodiumSumo sodium,
+  ) {
+    _heartbeatTimer?.cancel();
+    _heartbeatTimer = Timer(const Duration(seconds: 12), () {
+      debugPrint('BG_SERVICE: Heartbeat timeout reached. Assuming UI App inactive. Connecting...');
+      _uiAppActive = false;
+      _connectBackground(idService, relayManager, notificationService, sodium);
+    });
+  }
+
+  static void _cancelHeartbeatTimeout() {
+    _heartbeatTimer?.cancel();
+    _heartbeatTimer = null;
+  }
+
+  static void _disconnectBackground() {
+    if (_bgSocket != null) {
+      debugPrint('BG_SERVICE: Disposing background socket.');
+      _bgSocket!.disconnect();
+      _bgSocket!.dispose();
+      _bgSocket = null;
+    }
+    _isConnecting = false;
   }
 
   static void _connectBackground(
@@ -74,13 +161,33 @@ class GhostBackgroundService {
     NotificationService notificationService,
     SodiumSumo sodium,
   ) async {
+    if (_uiAppActive) {
+      debugPrint('BG_SERVICE: Prevent connection because UI App is active.');
+      return;
+    }
+    if (_bgSocket != null && _bgSocket!.connected) {
+      debugPrint('BG_SERVICE: Already connected.');
+      return;
+    }
+    if (_isConnecting) {
+      debugPrint('BG_SERVICE: Connection attempt already in progress.');
+      return;
+    }
+    _isConnecting = true;
+
     void attemptConnection() async {
+      if (_uiAppActive) {
+        _isConnecting = false;
+        return;
+      }
+
       try {
-        await idService.initIdentity(); // Correct method name
+        await idService.initIdentity();
         final identity = idService.currentIdentity;
         if (identity == null) {
           debugPrint('BG_SERVICE: No identity found. Retrying in 30s...');
-          Future.delayed(const Duration(seconds: 30), attemptConnection);
+          _isConnecting = false;
+          _heartbeatTimer = Timer(const Duration(seconds: 30), attemptConnection);
           return;
         }
 
@@ -90,14 +197,29 @@ class GhostBackgroundService {
 
         if (profile == null) {
           debugPrint('BG_SERVICE: No relay found. Retrying in 30s...');
-          Future.delayed(const Duration(seconds: 30), attemptConnection);
+          _isConnecting = false;
+          _heartbeatTimer = Timer(const Duration(seconds: 30), attemptConnection);
           return;
         }
 
+        if (_uiAppActive) {
+          _isConnecting = false;
+          return;
+        }
+
+        // Dispose previous socket if any
+        if (_bgSocket != null) {
+          _bgSocket!.dispose();
+          _bgSocket = null;
+        }
+
+        debugPrint('BG_SERVICE: Connecting to relay: ${profile.websocketUrl}');
         final socket = WebSocketService.createRawSocket(profile);
+        _bgSocket = socket;
         
         socket.on('connect', (_) {
           debugPrint('BG_SERVICE: Connected to relay');
+          _isConnecting = false;
         });
 
         socket.on('identity.challenge', (data) {
@@ -128,15 +250,26 @@ class GhostBackgroundService {
         });
 
         socket.on('disconnect', (reason) {
-          debugPrint('BG_SERVICE: Disconnected ($reason). Retrying in 10s...');
+          debugPrint('BG_SERVICE: Disconnected ($reason).');
+          _isConnecting = false;
           socket.dispose();
-          Future.delayed(const Duration(seconds: 10), attemptConnection);
+          if (_bgSocket == socket) {
+            _bgSocket = null;
+          }
+          if (!_uiAppActive) {
+            debugPrint('BG_SERVICE: Retrying connection in 10s...');
+            _heartbeatTimer = Timer(const Duration(seconds: 10), attemptConnection);
+          }
         });
 
         socket.connect();
       } catch (e) {
-        debugPrint('BG_SERVICE: Connection loop failed: $e. Retrying in 30s...');
-        Future.delayed(const Duration(seconds: 30), attemptConnection);
+        debugPrint('BG_SERVICE: Connection loop failed: $e.');
+        _isConnecting = false;
+        if (!_uiAppActive) {
+          debugPrint('BG_SERVICE: Retrying connection in 30s...');
+          _heartbeatTimer = Timer(const Duration(seconds: 30), attemptConnection);
+        }
       }
     }
 

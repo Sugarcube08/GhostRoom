@@ -61,9 +61,13 @@ class _NavigationShellState extends ConsumerState<NavigationShell> {
           ElevatedButton(
             onPressed: () {
               // Ensure we use the correct GitHub releases URL from manifest or fallback
-              final url = manifest.releaseUrl.isNotEmpty 
+              final baseUrl = manifest.releaseUrl.isNotEmpty 
                 ? manifest.releaseUrl 
                 : 'https://github.com/Sugarcube08/GhostRoom/releases';
+              final cleanUrl = baseUrl.endsWith('/') ? baseUrl.substring(0, baseUrl.length - 1) : baseUrl;
+              final url = cleanUrl.contains('/tag/') 
+                ? cleanUrl 
+                : '$cleanUrl/tag/v${manifest.version}';
               launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
               Navigator.pop(context);
             },

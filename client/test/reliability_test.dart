@@ -42,12 +42,30 @@ class ManualMockWebSocketService implements WebSocketService {
   @override
   void onIdentityVerified(Function(dynamic) callback) {}
   @override
+  void offIdentityVerified(Function(dynamic) callback) {}
+  @override
   void onMessage(Function(dynamic) callback) {}
   @override
+  void offMessage(Function(dynamic) callback) {}
+  @override
   void onStatusUpdate(Function(dynamic) callback) {}
+  @override
+  void offStatusUpdate(Function(dynamic) callback) {}
 
   @override
   void onInboxMessages(Function(List<dynamic>) callback) {}
+  @override
+  void offInboxMessages(Function(List<dynamic>) callback) {}
+
+  @override
+  void onHistory(Function(dynamic) callback) {}
+  @override
+  void offHistory(Function(dynamic) callback) {}
+
+  @override
+  void onSpaceExpired(Function(dynamic) callback) {}
+  @override
+  void offSpaceExpired(Function(dynamic) callback) {}
 
   @override
   bool get isConnected => false;
