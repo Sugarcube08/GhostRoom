@@ -24,6 +24,7 @@ services:
       - R2_BUCKET_NAME=${R2_BUCKET_NAME:-ghostroom-media}
       - R2_ENDPOINT=${R2_ENDPOINT:-http://minio:9000}
       - R2_PUBLIC_ENDPOINT=${R2_PUBLIC_ENDPOINT:-http://localhost:9000}
+      - RELAY_URL=${RELAY_URL:-http://localhost:4000}
     command: npm run start:dev
     depends_on:
       - redis

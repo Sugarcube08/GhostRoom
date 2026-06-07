@@ -232,7 +232,7 @@ export class MediaService {
         `Failed to confirm media upload for ${mediaId}: file not found in storage. Error: ${err?.message}`,
       );
       throw new Error(
-        `Bad Request: Media file has not been uploaded to storage yet`,
+        `Bad Request: Media file has not been uploaded to storage yet`
       );
     }
 

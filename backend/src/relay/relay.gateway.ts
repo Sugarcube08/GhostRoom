@@ -89,12 +89,18 @@ export class RelayGateway implements OnGatewayConnection, OnGatewayDisconnect {
   ) {
     const nonce = await this.inboxService.getChallenge(client.id);
     if (!nonce) {
+      this.logger.warn(
+        `Proof failed: challenge expired or not found for client ${client.id}`,
+      );
       client.emit("error", { message: "Challenge expired or not found" });
       return;
     }
 
     const derivedId = this.cryptoUtils.derivePublicId(payload.public_key);
     if (derivedId !== payload.public_id) {
+      this.logger.warn(
+        `Proof failed: invalid public ID. derived=${derivedId}, payload=${payload.public_id}`,
+      );
       client.emit("error", { message: "Invalid Public ID for provided key" });
       return;
     }
@@ -105,6 +111,9 @@ export class RelayGateway implements OnGatewayConnection, OnGatewayDisconnect {
       payload.public_key,
     );
     if (!isValid) {
+      this.logger.warn(
+        `Proof failed: cryptographic signature verify failed for client ${client.id} (${payload.public_id})`,
+      );
       client.emit("error", { message: "Cryptographic proof failed" });
       return;
     }
@@ -510,6 +519,11 @@ export class RelayGateway implements OnGatewayConnection, OnGatewayDisconnect {
         const targetRoom = targetDeviceId
           ? `inbox:${payload.target_id}:${targetDeviceId}`
           : `inbox:${payload.target_id}`;
+
+        const activeSockets = await this.server.in(targetRoom).fetchSockets();
+        this.logger.log(
+          `Fanning out to room ${targetRoom}. Active sockets in room: ${activeSockets.length} (${activeSockets.map((s) => s.id).join(", ")})`,
+        );
 
         this.server.to(targetRoom).emit("message.receive", envelope);
         this.logger.log("GHOST_LOG: MESSAGE_DELIVERED");

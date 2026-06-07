@@ -100,28 +100,28 @@ class GhostBackgroundService {
       debugPrint('BG_SERVICE: Received appForeground. Disconnecting background socket.');
       _uiAppActive = true;
       _disconnectBackground();
-      _resetHeartbeatTimeout(idService, relayManager, notificationService, sodium);
+      _resetHeartbeatTimeout(idService, relayManager, notificationService, sodium, storage);
     });
 
     service.on('appBackground').listen((event) {
       debugPrint('BG_SERVICE: Received appBackground. Connecting background socket.');
       _uiAppActive = false;
       _cancelHeartbeatTimeout();
-      _connectBackground(idService, relayManager, notificationService, sodium);
+      _connectBackground(idService, relayManager, notificationService, sodium, storage);
     });
 
     service.on('heartbeat').listen((event) {
       debugPrint('BG_SERVICE: Received heartbeat. UI App is active.');
       _uiAppActive = true;
       _disconnectBackground();
-      _resetHeartbeatTimeout(idService, relayManager, notificationService, sodium);
+      _resetHeartbeatTimeout(idService, relayManager, notificationService, sodium, storage);
     });
 
     // Startup behavior: wait 15 seconds for a heartbeat / foreground event
     _heartbeatTimer = Timer(const Duration(seconds: 15), () {
       if (!_uiAppActive) {
         debugPrint('BG_SERVICE: Startup timeout reached without UI heartbeat. Connecting...');
-        _connectBackground(idService, relayManager, notificationService, sodium);
+        _connectBackground(idService, relayManager, notificationService, sodium, storage);
       }
     });
   }
@@ -131,12 +131,13 @@ class GhostBackgroundService {
     RelayManager relayManager,
     NotificationService notificationService,
     SodiumSumo sodium,
+    FlutterSecureStorage storage,
   ) {
     _heartbeatTimer?.cancel();
     _heartbeatTimer = Timer(const Duration(seconds: 12), () {
       debugPrint('BG_SERVICE: Heartbeat timeout reached. Assuming UI App inactive. Connecting...');
       _uiAppActive = false;
-      _connectBackground(idService, relayManager, notificationService, sodium);
+      _connectBackground(idService, relayManager, notificationService, sodium, storage);
     });
   }
 
@@ -160,6 +161,7 @@ class GhostBackgroundService {
     RelayManager relayManager,
     NotificationService notificationService,
     SodiumSumo sodium,
+    FlutterSecureStorage storage,
   ) async {
     if (_uiAppActive) {
       debugPrint('BG_SERVICE: Prevent connection because UI App is active.');
@@ -233,17 +235,76 @@ class GhostBackgroundService {
           });
         });
 
+        socket.on('identity.verified', (_) async {
+          debugPrint('BG_SERVICE: Identity verified. Fetching missed messages...');
+          try {
+            final lastSyncStr = await storage.read(key: 'bg_last_sync_t');
+            final lastSync = lastSyncStr != null ? int.parse(lastSyncStr) : 0;
+            socket.emit('inbox.fetch', {'since': lastSync});
+          } catch (e) {
+            debugPrint('BG_SERVICE: Error fetching inbox: $e');
+          }
+        });
+
+        socket.on('inbox.messages', (data) async {
+          try {
+            final messages = data['messages'] as List<dynamic>;
+            debugPrint('BG_SERVICE: Received ${messages.length} messages in inbox fetch.');
+            
+            final lastSyncStr = await storage.read(key: 'bg_last_sync_t');
+            int lastSync = lastSyncStr != null ? int.parse(lastSyncStr) : 0;
+            bool updated = false;
+
+            for (final msg in messages) {
+              final String msgId = msg['id'] as String;
+              final int timestamp = msg['t'] as int;
+              
+              final isProc = await _isMessageProcessed(storage, msgId);
+              if (!isProc) {
+                updated = true;
+                debugPrint('BG_SERVICE: Notifying for missed message: $msgId');
+                notificationService.showNotification(
+                  title: 'New Private Message',
+                  body: 'Encrypted payload received via GhostRoom.',
+                  payload: identity.publicId,
+                );
+                await _markMessageProcessed(storage, msgId);
+                if (timestamp > lastSync) {
+                  lastSync = timestamp;
+                }
+              }
+              socket.emit('message.ack', {'message_id': msgId});
+            }
+            if (updated) {
+              await storage.write(key: 'bg_last_sync_t', value: lastSync.toString());
+            }
+          } catch (e) {
+            debugPrint('BG_SERVICE: Error processing inbox messages: $e');
+          }
+        });
+
         socket.on('message.receive', (data) async {
           try {
-            // In background, we just notify. The actual UI will sync on resume.
-            notificationService.showNotification(
-              title: 'New Private Message',
-              body: 'Encrypted payload received via GhostRoom.',
-              payload: identity.publicId,
-            );
+            final String msgId = data['id'] as String;
+            final int timestamp = data['t'] as int;
             
-            // Ack to relay so it doesn't keep resending while we are in background
-            socket.emit('message.ack', {'message_id': data['id']});
+            final isProc = await _isMessageProcessed(storage, msgId);
+            if (!isProc) {
+              debugPrint('BG_SERVICE: Notifying for real-time message: $msgId');
+              notificationService.showNotification(
+                title: 'New Private Message',
+                body: 'Encrypted payload received via GhostRoom.',
+                payload: identity.publicId,
+              );
+              await _markMessageProcessed(storage, msgId);
+              
+              final lastSyncStr = await storage.read(key: 'bg_last_sync_t');
+              final lastSync = lastSyncStr != null ? int.parse(lastSyncStr) : 0;
+              if (timestamp > lastSync) {
+                await storage.write(key: 'bg_last_sync_t', value: timestamp.toString());
+              }
+            }
+            socket.emit('message.ack', {'message_id': msgId});
           } catch (e) {
             debugPrint('BG_SERVICE: Error processing background message: $e');
           }
@@ -274,5 +335,33 @@ class GhostBackgroundService {
     }
 
     attemptConnection();
+  }
+
+  static Future<bool> _isMessageProcessed(FlutterSecureStorage storage, String msgId) async {
+    try {
+      final jsonStr = await storage.read(key: 'bg_processed_ids');
+      if (jsonStr == null) return false;
+      final List<dynamic> list = jsonDecode(jsonStr);
+      return list.contains(msgId);
+    } catch (_) {
+      return false;
+    }
+  }
+
+  static Future<void> _markMessageProcessed(FlutterSecureStorage storage, String msgId) async {
+    try {
+      final jsonStr = await storage.read(key: 'bg_processed_ids');
+      List<String> list = [];
+      if (jsonStr != null) {
+        list = List<String>.from(jsonDecode(jsonStr));
+      }
+      if (!list.contains(msgId)) {
+        list.add(msgId);
+        if (list.length > 200) {
+          list.removeAt(0); // Bound size
+        }
+        await storage.write(key: 'bg_processed_ids', value: jsonEncode(list));
+      }
+    } catch (_) {}
   }
 }

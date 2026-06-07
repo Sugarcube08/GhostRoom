@@ -193,8 +193,6 @@ export class InboxService {
     deviceId?: string,
   ): Promise<MessageEnvelope[]> {
     try {
-      const deviceFilter = deviceId ? [deviceId, IsNull()] : [IsNull()];
-      
       const messages = await this.messageRepo.find({
         where: [
           {
@@ -270,7 +268,9 @@ export class InboxService {
         if (!message.delivered_at) {
           message.delivered_at = new Date();
           if (message.retention_mode === "EPHEMERAL") {
-            message.expires_at = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+            message.expires_at = new Date(
+              Date.now() + 30 * 24 * 60 * 60 * 1000,
+            );
           }
           await this.messageRepo.save(message);
         }
