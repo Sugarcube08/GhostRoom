@@ -452,12 +452,30 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
         if (isSeen && msg.seenAt != null) ...[
           const SizedBox(width: 2),
           Text(
-            '${DateTime.now().difference(msg.seenAt!).inMinutes}m',
+            _formatSeenTime(msg.seenAt!),
             style: TextStyle(fontSize: 7, color: color.withAlpha(150)),
           ),
         ],
       ],
     );
+  }
+
+  String _formatSeenTime(DateTime seenAt) {
+    final now = DateTime.now();
+    final diff = now.difference(seenAt);
+    if (diff.inMinutes < 60) {
+      return '${diff.inMinutes}m';
+    } else if (diff.inHours < 24) {
+      final hours = diff.inHours;
+      if (hours == 1) {
+        return '1 hour ago';
+      } else {
+        return '$hours hours ago';
+      }
+    } else {
+      final formattedTime = DateFormat('HH:mm').format(seenAt);
+      return 'seen on $formattedTime';
+    }
   }
 
   Widget _buildMessageBubble(Message msg, bool isMe) {
