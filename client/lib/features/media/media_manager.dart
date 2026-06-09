@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
 import 'package:hive/hive.dart';
 import 'package:http/http.dart' as http;
@@ -13,6 +12,7 @@ import 'attachment_envelope.dart';
 import '../../core/network/relay_manager.dart';
 import 'media_service.dart';
 import '../../core/stability_tracker.dart';
+import '../../core/storage/storage_directory_helper.dart';
 
 import 'lru_memory_cache.dart';
 
@@ -125,10 +125,10 @@ class MediaManager {
     if (_isInitializing) return _initCompleter.future;
     _isInitializing = true;
     try {
-      final docsDir = await getApplicationDocumentsDirectory();
-      _originalsDir = Directory(p.join(docsDir.path, 'media', 'originals'));
-      _thumbsDir = Directory(p.join(docsDir.path, 'media', 'thumbs'));
-      _tempDir = Directory(p.join(docsDir.path, 'media', 'temp'));
+      final baseDir = await StorageDirectoryHelper.getBaseDirectory();
+      _originalsDir = Directory(p.join(baseDir.path, 'media', 'originals'));
+      _thumbsDir = Directory(p.join(baseDir.path, 'media', 'thumbs'));
+      _tempDir = Directory(p.join(baseDir.path, 'media', 'temp'));
 
       await _originalsDir.create(recursive: true);
       await _thumbsDir.create(recursive: true);

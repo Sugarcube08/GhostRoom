@@ -4,7 +4,6 @@ import 'package:flutter/widgets.dart';
 import 'package:sodium/sodium_sumo.dart' hide Box;
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:http/http.dart' as http;
-import 'package:path_provider/path_provider.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'message.dart';
 import 'dm_service.dart';
@@ -12,6 +11,7 @@ import 'conversation_state.dart';
 import '../../core/crypto/identity_service.dart';
 import '../../core/network/websocket_service.dart';
 import '../../core/notification_service.dart';
+import '../../core/storage/storage_directory_helper.dart';
 import '../contacts/contact_service.dart';
 import '../contacts/contact.dart';
 import 'dart:convert';
@@ -149,12 +149,18 @@ class ChatRepository with WidgetsBindingObserver {
     if (_isInitialized) return;
     _isInitialized = true;
     
+    final sw = Stopwatch()..start();
+    _logger.i('GHOST_LOG: ChatRepository.init() profile start...');
+    
     try {
-      final dir = await getApplicationDocumentsDirectory();
+      final dir = await StorageDirectoryHelper.getHiveDirectory();
       _hiveDbPath = dir.path;
     } catch (_) {}
+    _logger.i('GHOST_LOG: profile [getApplicationDocumentsDirectory] took: ${sw.elapsedMilliseconds}ms');
     
     StabilityTracker.logMemory('ChatRepo_Init_Start');
+    
+    final adapterSw = Stopwatch()..start();
     if (!Hive.isAdapterRegistered(MessageTypeAdapter().typeId)) {
       Hive.registerAdapter(MessageTypeAdapter());
     }
@@ -167,7 +173,9 @@ class ChatRepository with WidgetsBindingObserver {
     if (!Hive.isAdapterRegistered(ConversationStateAdapter().typeId)) {
       Hive.registerAdapter(ConversationStateAdapter());
     }
+    _logger.i('GHOST_LOG: profile [Hive Adapters registration] took: ${adapterSw.elapsedMilliseconds}ms');
     
+    final boxSw = Stopwatch()..start();
     if (!Hive.isBoxOpen(_msgBoxName)) {
       await Hive.openBox<Message>(_msgBoxName);
       StabilityTracker.logResource('HiveBox', 'Opened_$_msgBoxName');
@@ -192,21 +200,28 @@ class ChatRepository with WidgetsBindingObserver {
       await Hive.openBox<bool>(_pendingDeletionsBoxName);
       StabilityTracker.logResource('HiveBox', 'Opened_$_pendingDeletionsBoxName');
     }
+    _logger.i('GHOST_LOG: profile [Opening Hive boxes] took: ${boxSw.elapsedMilliseconds}ms');
 
+    final wsSw = Stopwatch()..start();
     // Register WebSocket Callbacks
     _wsService.onIdentityVerified(_handleIdentityVerified);
     _wsService.onMessage(_handleNewMessage);
     _wsService.onInboxMessages(_handleInboxMessages);
     _wsService.onStatusUpdate(_handleMessageStatusUpdate);
+    _logger.i('GHOST_LOG: profile [WebSocket register] took: ${wsSw.elapsedMilliseconds}ms');
     
+    final flushSw = Stopwatch()..start();
     // Global Cleanup
     await flushAllGhosts();
+    _logger.i('GHOST_LOG: profile [flushAllGhosts] took: ${flushSw.elapsedMilliseconds}ms');
 
+    final queueSw = Stopwatch()..start();
     // Process offline queue on startup
     unawaited(processOfflineQueue());
     unawaited(syncPendingDeletions());
+    _logger.i('GHOST_LOG: profile [Process offline queue startup triggers] took: ${queueSw.elapsedMilliseconds}ms');
 
-    _logger.i('GHOST_LOG: ChatRepository initialized and listeners registered.');
+    _logger.i('GHOST_LOG: ChatRepository initialized and listeners registered. Total init took: ${sw.elapsedMilliseconds}ms');
     StabilityTracker.logMemory('ChatRepo_Init_End');
   }
 
@@ -214,12 +229,14 @@ class ChatRepository with WidgetsBindingObserver {
     _logger.i('GHOST_LOG: Identity verified. Triggering inbox sync...');
     _wsService.fetchInbox(since: lastSyncTimestamp);
 
-    // Register FCM token
-    FirebaseMessaging.instance.getToken().then((token) {
-      if (token != null) {
-        registerDeviceToken(token);
-      }
-    });
+    // Register FCM token on mobile platforms only
+    if (!kIsWeb && (Platform.isAndroid || Platform.isIOS)) {
+      FirebaseMessaging.instance.getToken().then((token) {
+        if (token != null) {
+          registerDeviceToken(token);
+        }
+      });
+    }
 
     // Process offline queue on reconnect
     unawaited(processOfflineQueue());
@@ -1088,23 +1105,22 @@ class ChatRepository with WidgetsBindingObserver {
     final messages = _msgBox?.values ?? [];
     for (final msg in messages) {
       if (msg.metadata?['is_ghost'] == true) {
-        await msg.delete();
         deletedIds.add(msg.id);
         
         if (msg.type == MessageType.image || msg.type == MessageType.video) {
           final mediaId = msg.metadata?['media_id'] as String?;
           if (mediaId != null) {
-            await _mediaManager.deleteMedia(mediaId);
+            unawaited(_mediaManager.deleteMedia(mediaId));
           }
         }
       }
     }
     if (deletedIds.isNotEmpty) {
+      await _msgBox?.deleteAll(deletedIds);
       _logger.i('GHOST_LOG: Global ghost flush complete. Pruned ${deletedIds.length} messages.');
       final delBox = Hive.box<bool>(_pendingDeletionsBoxName);
-      for (final id in deletedIds) {
-        await delBox.put(id, true);
-      }
+      final Map<String, bool> delEntries = {for (var id in deletedIds) id: true};
+      await delBox.putAll(delEntries);
       _wsService.socket?.emit('message.delete', {
         'message_ids': deletedIds,
       });

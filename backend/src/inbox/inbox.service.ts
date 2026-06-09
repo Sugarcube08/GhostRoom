@@ -451,6 +451,20 @@ export class InboxService {
           data: {
             event: "sync_required",
           },
+          android: {
+            priority: "high" as const,
+          },
+          apns: {
+            headers: {
+              "apns-priority": "5",
+              "apns-push-type": "background",
+            },
+            payload: {
+              aps: {
+                "content-available": 1,
+              },
+            },
+          },
         },
       };
 

@@ -442,29 +442,41 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
             const Text('RECOVERY SEED', style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 2)),
             const SizedBox(height: 8),
             const Text('Write these 24 words down in order.', style: TextStyle(color: Colors.white24, fontSize: 12)),
-            const SizedBox(height: 32),
-            GridView.builder(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 3,
-                childAspectRatio: 2.5,
-                crossAxisSpacing: 8,
-                mainAxisSpacing: 8,
-              ),
-              itemCount: words.length,
-              itemBuilder: (context, index) => Container(
-                decoration: BoxDecoration(
-                  color: Colors.white.withAlpha(5),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  '${index + 1}. ${words[index]}',
-                  style: const TextStyle(fontSize: 11, fontFamily: 'monospace'),
-                ),
-              ),
+            Column(
+              children: [
+                for (int r = 0; r < 8; r++) ...[
+                  if (r > 0) const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      for (int c = 0; c < 3; c++) ...[
+                        if (c > 0) const SizedBox(width: 8),
+                        Expanded(
+                          child: Builder(
+                            builder: (context) {
+                              final index = r * 3 + c;
+                              if (index >= words.length) return const SizedBox.shrink();
+                              return Container(
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withAlpha(5),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+                                alignment: Alignment.centerLeft,
+                                child: Text(
+                                  '${index + 1}. ${words[index]}',
+                                  style: const TextStyle(fontSize: 10, fontFamily: 'monospace'),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ],
+              ],
             ),
             const Spacer(),
             const SizedBox(height: 24),

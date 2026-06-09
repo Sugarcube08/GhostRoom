@@ -1,14 +1,13 @@
 import 'dart:convert';
-import 'dart:io';
 import 'package:sodium/sodium_sumo.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:bip39/bip39.dart' as bip39;
 import 'package:bs58/bs58.dart';
-import 'package:path_provider/path_provider.dart';
 import '../network/relay_manager.dart';
 import '../stability_tracker.dart';
 import 'package:logger/logger.dart';
 import 'package:flutter/foundation.dart';
+import '../storage/storage_directory_helper.dart';
 
 Uint8List _deriveSeedBackground(String mnemonic) {
   return bip39.mnemonicToSeed(mnemonic);
@@ -105,8 +104,7 @@ class IdentityService {
 
   Future<bool> _checkPublicIdentityFlag() async {
     try {
-      final dir = await getApplicationDocumentsDirectory();
-      final file = File('${dir.path}/identity_exists.flag');
+      final file = await StorageDirectoryHelper.getIdentityFlagFile();
       return await file.exists();
     } catch (_) {
       return false;
@@ -115,16 +113,14 @@ class IdentityService {
 
   Future<void> _writePublicIdentityFlag() async {
     try {
-      final dir = await getApplicationDocumentsDirectory();
-      final file = File('${dir.path}/identity_exists.flag');
+      final file = await StorageDirectoryHelper.getIdentityFlagFile();
       await file.writeAsString('true');
     } catch (_) {}
   }
 
   Future<void> _clearPublicIdentityFlag() async {
     try {
-      final dir = await getApplicationDocumentsDirectory();
-      final file = File('${dir.path}/identity_exists.flag');
+      final file = await StorageDirectoryHelper.getIdentityFlagFile();
       if (await file.exists()) {
         await file.delete();
       }

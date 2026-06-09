@@ -12,9 +12,6 @@ import 'core/stability_tracker.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'dart:async';
 import 'dart:io';
-import 'features/chat/requests_screen.dart';
-import 'features/chat/conversation_screen.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:app_links/app_links.dart';
 import 'dart:convert';
 import 'core/crypto/identity_service.dart';
@@ -26,8 +23,8 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'features/contacts/contact.dart';
 import 'features/chat/message.dart';
 import 'features/chat/conversation_state.dart';
-import 'features/chat/conversation_service.dart';
 import 'core/network/relay_manager.dart';
+import 'core/storage/storage_directory_helper.dart';
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
@@ -47,7 +44,9 @@ Future<void> ghostRoomBackgroundHandler(RemoteMessage message) async {
   }
 
   final sodium = await SodiumSumoInit.init();
-  await Hive.initFlutter();
+  await StorageDirectoryHelper.migrateIfNeeded();
+  final hiveDir = await StorageDirectoryHelper.getHiveDirectory();
+  Hive.init(hiveDir.path);
 
   if (!Hive.isAdapterRegistered(0)) Hive.registerAdapter(ContactAdapter());
   if (!Hive.isAdapterRegistered(1)) Hive.registerAdapter(MessageAdapter());
@@ -101,6 +100,10 @@ Future<void> ghostRoomBackgroundHandler(RemoteMessage message) async {
     ],
   );
 
+  // Initialize notification service for the background isolate
+  final notifService = tempContainer.read(notificationServiceProvider);
+  await notifService.init();
+
   final chatRepo = tempContainer.read(chatRepositoryProvider);
   await chatRepo.init();
 
@@ -138,8 +141,14 @@ Future<void> ghostRoomBackgroundHandler(RemoteMessage message) async {
 void main() async {
   runZonedGuarded(() async {
     WidgetsFlutterBinding.ensureInitialized();
-    await Firebase.initializeApp();
-    FirebaseMessaging.onBackgroundMessage(ghostRoomBackgroundHandler);
+    if (Platform.isAndroid || Platform.isIOS) {
+      try {
+        await Firebase.initializeApp();
+        FirebaseMessaging.onBackgroundMessage(ghostRoomBackgroundHandler);
+      } catch (e) {
+        debugPrint('GHOST_LOG: Firebase initialization failed: $e');
+      }
+    }
     
     // Memory discipline: limit image cache size to prevent unbounded RAM growth
     PaintingBinding.instance.imageCache.maximumSize = 20;
@@ -163,7 +172,9 @@ void main() async {
     };
 
     final sodium = await SodiumSumoInit.init();
-    await Hive.initFlutter();
+    await StorageDirectoryHelper.migrateIfNeeded();
+    final hiveDir = await StorageDirectoryHelper.getHiveDirectory();
+    Hive.init(hiveDir.path);
     
     late final ProviderContainer container;
     container = ProviderContainer(
@@ -300,64 +311,6 @@ class _GhostAppState extends ConsumerState<GhostApp> with WidgetsBindingObserver
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _initDeepLinks();
-
-    Future.microtask(() {
-      final notifService = ref.read(notificationServiceProvider);
-      notifService.onNotificationTap = (payload) {
-        if (payload == null) return;
-
-        if (payload == 'requests') {
-          navigatorKey.currentState?.popUntil((route) => route.isFirst);
-          navigatorKey.currentState?.push(MaterialPageRoute(
-            builder: (_) => const RequestsScreen(),
-          ));
-        } else {
-          final convService = ref.read(conversationServiceProvider);
-          final convs = convService.getConversations();
-          var targetConv = convs.where((c) => c.contactId == payload).firstOrNull;
-
-          if (targetConv == null) {
-            final contactService = ref.read(contactServiceProvider);
-            final contact = contactService.getContact(payload);
-            targetConv = Conversation(
-              contact: contact,
-              contactId: payload,
-              alias: contact?.alias ?? 'Secure Contact',
-              messages: [],
-              lastActivityAt: DateTime.now(),
-            );
-          }
-
-          navigatorKey.currentState?.popUntil((route) => route.isFirst);
-          navigatorKey.currentState?.push(MaterialPageRoute(
-            builder: (_) => ConversationScreen(conversation: targetConv!),
-          ));
-        }
-      };
-
-      // Token registration & refresh
-      FirebaseMessaging.instance.requestPermission().then((settings) {
-        debugPrint('GHOST_LOG: FCM Permission status: ${settings.authorizationStatus}');
-        FirebaseMessaging.instance.getToken().then((token) {
-          if (token != null) {
-            debugPrint('GHOST_LOG: Initial FCM Token: $token');
-            ref.read(chatRepositoryProvider).registerDeviceToken(token);
-          }
-        });
-      });
-
-      FirebaseMessaging.instance.onTokenRefresh.listen((token) {
-        debugPrint('GHOST_LOG: FCM Token refreshed: $token');
-        ref.read(chatRepositoryProvider).registerDeviceToken(token);
-      });
-
-      FirebaseMessaging.onMessage.listen((message) {
-        debugPrint('GHOST_LOG: Foreground FCM message received: ${message.data}');
-        if (message.data['event'] == 'sync_required') {
-          ref.read(chatRepositoryProvider).sync();
-        }
-      });
-    });
   }
 
   @override
@@ -460,8 +413,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
     final idService = ref.read(identityServiceProvider);
     if (!idService.hasIdentity) {
       // Check if we should have had an identity
-      final dir = await getApplicationDocumentsDirectory();
-      final flagFile = File('${dir.path}/identity_exists.flag');
+      final flagFile = await StorageDirectoryHelper.getIdentityFlagFile();
       if (await flagFile.exists()) {
         if (mounted) {
           _showIdentityMissingDialog();

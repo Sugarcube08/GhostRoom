@@ -9,6 +9,13 @@ import '../../design_system/colors.dart';
 import '../../design_system/components/components.dart';
 import '../providers.dart';
 import '../network/update_service.dart';
+import '../../features/chat/conversation_screen.dart';
+import '../../features/chat/requests_screen.dart';
+import '../../features/chat/conversation_service.dart';
+import '../../main.dart' show navigatorKey;
+import 'package:firebase_messaging/firebase_messaging.dart';
+import 'dart:async';
+import 'dart:io';
 
 class NavigationShell extends ConsumerStatefulWidget {
   const NavigationShell({super.key});
@@ -19,12 +26,95 @@ class NavigationShell extends ConsumerStatefulWidget {
 
 class _NavigationShellState extends ConsumerState<NavigationShell> {
   int _currentIndex = 0;
+  StreamSubscription<String>? _tokenRefreshSubscription;
+  StreamSubscription<RemoteMessage>? _onMessageSubscription;
+  Timer? _updateTimer;
 
   @override
   void initState() {
     super.initState();
     // Check for updates on a slight delay to not block initial render
-    Future.delayed(const Duration(seconds: 2), _checkForUpdates);
+    _updateTimer = Timer(const Duration(seconds: 2), _checkForUpdates);
+    
+    // Initialize FCM and notifications
+    _initFcmAndNotifications();
+  }
+
+  @override
+  void dispose() {
+    _updateTimer?.cancel();
+    _tokenRefreshSubscription?.cancel();
+    _onMessageSubscription?.cancel();
+    super.dispose();
+  }
+
+  void _initFcmAndNotifications() {
+    if (!Platform.isAndroid && !Platform.isIOS) {
+      debugPrint('GHOST_LOG: Skipping FCM registration on non-mobile platform.');
+      return;
+    }
+
+    final notifService = ref.read(notificationServiceProvider);
+    notifService.init().then((_) {
+      debugPrint('GHOST_LOG: NotificationService initialized in NavigationShell.');
+    }).catchError((e) {
+      debugPrint('GHOST_LOG: NotificationService initialization failed: $e');
+    });
+
+    notifService.onNotificationTap = (payload) {
+      if (payload == null) return;
+
+      if (payload == 'requests') {
+        navigatorKey.currentState?.popUntil((route) => route.isFirst);
+        navigatorKey.currentState?.push(MaterialPageRoute(
+          builder: (_) => const RequestsScreen(),
+        ));
+      } else {
+        final convService = ref.read(conversationServiceProvider);
+        final convs = convService.getConversations();
+        var targetConv = convs.where((c) => c.contactId == payload).firstOrNull;
+
+        if (targetConv == null) {
+          final contactService = ref.read(contactServiceProvider);
+          final contact = contactService.getContact(payload);
+          targetConv = Conversation(
+            contact: contact,
+            contactId: payload,
+            alias: contact?.alias ?? 'Secure Contact',
+            messages: [],
+            lastActivityAt: DateTime.now(),
+          );
+        }
+
+        navigatorKey.currentState?.popUntil((route) => route.isFirst);
+        navigatorKey.currentState?.push(MaterialPageRoute(
+          builder: (_) => ConversationScreen(conversation: targetConv!),
+        ));
+      }
+    };
+
+    // Token registration & refresh
+    FirebaseMessaging.instance.requestPermission().then((settings) {
+      debugPrint('GHOST_LOG: FCM Permission status: ${settings.authorizationStatus}');
+      FirebaseMessaging.instance.getToken().then((token) {
+        if (token != null) {
+          debugPrint('GHOST_LOG: Initial FCM Token: $token');
+          ref.read(chatRepositoryProvider).registerDeviceToken(token);
+        }
+      });
+    });
+
+    _tokenRefreshSubscription = FirebaseMessaging.instance.onTokenRefresh.listen((token) {
+      debugPrint('GHOST_LOG: FCM Token refreshed: $token');
+      ref.read(chatRepositoryProvider).registerDeviceToken(token);
+    });
+
+    _onMessageSubscription = FirebaseMessaging.onMessage.listen((message) {
+      debugPrint('GHOST_LOG: Foreground FCM message received: ${message.data}');
+      if (message.data['event'] == 'sync_required') {
+        ref.read(chatRepositoryProvider).sync();
+      }
+    });
   }
 
   void _checkForUpdates() async {
