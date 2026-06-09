@@ -4,6 +4,7 @@ import { ConfigService } from "@nestjs/config";
 import { getRepositoryToken } from "@nestjs/typeorm";
 import { MessageEntity } from "./entities/message.entity";
 import { DeliveryEntity } from "./entities/delivery.entity";
+import { DeviceEntity } from "./entities/device.entity";
 import { MediaService } from "../media/media.service";
 import { describe, expect, it, jest, beforeEach } from "@jest/globals";
 
@@ -74,6 +75,13 @@ describe("InboxService", () => {
         {
           provide: getRepositoryToken(DeliveryEntity),
           useValue: mockDeliveryRepo,
+        },
+        {
+          provide: getRepositoryToken(DeviceEntity),
+          useValue: {
+            findOne: (jest.fn() as any).mockResolvedValue(null),
+            save: (jest.fn() as any).mockResolvedValue({}),
+          },
         },
         {
           provide: MediaService,

@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "916720922787",
+    "project_id": "ghostroom-fcm",
+    "storage_bucket": "ghostroom-fcm.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:916720922787:android:dcfee79780705fffb7cf16",
+        "android_client_info": {
+          "package_name": "com.ghostroom.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCuJsud07Irx6Ao07GKTmbgKHz5HikEhes"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

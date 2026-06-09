@@ -20,12 +20,126 @@ import 'dart:convert';
 import 'core/crypto/identity_service.dart';
 import 'features/contacts/contact_actions.dart';
 
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'features/contacts/contact.dart';
+import 'features/chat/message.dart';
+import 'features/chat/conversation_state.dart';
+import 'features/chat/conversation_service.dart';
+import 'core/network/relay_manager.dart';
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
+
+@pragma('vm:entry-point')
+Future<void> ghostRoomBackgroundHandler(RemoteMessage message) async {
+  debugPrint('GHOST_LOG: Background FCM received: ${message.data}');
+  if (message.data['event'] != 'sync_required') {
+    debugPrint('GHOST_LOG: Ignored non-sync background event');
+    return;
+  }
+
+  WidgetsFlutterBinding.ensureInitialized();
+  try {
+    await Firebase.initializeApp();
+  } catch (e) {
+    debugPrint('GHOST_LOG: Firebase.initializeApp() failed or already initialized: $e');
+  }
+
+  final sodium = await SodiumSumoInit.init();
+  await Hive.initFlutter();
+
+  if (!Hive.isAdapterRegistered(0)) Hive.registerAdapter(ContactAdapter());
+  if (!Hive.isAdapterRegistered(1)) Hive.registerAdapter(MessageAdapter());
+  if (!Hive.isAdapterRegistered(2)) Hive.registerAdapter(MessageTypeAdapter());
+  if (!Hive.isAdapterRegistered(3)) Hive.registerAdapter(ConversationModeAdapter());
+  if (!Hive.isAdapterRegistered(4)) Hive.registerAdapter(ConversationStateAdapter());
+
+  final storage = const FlutterSecureStorage(aOptions: AndroidOptions(resetOnError: true));
+  String? existingKey = await storage.read(key: 'hive_encryption_key');
+  if (existingKey == null) {
+    debugPrint('GHOST_LOG: Background sync aborted: No encryption key found.');
+    return;
+  }
+  final encryptionKey = base64.decode(existingKey);
+
+  // Open Hive boxes
+  await Future.wait([
+    Hive.openBox<Message>('messages'),
+    Hive.openBox<ConversationState>('conversation_states'),
+    Hive.openBox('sync_metadata'),
+    Hive.openBox('processed_envelopes'),
+    Hive.openBox<Contact>('contacts', encryptionCipher: HiveAesCipher(encryptionKey)),
+    Hive.openBox<String>('blocked_identities'),
+    Hive.openBox<Map>('offline_send_queue'),
+    Hive.openBox<bool>('pending_deletions'),
+    Hive.openBox<Uint8List>('thumbnail_cache'),
+    Hive.openBox<dynamic>('media_cache_index'),
+  ]);
+
+  final idService = IdentityService(sodium, storage);
+  await idService.initIdentity();
+  if (!idService.hasIdentity) {
+    debugPrint('GHOST_LOG: Background sync aborted: No identity found.');
+    return;
+  }
+
+  final relayManager = RelayManager(storage);
+  final relay = await relayManager.getActiveRelay();
+  if (relay == null) {
+    debugPrint('GHOST_LOG: Background sync aborted: No active relay.');
+    return;
+  }
+
+  final completer = Completer<void>();
+  final tempContainer = ProviderContainer(
+    overrides: [
+      sodiumProvider.overrideWithValue(sodium),
+      secureStorageProvider.overrideWithValue(storage),
+      identityServiceProvider.overrideWithValue(idService),
+      relayManagerProvider.overrideWithValue(relayManager),
+    ],
+  );
+
+  final chatRepo = tempContainer.read(chatRepositoryProvider);
+  await chatRepo.init();
+
+  final wsService = tempContainer.read(webSocketServiceProvider);
+
+  wsService.onInboxMessages((messages) async {
+    debugPrint('GHOST_LOG: Background sync received messages: ${messages.length}');
+    if (messages.isNotEmpty) {
+      await chatRepo.processEnvelopes(messages);
+    }
+    if (!completer.isCompleted) {
+      completer.complete();
+    }
+  });
+
+  // Connect & Wait for challenge and identity verification
+  await relayManager.wakeUpRelay(relay);
+  wsService.connect(relay);
+
+  // Complete after 8 seconds timeout as safety
+  Future.delayed(const Duration(seconds: 8), () {
+    if (!completer.isCompleted) {
+      debugPrint('GHOST_LOG: Background sync timed out.');
+      completer.complete();
+    }
+  });
+
+  await completer.future;
+
+  wsService.disconnect();
+  tempContainer.dispose();
+  debugPrint('GHOST_LOG: Background sync handler finished.');
+}
 
 void main() async {
   runZonedGuarded(() async {
     WidgetsFlutterBinding.ensureInitialized();
+    await Firebase.initializeApp();
+    FirebaseMessaging.onBackgroundMessage(ghostRoomBackgroundHandler);
     
     // Memory discipline: limit image cache size to prevent unbounded RAM growth
     PaintingBinding.instance.imageCache.maximumSize = 20;
@@ -200,16 +314,49 @@ class _GhostAppState extends ConsumerState<GhostApp> with WidgetsBindingObserver
         } else {
           final convService = ref.read(conversationServiceProvider);
           final convs = convService.getConversations();
-          final targetConv = convs.where((c) => c.contactId == payload).firstOrNull;
+          var targetConv = convs.where((c) => c.contactId == payload).firstOrNull;
 
-          if (targetConv != null) {
-            navigatorKey.currentState?.popUntil((route) => route.isFirst);
-            navigatorKey.currentState?.push(MaterialPageRoute(
-              builder: (_) => ConversationScreen(conversation: targetConv),
-            ));
+          if (targetConv == null) {
+            final contactService = ref.read(contactServiceProvider);
+            final contact = contactService.getContact(payload);
+            targetConv = Conversation(
+              contact: contact,
+              contactId: payload,
+              alias: contact?.alias ?? 'Secure Contact',
+              messages: [],
+              lastActivityAt: DateTime.now(),
+            );
           }
+
+          navigatorKey.currentState?.popUntil((route) => route.isFirst);
+          navigatorKey.currentState?.push(MaterialPageRoute(
+            builder: (_) => ConversationScreen(conversation: targetConv!),
+          ));
         }
       };
+
+      // Token registration & refresh
+      FirebaseMessaging.instance.requestPermission().then((settings) {
+        debugPrint('GHOST_LOG: FCM Permission status: ${settings.authorizationStatus}');
+        FirebaseMessaging.instance.getToken().then((token) {
+          if (token != null) {
+            debugPrint('GHOST_LOG: Initial FCM Token: $token');
+            ref.read(chatRepositoryProvider).registerDeviceToken(token);
+          }
+        });
+      });
+
+      FirebaseMessaging.instance.onTokenRefresh.listen((token) {
+        debugPrint('GHOST_LOG: FCM Token refreshed: $token');
+        ref.read(chatRepositoryProvider).registerDeviceToken(token);
+      });
+
+      FirebaseMessaging.onMessage.listen((message) {
+        debugPrint('GHOST_LOG: Foreground FCM message received: ${message.data}');
+        if (message.data['event'] == 'sync_required') {
+          ref.read(chatRepositoryProvider).sync();
+        }
+      });
     });
   }
 

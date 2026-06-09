@@ -122,6 +122,7 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
     level: kReleaseMode ? Level.warning : Level.info,
   );
   int _lastMessageCount = 0;
+  int _newMessagesCount = 0;
   int _buildCount = 0;
 
   @override
@@ -143,7 +144,10 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
     
     final atBottom = _scrollController.position.pixels >= _scrollController.position.maxScrollExtent - 200;
     if (atBottom && _showScrollButton) {
-      setState(() => _showScrollButton = false);
+      setState(() {
+        _showScrollButton = false;
+        _newMessagesCount = 0;
+      });
     }
   }
 
@@ -193,16 +197,29 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
             final atBottom = pos.pixels >= pos.maxScrollExtent - 200;
 
             final hasNewMessage = messages.length > _lastMessageCount;
-            _lastMessageCount = messages.length;
 
             if (_isInitialScroll) {
               _isInitialScroll = false;
+              _lastMessageCount = messages.length;
               _scrollController.jumpTo(pos.maxScrollExtent);
-            } else if (hasNewMessage && (isMe || atBottom)) {
-              _scrollController.animateTo(pos.maxScrollExtent, duration: const Duration(milliseconds: 300), curve: Curves.easeOut);
-              if (_showScrollButton) setState(() => _showScrollButton = false);
-            } else if (!isMe && !atBottom && !_showScrollButton) {
-              setState(() => _showScrollButton = true);
+            } else if (hasNewMessage) {
+              final newCount = messages.length - _lastMessageCount;
+              _lastMessageCount = messages.length;
+
+              if (isMe || atBottom) {
+                _scrollController.animateTo(pos.maxScrollExtent, duration: const Duration(milliseconds: 300), curve: Curves.easeOut);
+                if (_showScrollButton) {
+                  setState(() {
+                    _showScrollButton = false;
+                    _newMessagesCount = 0;
+                  });
+                }
+              } else if (!isMe) {
+                setState(() {
+                  _newMessagesCount += newCount;
+                  _showScrollButton = true;
+                });
+              }
             }
           }
         });
@@ -243,11 +260,17 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
               ),
               floatingActionButton: _showScrollButton ? FloatingActionButton.extended(
                 backgroundColor: colors.ghostAccent,
-                label: const Text('NEW MESSAGES', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
+                label: Text(
+                  _newMessagesCount > 0 ? '↓ $_newMessagesCount New Messages' : 'NEW MESSAGES',
+                  style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold)
+                ),
                 icon: const Icon(Icons.arrow_downward, size: 16),
                 onPressed: () {
                   _scrollController.animateTo(_scrollController.position.maxScrollExtent, duration: const Duration(milliseconds: 300), curve: Curves.easeOut);
-                  setState(() => _showScrollButton = false);
+                  setState(() {
+                    _showScrollButton = false;
+                    _newMessagesCount = 0;
+                  });
                 },
               ) : null,
               floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,

@@ -2,6 +2,8 @@ import 'package:hive_flutter/hive_flutter.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:sodium/sodium_sumo.dart' hide Box;
+import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'message.dart';
@@ -44,6 +46,7 @@ class ChatRepository with WidgetsBindingObserver {
   RelayManager get _relayManager => _relayManagerField ?? _ref!.read(relayManagerProvider);
 
   String? _activeConversationId;
+  AppLifecycleState _lifecycleState = AppLifecycleState.resumed;
   String? _hiveDbPath;
   final Logger _logger = Logger(
     level: kReleaseMode ? Level.warning : Level.info,
@@ -97,9 +100,23 @@ class ChatRepository with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    _lifecycleState = state;
     if (state == AppLifecycleState.resumed) {
-      _logger.i('GHOST_LOG: App resumed. Triggering proactive inbox sync.');
-      if (_wsService.isConnected && _wsService.isAuthenticated) {
+      _logger.i('GHOST_LOG: App resumed. Triggering sync.');
+      sync();
+    }
+  }
+
+  Future<void> sync() async {
+    _logger.i('GHOST_LOG: Sync requested.');
+    final relay = await _relayManager.getActiveRelay();
+    if (relay != null) {
+      await _relayManager.wakeUpRelay(relay);
+      if (!_wsService.isConnected) {
+        _wsService.connect(relay);
+      } else if (!_wsService.isAuthenticated) {
+        _wsService.connect(relay);
+      } else {
         _wsService.fetchInbox(since: lastSyncTimestamp);
       }
     }
@@ -197,9 +214,52 @@ class ChatRepository with WidgetsBindingObserver {
     _logger.i('GHOST_LOG: Identity verified. Triggering inbox sync...');
     _wsService.fetchInbox(since: lastSyncTimestamp);
 
+    // Register FCM token
+    FirebaseMessaging.instance.getToken().then((token) {
+      if (token != null) {
+        registerDeviceToken(token);
+      }
+    });
+
     // Process offline queue on reconnect
     unawaited(processOfflineQueue());
     unawaited(syncPendingDeletions());
+  }
+
+  Future<void> registerDeviceToken(String fcmToken) async {
+    final identity = _idService.currentIdentity;
+    if (identity == null) {
+      _logger.i('GHOST_LOG: Identity not initialized. Postponing token registration.');
+      return;
+    }
+    final relay = await _relayManager.getActiveRelay();
+    if (relay == null) {
+      _logger.w('GHOST_LOG: Active relay not found. Postponing token registration.');
+      return;
+    }
+
+    final String platform = kIsWeb ? 'web' : (Platform.isIOS ? 'ios' : 'android');
+    final url = '${relay.apiUrl}/device/register';
+    _logger.i('GHOST_LOG: Registering device token at $url');
+    
+    try {
+      final response = await http.post(
+        Uri.parse(url),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'identityId': identity.publicId,
+          'platform': platform,
+          'fcmToken': fcmToken,
+        }),
+      );
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        _logger.i('GHOST_LOG: Device token successfully registered on relay.');
+      } else {
+        _logger.w('GHOST_LOG: Device token registration failed with status ${response.statusCode}');
+      }
+    } catch (e) {
+      _logger.e('GHOST_LOG: Error registering device token: $e');
+    }
   }
 
   void _handleNewMessage(dynamic data) {
@@ -429,7 +489,13 @@ class ChatRepository with WidgetsBindingObserver {
 
         // UPDATE CONVERSATION STATE & UNREAD COUNT
         var state = _stateBox?.get(senderId);
-        final isCurrentlyActive = senderId == _activeConversationId;
+        final isCurrentlyActive = senderId == _activeConversationId && _lifecycleState == AppLifecycleState.resumed;
+
+        if (isCurrentlyActive) {
+          message.isRead = true;
+          _wsService.sendSeen(message.id);
+        }
+
         if (state != null) {
           // Check for 18-hour inactivity reset
           final inactivity = DateTime.now().difference(state.lastActivityAt);
@@ -460,19 +526,21 @@ class ChatRepository with WidgetsBindingObserver {
         await _msgBox?.put(message.id, message);
         
         // TRIGGER NOTIFICATION
-        if (isRequest) {
-          _notificationService.showNotification(
-            title: 'GhostRoom',
-            body: 'New secure message request',
-            payload: 'requests',
-          );
-        } else {
-          final alias = _contactService.getContact(senderId)?.alias ?? 'Contact';
-          _notificationService.showNotification(
-            title: 'GhostRoom',
-            body: 'You received a message from $alias',
-            payload: senderId,
-          );
+        if (!isCurrentlyActive) {
+          if (isRequest) {
+            _notificationService.showNotification(
+              title: 'GhostRoom',
+              body: 'New secure message request',
+              payload: 'requests',
+            );
+          } else {
+            final alias = _contactService.getContact(senderId)?.alias ?? 'Contact';
+            _notificationService.showNotification(
+              title: 'GhostRoom',
+              body: 'You received a message from $alias',
+              payload: senderId,
+            );
+          }
         }
 
         _logger.i("MESSAGE_SAVED_LOCAL");

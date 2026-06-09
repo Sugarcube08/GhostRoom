@@ -68,6 +68,8 @@ dependencies:
   audioplayers: ^6.7.0
   package_info_plus: ^10.1.0
   url_launcher: ^6.3.2
+  firebase_core:
+  firebase_messaging:
 
 
 dev_dependencies:

@@ -76,7 +76,7 @@ class ConversationListItem extends StatelessWidget {
                     if (hasUnread) ...[
                       const SizedBox(width: AppSpacing.s),
                       GhostBadge(
-                        label: conversation.unreadCount.toString(),
+                        label: conversation.unreadCount > 9 ? '9+' : conversation.unreadCount.toString(),
                         color: colors.ghostAccent,
                         textColor: Colors.white,
                       ),

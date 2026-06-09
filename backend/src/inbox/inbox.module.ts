@@ -4,11 +4,12 @@ import { InboxService } from "./inbox.service";
 import { CryptoUtils } from "./crypto-utils.service";
 import { MessageEntity } from "./entities/message.entity";
 import { DeliveryEntity } from "./entities/delivery.entity";
+import { DeviceEntity } from "./entities/device.entity";
 import { MediaModule } from "../media/media.module";
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([MessageEntity, DeliveryEntity]),
+    TypeOrmModule.forFeature([MessageEntity, DeliveryEntity, DeviceEntity]),
     MediaModule,
   ],
   providers: [InboxService, CryptoUtils],

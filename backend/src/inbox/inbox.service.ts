@@ -7,6 +7,7 @@ import Redis from "ioredis";
 import { v4 as uuidv4 } from "uuid";
 import { MessageEntity } from "./entities/message.entity";
 import { DeliveryEntity } from "./entities/delivery.entity";
+import { DeviceEntity } from "./entities/device.entity";
 import { MediaService } from "../media/media.service";
 
 export interface MessageEnvelope {
@@ -35,6 +36,8 @@ export class InboxService {
     private readonly messageRepo: Repository<MessageEntity>,
     @InjectRepository(DeliveryEntity)
     private readonly deliveryRepo: Repository<DeliveryEntity>,
+    @InjectRepository(DeviceEntity)
+    private readonly deviceRepo: Repository<DeviceEntity>,
     private readonly mediaService: MediaService,
   ) {
     this.INBOX_MAX_MESSAGES = parseInt(
@@ -183,6 +186,20 @@ export class InboxService {
     pipeline.zremrangebyrank(inboxKey, 0, -(this.INBOX_MAX_MESSAGES + 1));
     pipeline.expire(inboxKey, this.INBOX_TTL);
     await pipeline.exec();
+
+    // Lookup recipient FCM Token and send FCM wake-up
+    try {
+      const device = await this.deviceRepo.findOne({
+        where: { identity_id: publicId },
+      });
+      if (device && device.fcm_token) {
+        await this.sendFcmWakeup(device.fcm_token);
+      }
+    } catch (fcmErr: any) {
+      this.logger.error(
+        `Failed to lookup FCM token or send wake-up for recipient ${publicId}: ${fcmErr.message}`,
+      );
+    }
 
     return envelope;
   }
@@ -405,6 +422,57 @@ export class InboxService {
       }
     } catch (e: any) {
       this.logger.error(`Failed to delete messages: ${e?.message}`);
+    }
+  }
+
+  async registerDevice(
+    identityId: string,
+    platform: string,
+    fcmToken: string,
+  ): Promise<void> {
+    await this.deviceRepo.save({
+      identity_id: identityId,
+      platform,
+      fcm_token: fcmToken,
+      updated_at: new Date(),
+    });
+    this.logger.log(`Device registered: ${identityId} (${platform})`);
+  }
+
+  async sendFcmWakeup(fcmToken: string): Promise<void> {
+    const projectId =
+      this.configService.get<string>("FIREBASE_PROJECT_ID") || "ghostroom-fcm";
+    const url = `https://fcm.googleapis.com/v1/projects/${projectId}/messages:send`;
+    this.logger.log(`Sending FCM Wake-Up to token: ${fcmToken}`);
+    try {
+      const payload = {
+        message: {
+          token: fcmToken,
+          data: {
+            event: "sync_required",
+          },
+        },
+      };
+
+      const response = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${this.configService.get<string>("FCM_SERVER_KEY") || ""}`,
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        const errText = await response.text();
+        this.logger.warn(
+          `FCM delivery failed: status ${response.status}, body ${errText}`,
+        );
+      } else {
+        this.logger.log(`FCM Wake-Up successfully sent.`);
+      }
+    } catch (err: any) {
+      this.logger.error(`FCM Wake-Up call failed: ${err.message}`);
     }
   }
 }

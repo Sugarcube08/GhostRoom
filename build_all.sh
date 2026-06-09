@@ -9,17 +9,35 @@ PROJECT_ROOT=$(pwd)
 DIST_DIR="$PROJECT_ROOT/dist"
 OS=$(uname -s)
 
-echo "🚀 Starting local build for GhostRoom on $OS..."
+# Read version dynamically
+VERSION=$(grep '"version"' "$PROJECT_ROOT/VERSION.json" | head -n 1 | awk -F '"' '{print $4}')
+if [ -z "$VERSION" ]; then
+    VERSION=$(grep "^version:" "$PROJECT_ROOT/client/pubspec.yaml" | cut -d' ' -f2 | cut -d'+' -f1)
+fi
+DEB_VERSION="${VERSION//+/-}"
+if [ -z "$DEB_VERSION" ]; then
+    DEB_VERSION="1.0.0"
+fi
+
+echo "🚀 Starting local build for GhostRoom v$VERSION on $OS..."
 
 # 1. Install System Dependencies (Linux only)
 if [ "$OS" = "Linux" ]; then
-    echo "📦 Installing Linux system dependencies..."
-    sudo apt-get update
-    sudo apt-get install -y \
-        clang cmake ninja-build pkg-config \
-        libgtk-3-dev liblzma-dev libstdc++-14-dev \
-        libglu1-mesa-dev libsecret-1-dev libjsoncpp-dev \
-        zip tar alien
+    echo "📦 Checking Linux system dependencies..."
+    MISSING_DEPS=()
+    for pkg in clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev libglu1-mesa-dev libsecret-1-dev libjsoncpp-dev zip tar alien; do
+        if ! dpkg -s "$pkg" >/dev/null 2>&1; then
+            MISSING_DEPS+=("$pkg")
+        fi
+    done
+
+    if [ ${#MISSING_DEPS[@]} -gt 0 ]; then
+        echo "📦 Installing missing system dependencies: ${MISSING_DEPS[*]}..."
+        sudo apt-get update
+        sudo apt-get install -y "${MISSING_DEPS[@]}"
+    else
+        echo "✅ All system dependencies are already installed."
+    fi
 fi
 
 # 2. Get Flutter Dependencies
@@ -69,14 +87,14 @@ if [ "$OS" = "Linux" ]; then
 
     echo "📦 Packaging Linux (.deb)..."
     if command -v dpkg-deb &> /dev/null; then
-        DEB_DIR="build/linux/deb/ghostroom_2.0.0-1_amd64"
+        DEB_DIR="build/linux/deb/ghostroom_${DEB_VERSION}_amd64"
         mkdir -p "$DEB_DIR/DEBIAN" "$DEB_DIR/usr/bin" "$DEB_DIR/opt/ghostroom" "$DEB_DIR/usr/share/applications" "$DEB_DIR/usr/share/icons/hicolor/512x512/apps"
         cp -r build/linux/x64/release/bundle/* "$DEB_DIR/opt/ghostroom/"
         ln -sf /opt/ghostroom/ghostroom "$DEB_DIR/usr/bin/ghostroom"
         
         cat <<CTRL > "$DEB_DIR/DEBIAN/control"
 Package: ghostroom
-Version: 2.0.0-1
+Version: ${DEB_VERSION}
 Section: utils
 Priority: optional
 Architecture: amd64
@@ -87,7 +105,7 @@ CTRL
 
         cat <<DESK > "$DEB_DIR/usr/share/applications/ghostroom.desktop"
 [Desktop Entry]
-Version=2.0.0
+Version=1.0
 Name=GhostRoom
 GenericName=GhostRoom
 Comment=Privacy-First Ephemeral Communication
@@ -140,8 +158,10 @@ APP
     # We use --appimage-extract-and-run because many FUSE environments (like Docker/WSL) 
     # don't support mounting AppImages directly
     ARCH=x86_64 "$APPIMAGE_TOOL" --appimage-extract-and-run "$APPDIR" "$DIST_DIR/ghostroom-linux.AppImage" > /dev/null 2>&1 || \
-    ARCH=x86_64 "$APPIMAGE_TOOL" "$APPDIR" "$DIST_DIR/ghostroom-linux.AppImage" > /dev/null 2>&1 || \
-    echo "⚠️ AppImage creation failed"
+    ARCH=x86_64 "$APPIMAGE_TOOL" "$APPDIR" "$DIST_DIR/ghostroom-linux.AppImage" > /dev/null 2>&1 || {
+        echo "⚠️ AppImage creation failed. Retrying without output suppression to show errors:"
+        ARCH=x86_64 "$APPIMAGE_TOOL" --appimage-extract-and-run "$APPDIR" "$DIST_DIR/ghostroom-linux.AppImage"
+    }
     
     if [ -f "$DIST_DIR/ghostroom-linux.AppImage" ]; then
         echo "✅ AppImage created."
