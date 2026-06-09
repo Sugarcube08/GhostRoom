@@ -1,5 +1,5 @@
 {
-  "version": "2.0.1",
+  "version": "2.0.2",
   "release_url": "https://github.com/Sugarcube08/GhostRoom/releases",
-  "changelog": "GhostRoom V2.0.1: Critical fix for offline message delivery and background resume sync."
+  "changelog": "GhostRoom V2.0.2: Implemented Storage Isolation, data migration, and robust FCM background wakeups."
 }

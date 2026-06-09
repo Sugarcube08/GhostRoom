@@ -2,7 +2,7 @@
 
 **Private messaging without accounts, phone numbers, or email addresses.**
 
-GhostRoom V2.0.1 is a premium, identity-based communication network designed for absolute privacy and long-term durability. It combines a sovereign identity system with a durable encrypted mailbox network.
+GhostRoom V2.0.2 is a premium, identity-based communication network designed for absolute privacy and long-term durability. It combines a sovereign identity system with a durable encrypted mailbox network.
 
 ---
 
