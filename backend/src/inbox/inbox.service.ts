@@ -188,12 +188,18 @@ export class InboxService {
     await pipeline.exec();
 
     // Lookup recipient FCM Token and send FCM wake-up
+    this.logger.log(`MESSAGE_RECEIVED recipient_identity=${publicId}`);
     try {
       const device = await this.deviceRepo.findOne({
         where: { identity_id: publicId },
       });
-      if (device && device.fcm_token) {
-        await this.sendFcmWakeup(device.fcm_token);
+      if (device) {
+        this.logger.log(`DEVICE_LOOKUP found_token=${!!device.fcm_token} identity_id=${publicId}`);
+        if (device.fcm_token) {
+          await this.sendFcmWakeup(device.fcm_token);
+        }
+      } else {
+        this.logger.log(`DEVICE_LOOKUP found_token=false identity_id=${publicId}`);
       }
     } catch (fcmErr: any) {
       this.logger.error(
@@ -443,7 +449,7 @@ export class InboxService {
     const projectId =
       this.configService.get<string>("FIREBASE_PROJECT_ID") || "ghostroom-fcm";
     const url = `https://fcm.googleapis.com/v1/projects/${projectId}/messages:send`;
-    this.logger.log(`Sending FCM Wake-Up to token: ${fcmToken}`);
+    this.logger.log(`FCM_SEND_START token=${fcmToken}`);
     try {
       const payload = {
         message: {
@@ -479,8 +485,8 @@ export class InboxService {
 
       if (!response.ok) {
         const errText = await response.text();
-        this.logger.warn(
-          `FCM delivery failed: status ${response.status}, body ${errText}`,
+        this.logger.error(
+          `FCM_RESPONSE success=false error="${errText}" status=${response.status}`,
         );
         if (
           response.status === 404 ||
@@ -492,10 +498,11 @@ export class InboxService {
           await this.deviceRepo.delete({ fcm_token: fcmToken });
         }
       } else {
-        this.logger.log(`FCM Wake-Up successfully sent.`);
+        const resJson = await response.json();
+        this.logger.log(`FCM_RESPONSE success=true message_id=${resJson.name || "unknown"}`);
       }
     } catch (err: any) {
-      this.logger.error(`FCM Wake-Up call failed: ${err.message}`);
+      this.logger.error(`FCM_RESPONSE success=false error="${err.message}"`);
     }
   }
 }

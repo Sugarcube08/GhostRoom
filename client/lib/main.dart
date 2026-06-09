@@ -30,6 +30,12 @@ final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
 @pragma('vm:entry-point')
 Future<void> ghostRoomBackgroundHandler(RemoteMessage message) async {
+  // ignore: avoid_print
+  print("BACKGROUND_HANDLER_STARTED");
+  // ignore: avoid_print
+  print("FCM_BACKGROUND_HANDLER_ENTERED");
+  // ignore: avoid_print
+  print("FCM_MESSAGE_DATA=${message.data}");
   debugPrint('GHOST_LOG: Background FCM received: ${message.data}');
   if (message.data['event'] != 'sync_required') {
     debugPrint('GHOST_LOG: Ignored non-sync background event');

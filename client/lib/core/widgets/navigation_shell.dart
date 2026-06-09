@@ -28,6 +28,7 @@ class _NavigationShellState extends ConsumerState<NavigationShell> {
   int _currentIndex = 0;
   StreamSubscription<String>? _tokenRefreshSubscription;
   StreamSubscription<RemoteMessage>? _onMessageSubscription;
+  StreamSubscription<RemoteMessage>? _onMessageOpenedAppSubscription;
   Timer? _updateTimer;
 
   @override
@@ -45,6 +46,7 @@ class _NavigationShellState extends ConsumerState<NavigationShell> {
     _updateTimer?.cancel();
     _tokenRefreshSubscription?.cancel();
     _onMessageSubscription?.cancel();
+    _onMessageOpenedAppSubscription?.cancel();
     super.dispose();
   }
 
@@ -98,6 +100,8 @@ class _NavigationShellState extends ConsumerState<NavigationShell> {
       debugPrint('GHOST_LOG: FCM Permission status: ${settings.authorizationStatus}');
       FirebaseMessaging.instance.getToken().then((token) {
         if (token != null) {
+          // ignore: avoid_print
+          print('FCM_TOKEN_GENERATED token=$token');
           debugPrint('GHOST_LOG: Initial FCM Token: $token');
           ref.read(chatRepositoryProvider).registerDeviceToken(token);
         }
@@ -105,15 +109,26 @@ class _NavigationShellState extends ConsumerState<NavigationShell> {
     });
 
     _tokenRefreshSubscription = FirebaseMessaging.instance.onTokenRefresh.listen((token) {
+      // ignore: avoid_print
+      print('FCM_TOKEN_GENERATED token=$token');
       debugPrint('GHOST_LOG: FCM Token refreshed: $token');
       ref.read(chatRepositoryProvider).registerDeviceToken(token);
     });
 
     _onMessageSubscription = FirebaseMessaging.onMessage.listen((message) {
+      // ignore: avoid_print
+      print('FCM_FOREGROUND_RECEIVED data=${message.data}');
       debugPrint('GHOST_LOG: Foreground FCM message received: ${message.data}');
       if (message.data['event'] == 'sync_required') {
         ref.read(chatRepositoryProvider).sync();
       }
+    });
+
+    _onMessageOpenedAppSubscription = FirebaseMessaging.onMessageOpenedApp.listen((message) {
+      // ignore: avoid_print
+      print('FCM_OPENED_APP data=${message.data}');
+      debugPrint('GHOST_LOG: FCM message opened app: ${message.data}');
+      ref.read(chatRepositoryProvider).sync();
     });
   }
 
