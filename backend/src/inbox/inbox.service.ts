@@ -468,6 +468,15 @@ export class InboxService {
         this.logger.warn(
           `FCM delivery failed: status ${response.status}, body ${errText}`,
         );
+        if (
+          response.status === 404 ||
+          response.status === 410 ||
+          errText.includes("UNREGISTERED") ||
+          errText.includes("InvalidRegistration")
+        ) {
+          this.logger.log(`Removing stale FCM token from database: ${fcmToken}`);
+          await this.deviceRepo.delete({ fcm_token: fcmToken });
+        }
       } else {
         this.logger.log(`FCM Wake-Up successfully sent.`);
       }
