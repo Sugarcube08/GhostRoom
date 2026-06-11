@@ -88,6 +88,13 @@ Future<void> ghostRoomBackgroundHandler(RemoteMessage message) async {
       Hive.openBox<dynamic>('media_cache_index'),
     ]);
 
+    final fcmMessageId = message.data['message_id'];
+    if (fcmMessageId != null) {
+      final syncBox = Hive.box('sync_metadata');
+      await syncBox.put('notified_$fcmMessageId', true);
+      debugPrint('GHOST_LOG: Marked FCM notification as shown for message: $fcmMessageId');
+    }
+
     final idService = IdentityService(sodium, storage);
     await idService.initIdentity();
     if (!idService.hasIdentity) {
@@ -124,7 +131,7 @@ Future<void> ghostRoomBackgroundHandler(RemoteMessage message) async {
     wsService.onInboxMessages((messages) async {
       debugPrint('GHOST_LOG: Background sync received messages: ${messages.length}');
       if (messages.isNotEmpty) {
-        await chatRepo.processEnvelopes(messages);
+        await chatRepo.processEnvelopes(messages, enableNotification: false);
       }
       // ignore: avoid_print
       print("SYNC_COMPLETE");

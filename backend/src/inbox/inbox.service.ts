@@ -243,7 +243,7 @@ export class InboxService implements OnModuleInit {
       this.logger.log(`FCM_RELAY_LOOKUP_SUCCESS found_token=${!!device?.fcm_token}`);
       this.logger.log(`DEVICE_LOOKUP found_token=${!!device?.fcm_token} identity_id=${publicId}`);
       if (device && device.fcm_token) {
-        await this.sendFcmWakeup(device.fcm_token);
+        await this.sendFcmWakeup(device.fcm_token, messageId);
       }
     } catch (fcmErr: any) {
       this.logger.error(
@@ -513,10 +513,10 @@ export class InboxService implements OnModuleInit {
     this.logger.log(`Device registered: ${identityId} (${platform})`);
   }
 
-  async sendFcmWakeup(fcmToken: string): Promise<void> {
-    this.logger.log(`FCM_DISPATCH_START token=${fcmToken}`);
+  async sendFcmWakeup(fcmToken: string, messageId: string): Promise<void> {
+    this.logger.log(`FCM_DISPATCH_START token=${fcmToken} message_id=${messageId}`);
     try {
-      const msgId = await this.firebaseService.sendWakeup(fcmToken);
+      const msgId = await this.firebaseService.sendWakeup(fcmToken, messageId);
       if (msgId) {
         this.logger.log(`FCM_DISPATCH_SUCCESS message_id=${msgId}`);
         this.logger.log(`MESSAGE_NOTIFICATION_SENT token=${fcmToken}`);

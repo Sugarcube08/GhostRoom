@@ -290,12 +290,12 @@ class ChatRepository with WidgetsBindingObserver {
 
   void _handleNewMessage(dynamic data) {
     _logger.i('GHOST_LOG: Real-time message received via WebSocket.');
-    processEnvelopes([data]);
+    processEnvelopes([data], enableNotification: true);
   }
 
   void _handleInboxMessages(List<dynamic> messages) {
     _logger.i('GHOST_LOG: Inbox batch received. Count: ${messages.length}');
-    processEnvelopes(messages);
+    processEnvelopes(messages, enableNotification: false);
   }
 
   void _handleMessageStatusUpdate(dynamic data) async {
@@ -362,7 +362,7 @@ class ChatRepository with WidgetsBindingObserver {
     }
   }
 
-  Future<void> processEnvelopes(List<dynamic> envelopes) async {
+  Future<void> processEnvelopes(List<dynamic> envelopes, {bool enableNotification = true}) async {
     for (final data in envelopes) {
       try {
         final envelope = DMEnvelope.fromJson(data);
@@ -552,7 +552,9 @@ class ChatRepository with WidgetsBindingObserver {
         await _msgBox?.put(message.id, message);
         
         // TRIGGER NOTIFICATION
-        if (!isCurrentlyActive) {
+        final wasNotified = _syncBox?.get('notified_${message.id}', defaultValue: false) == true;
+        if (!isCurrentlyActive && enableNotification && !wasNotified) {
+          await _syncBox?.put('notified_${message.id}', true);
           if (isRequest) {
             _notificationService.showNotification(
               title: 'GhostRoom',

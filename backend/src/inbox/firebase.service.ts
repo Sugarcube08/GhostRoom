@@ -89,7 +89,7 @@ export class FirebaseService implements OnModuleInit {
     return this.projectId;
   }
 
-  async sendWakeup(fcmToken: string): Promise<string | null> {
+  async sendWakeup(fcmToken: string, messageId: string): Promise<string | null> {
     if (!this.fcmEnabled || !this.firebaseApp) {
       this.logger.warn("FCM is disabled or Firebase Admin SDK not initialized.");
       return null;
@@ -103,6 +103,7 @@ export class FirebaseService implements OnModuleInit {
       },
       data: {
         event: "sync_required",
+        message_id: messageId,
       },
       android: {
         priority: "high",
