@@ -113,9 +113,14 @@ export class RelayGateway implements OnGatewayConnection, OnGatewayDisconnect {
     client.data.deviceId = payload.device_id;
 
     // Join both primary and device-specific inbox
+    this.logger.log(`JOIN_ROOM_START room=inbox:${payload.public_id} socket=${client.id}`);
     await client.join(`inbox:${payload.public_id}`);
+    this.logger.log(`JOIN_ROOM_SUCCESS room=inbox:${payload.public_id} socket=${client.id}`);
+    
     if (payload.device_id) {
+      this.logger.log(`JOIN_ROOM_START room=inbox:${payload.public_id}:${payload.device_id} socket=${client.id}`);
       await client.join(`inbox:${payload.public_id}:${payload.device_id}`);
+      this.logger.log(`JOIN_ROOM_SUCCESS room=inbox:${payload.public_id}:${payload.device_id} socket=${client.id}`);
     }
 
     // Register home relay if RELAY_URL is configured
@@ -276,12 +281,7 @@ export class RelayGateway implements OnGatewayConnection, OnGatewayDisconnect {
     );
 
     if (result && result.senderId) {
-      this.server.to(`inbox:${result.senderId}`).emit("message.status_update", {
-        message_id: payload.message_id,
-        status: "DELIVERED",
-        recipient_id: publicId,
-        timestamp: Date.now(),
-      });
+      await this.emitStatusUpdate(result.senderId, payload.message_id, "DELIVERED", publicId);
       this.logger.log(`MESSAGE_MARKED_DELIVERED message_id=${payload.message_id} sender_id=${result.senderId} recipient_id=${publicId}`);
     }
 
@@ -308,12 +308,7 @@ export class RelayGateway implements OnGatewayConnection, OnGatewayDisconnect {
     );
 
     if (result && result.senderId) {
-      this.server.to(`inbox:${result.senderId}`).emit("message.status_update", {
-        message_id: payload.message_id,
-        status: "SEEN",
-        recipient_id: publicId,
-        timestamp: Date.now(),
-      });
+      await this.emitStatusUpdate(result.senderId, payload.message_id, "SEEN", publicId);
     }
 
     this.logger.log(`Message ${payload.message_id} seen by ${publicId}`);
@@ -667,5 +662,25 @@ export class RelayGateway implements OnGatewayConnection, OnGatewayDisconnect {
         },
       );
     });
+  }
+
+  private async emitStatusUpdate(senderId: string, messageId: string, status: "DELIVERED" | "SEEN", recipientId: string) {
+    const room = `inbox:${senderId}`;
+    const payload = {
+      message_id: messageId,
+      status,
+      recipient_id: recipientId,
+      timestamp: Date.now(),
+    };
+
+    this.logger.log(`STATUS_UPDATE_EMIT_START room=${room} message_id=${messageId}`);
+    
+    const clients = this.server.sockets.adapter.rooms.get(room)?.size ?? 0;
+    this.logger.log(`STATUS_UPDATE_ROOM_SIZE room=${room} clients=${clients}`);
+    this.logger.log(`STATUS_UPDATE_EMIT_PAYLOAD payload=${JSON.stringify(payload)}`);
+
+    this.server.to(room).emit("message.status_update", payload);
+
+    this.logger.log(`STATUS_UPDATE_EMIT_DONE room=${room} message_id=${messageId}`);
   }
 }

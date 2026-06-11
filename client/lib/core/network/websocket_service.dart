@@ -121,6 +121,10 @@ class WebSocketService {
   void _setupInternalListeners(RelayProfile profile) {
     if (_socket == null) return;
 
+    _socket!.onAny((event, data) {
+      debugPrint('SOCKET_EVENT=$event');
+    });
+
     assert(!_listenerSetupDone);
     _listenerSetupDone = true;
 
@@ -196,6 +200,8 @@ class WebSocketService {
 
     _socket!.on('message.status_update', (data) {
       _logger.d('Received status update: $data');
+      // ignore: avoid_print
+      print('STATUS_UPDATE_RECEIVED=$data');
       final callback = _callbacks['message.status_update'];
       if (callback != null) {
         callback(data);

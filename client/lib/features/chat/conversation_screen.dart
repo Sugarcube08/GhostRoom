@@ -175,10 +175,12 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
 
   @override
   Widget build(BuildContext context) {
-    _buildCount++;
-    if (_buildCount % 10 == 0) {
+    if (!kReleaseMode) {
+      _buildCount++;
       _logger.w("GHOST_LOG: ConversationScreen build count: $_buildCount");
     }
+    // ignore: avoid_print
+    print("CHAT_REBUILD contact_id=${widget.conversation.contactId}");
     final colors = AppColors.of(context);
     
     return ValueListenableBuilder(
@@ -452,6 +454,18 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
     final isDelivered = msg.deliveredAt != null;
     final isSeen = msg.seenAt != null;
 
+    String statusStr = 'PENDING';
+    if (isSeen) {
+      statusStr = 'SEEN';
+    } else if (isDelivered) {
+      statusStr = 'DELIVERED';
+    } else if (isSent) {
+      statusStr = 'SENT';
+    }
+
+    // ignore: avoid_print
+    print("STATUS_RENDERED message_id=${msg.id} status=$statusStr");
+
     IconData icon = Icons.access_time;
     Color color = colors.secondaryText.withAlpha(80);
     double size = 8;
@@ -503,6 +517,8 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
 
   Widget _buildMessageBubble(Message msg, bool isMe) {
     final colors = AppColors.of(context);
+    // ignore: avoid_print
+    print("MESSAGE_TILE_REBUILD message_id=${msg.id}");
     return Align(
       alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
       child: Container(

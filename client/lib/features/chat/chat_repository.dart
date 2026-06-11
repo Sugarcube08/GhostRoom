@@ -298,13 +298,26 @@ class ChatRepository with WidgetsBindingObserver {
     processEnvelopes(messages, enableNotification: false);
   }
 
+  String _getMessageStatusString(Message msg) {
+    if (msg.seenAt != null) return 'SEEN';
+    if (msg.deliveredAt != null) return 'DELIVERED';
+    if (msg.metadata?['status'] == 'SENT') return 'SENT';
+    return 'PENDING';
+  }
+
   void _handleMessageStatusUpdate(dynamic data) async {
+    // ignore: avoid_print
+    print('STATUS_UPDATE_RECEIVED=$data');
     final String messageId = data['message_id'];
     final String status = data['status'];
     final int timestamp = data['timestamp'];
 
     final message = _msgBox?.get(messageId);
     if (message != null) {
+      final oldStatus = _getMessageStatusString(message);
+      // ignore: avoid_print
+      print('MESSAGE_STATUS_UPDATE_START message_id=$messageId old_status=$oldStatus new_status=$status');
+
       if (status == 'DELIVERED' && message.deliveredAt == null) {
         message.deliveredAt = DateTime.fromMillisecondsSinceEpoch(timestamp);
       } else if (status == 'SEEN' && message.seenAt == null) {
@@ -312,6 +325,17 @@ class ChatRepository with WidgetsBindingObserver {
         message.seenAt = DateTime.fromMillisecondsSinceEpoch(timestamp);
       }
       await message.save();
+      
+      final newStatus = _getMessageStatusString(message);
+      // ignore: avoid_print
+      print('MESSAGE_STATUS_UPDATE_DB_SUCCESS message_id=$messageId old_status=$oldStatus new_status=$newStatus');
+      
+      // ignore: avoid_print
+      print('MESSAGE_STATUS_UPDATE_STREAM_EMIT message_id=$messageId old_status=$oldStatus new_status=$newStatus');
+      
+      // ignore: avoid_print
+      print('MESSAGE_STATUS_UPDATE_UI_NOTIFY message_id=$messageId old_status=$oldStatus new_status=$newStatus');
+
       _logger.d('GHOST_LOG: Updated status for message $messageId to $status');
     }
   }
