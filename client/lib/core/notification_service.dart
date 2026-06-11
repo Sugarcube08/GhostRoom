@@ -56,35 +56,42 @@ class NotificationService {
     required String body,
     String? payload,
   }) async {
-    const androidDetails = AndroidNotificationDetails(
-      'ghostroom_messages',
-      'Messages',
-      channelDescription: 'Notifications for new messages',
-      importance: Importance.max,
-      priority: Priority.high,
-      showWhen: true,
-      playSound: true,
-      enableVibration: true,
-    );
-    
-    const iosDetails = DarwinNotificationDetails(
-      presentAlert: true,
-      presentBadge: true,
-      presentSound: true,
-    );
+    debugPrint('GHOST_LOG: FCM_NOTIFICATION_CREATION: START');
+    final stopwatch = Stopwatch()..start();
+    try {
+      const androidDetails = AndroidNotificationDetails(
+        'ghostroom_messages',
+        'Messages',
+        channelDescription: 'Notifications for new messages',
+        importance: Importance.max,
+        priority: Priority.high,
+        showWhen: true,
+        playSound: true,
+        enableVibration: true,
+      );
+      
+      const iosDetails = DarwinNotificationDetails(
+        presentAlert: true,
+        presentBadge: true,
+        presentSound: true,
+      );
 
-    const notificationDetails = NotificationDetails(
-      android: androidDetails,
-      iOS: iosDetails,
-      linux: LinuxNotificationDetails(),
-    );
+      const notificationDetails = NotificationDetails(
+        android: androidDetails,
+        iOS: iosDetails,
+        linux: LinuxNotificationDetails(),
+      );
 
-    await _notifications.show(
-      DateTime.now().millisecond, // Unique ID
-      title,
-      body,
-      notificationDetails,
-      payload: payload,
-    );
+      await _notifications.show(
+        DateTime.now().millisecond, // Unique ID
+        title,
+        body,
+        notificationDetails,
+        payload: payload,
+      );
+      debugPrint('GHOST_LOG: FCM_NOTIFICATION_CREATION: SUCCESS (latency: ${stopwatch.elapsedMilliseconds}ms)');
+    } catch (e) {
+      debugPrint('GHOST_LOG: FCM_NOTIFICATION_CREATION: FAILURE error=$e (latency: ${stopwatch.elapsedMilliseconds}ms)');
+    }
   }
 }

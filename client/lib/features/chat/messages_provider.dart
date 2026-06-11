@@ -8,6 +8,8 @@ class MessagesNotifier extends AutoDisposeFamilyNotifier<List<Message>, String> 
   int _limit = 50;
   VoidCallback? _listener;
   bool _isListening = false;
+  bool _hasReachedMax = false;
+  DateTime? _lastLoadTime;
 
   @override
   List<Message> build(String arg) {
@@ -38,10 +40,23 @@ class MessagesNotifier extends AutoDisposeFamilyNotifier<List<Message>, String> 
     if (!Hive.isBoxOpen('messages')) return [];
     // Ensure we trigger a listen if the box opened after we were created
     _attemptListen();
-    return ref.read(chatRepositoryProvider).getMessagesForContact(arg, limit: _limit);
+    final msgs = ref.read(chatRepositoryProvider).getMessagesForContact(arg, limit: _limit);
+    if (msgs.length < _limit) {
+      _hasReachedMax = true;
+    } else {
+      _hasReachedMax = false;
+    }
+    return msgs;
   }
 
   void loadMore() {
+    if (_hasReachedMax) return;
+    final now = DateTime.now();
+    if (_lastLoadTime != null && now.difference(_lastLoadTime!) < const Duration(milliseconds: 500)) {
+      return;
+    }
+    _lastLoadTime = now;
+
     _limit += 50;
     state = _fetchMessages();
   }

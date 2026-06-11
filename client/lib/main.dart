@@ -30,118 +30,125 @@ final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
 @pragma('vm:entry-point')
 Future<void> ghostRoomBackgroundHandler(RemoteMessage message) async {
+  final stopwatch = Stopwatch()..start();
   // ignore: avoid_print
   print("BACKGROUND_HANDLER_STARTED");
   // ignore: avoid_print
   print("FCM_BACKGROUND_HANDLER_ENTERED");
   // ignore: avoid_print
   print("FCM_MESSAGE_DATA=${message.data}");
-  debugPrint('GHOST_LOG: Background FCM received: ${message.data}');
+  debugPrint('GHOST_LOG: FCM_BACKGROUND_WAKEUP: START data=${message.data}');
+
   if (message.data['event'] != 'sync_required') {
-    debugPrint('GHOST_LOG: Ignored non-sync background event');
+    debugPrint('GHOST_LOG: FCM_BACKGROUND_WAKEUP: FAILURE error=Ignored non-sync background event (latency: ${stopwatch.elapsedMilliseconds}ms)');
     return;
   }
 
   WidgetsFlutterBinding.ensureInitialized();
   try {
-    await Firebase.initializeApp();
-  } catch (e) {
-    debugPrint('GHOST_LOG: Firebase.initializeApp() failed or already initialized: $e');
-  }
-
-  final sodium = await SodiumSumoInit.init();
-  await StorageDirectoryHelper.migrateIfNeeded();
-  final hiveDir = await StorageDirectoryHelper.getHiveDirectory();
-  Hive.init(hiveDir.path);
-
-  if (!Hive.isAdapterRegistered(0)) Hive.registerAdapter(ContactAdapter());
-  if (!Hive.isAdapterRegistered(1)) Hive.registerAdapter(MessageAdapter());
-  if (!Hive.isAdapterRegistered(2)) Hive.registerAdapter(MessageTypeAdapter());
-  if (!Hive.isAdapterRegistered(3)) Hive.registerAdapter(ConversationModeAdapter());
-  if (!Hive.isAdapterRegistered(4)) Hive.registerAdapter(ConversationStateAdapter());
-
-  final storage = const FlutterSecureStorage(aOptions: AndroidOptions(resetOnError: true));
-  String? existingKey = await storage.read(key: 'hive_encryption_key');
-  if (existingKey == null) {
-    debugPrint('GHOST_LOG: Background sync aborted: No encryption key found.');
-    return;
-  }
-  final encryptionKey = base64.decode(existingKey);
-
-  // Open Hive boxes
-  await Future.wait([
-    Hive.openBox<Message>('messages'),
-    Hive.openBox<ConversationState>('conversation_states'),
-    Hive.openBox('sync_metadata'),
-    Hive.openBox('processed_envelopes'),
-    Hive.openBox<Contact>('contacts', encryptionCipher: HiveAesCipher(encryptionKey)),
-    Hive.openBox<String>('blocked_identities'),
-    Hive.openBox<Map>('offline_send_queue'),
-    Hive.openBox<bool>('pending_deletions'),
-    Hive.openBox<Uint8List>('thumbnail_cache'),
-    Hive.openBox<dynamic>('media_cache_index'),
-  ]);
-
-  final idService = IdentityService(sodium, storage);
-  await idService.initIdentity();
-  if (!idService.hasIdentity) {
-    debugPrint('GHOST_LOG: Background sync aborted: No identity found.');
-    return;
-  }
-
-  final relayManager = RelayManager(storage);
-  final relay = await relayManager.getActiveRelay();
-  if (relay == null) {
-    debugPrint('GHOST_LOG: Background sync aborted: No active relay.');
-    return;
-  }
-
-  final completer = Completer<void>();
-  final tempContainer = ProviderContainer(
-    overrides: [
-      sodiumProvider.overrideWithValue(sodium),
-      secureStorageProvider.overrideWithValue(storage),
-      identityServiceProvider.overrideWithValue(idService),
-      relayManagerProvider.overrideWithValue(relayManager),
-    ],
-  );
-
-  // Initialize notification service for the background isolate
-  final notifService = tempContainer.read(notificationServiceProvider);
-  await notifService.init();
-
-  final chatRepo = tempContainer.read(chatRepositoryProvider);
-  await chatRepo.init();
-
-  final wsService = tempContainer.read(webSocketServiceProvider);
-
-  wsService.onInboxMessages((messages) async {
-    debugPrint('GHOST_LOG: Background sync received messages: ${messages.length}');
-    if (messages.isNotEmpty) {
-      await chatRepo.processEnvelopes(messages);
+    try {
+      await Firebase.initializeApp();
+    } catch (e) {
+      debugPrint('GHOST_LOG: Firebase.initializeApp() failed or already initialized: $e');
     }
-    if (!completer.isCompleted) {
-      completer.complete();
+
+    final sodium = await SodiumSumoInit.init();
+    await StorageDirectoryHelper.migrateIfNeeded();
+    final hiveDir = await StorageDirectoryHelper.getHiveDirectory();
+    Hive.init(hiveDir.path);
+
+    if (!Hive.isAdapterRegistered(0)) Hive.registerAdapter(ContactAdapter());
+    if (!Hive.isAdapterRegistered(1)) Hive.registerAdapter(MessageAdapter());
+    if (!Hive.isAdapterRegistered(2)) Hive.registerAdapter(MessageTypeAdapter());
+    if (!Hive.isAdapterRegistered(3)) Hive.registerAdapter(ConversationModeAdapter());
+    if (!Hive.isAdapterRegistered(4)) Hive.registerAdapter(ConversationStateAdapter());
+
+    final storage = const FlutterSecureStorage(aOptions: AndroidOptions(resetOnError: true));
+    String? existingKey = await storage.read(key: 'hive_encryption_key');
+    if (existingKey == null) {
+      debugPrint('GHOST_LOG: FCM_BACKGROUND_WAKEUP: FAILURE error=No encryption key found (latency: ${stopwatch.elapsedMilliseconds}ms)');
+      return;
     }
-  });
+    final encryptionKey = base64.decode(existingKey);
 
-  // Connect & Wait for challenge and identity verification
-  await relayManager.wakeUpRelay(relay);
-  wsService.connect(relay);
+    // Open Hive boxes
+    await Future.wait([
+      Hive.openBox<Message>('messages'),
+      Hive.openBox<ConversationState>('conversation_states'),
+      Hive.openBox('sync_metadata'),
+      Hive.openBox('processed_envelopes'),
+      Hive.openBox<Contact>('contacts', encryptionCipher: HiveAesCipher(encryptionKey)),
+      Hive.openBox<String>('blocked_identities'),
+      Hive.openBox<Map>('offline_send_queue'),
+      Hive.openBox<bool>('pending_deletions'),
+      Hive.openBox<Uint8List>('thumbnail_cache'),
+      Hive.openBox<dynamic>('media_cache_index'),
+    ]);
 
-  // Complete after 8 seconds timeout as safety
-  Future.delayed(const Duration(seconds: 8), () {
-    if (!completer.isCompleted) {
-      debugPrint('GHOST_LOG: Background sync timed out.');
-      completer.complete();
+    final idService = IdentityService(sodium, storage);
+    await idService.initIdentity();
+    if (!idService.hasIdentity) {
+      debugPrint('GHOST_LOG: FCM_BACKGROUND_WAKEUP: FAILURE error=No identity found (latency: ${stopwatch.elapsedMilliseconds}ms)');
+      return;
     }
-  });
 
-  await completer.future;
+    final relayManager = RelayManager(storage);
+    final relay = await relayManager.getActiveRelay();
+    if (relay == null) {
+      debugPrint('GHOST_LOG: FCM_BACKGROUND_WAKEUP: FAILURE error=No active relay (latency: ${stopwatch.elapsedMilliseconds}ms)');
+      return;
+    }
 
-  wsService.disconnect();
-  tempContainer.dispose();
-  debugPrint('GHOST_LOG: Background sync handler finished.');
+    final completer = Completer<void>();
+    final tempContainer = ProviderContainer(
+      overrides: [
+        sodiumProvider.overrideWithValue(sodium),
+        secureStorageProvider.overrideWithValue(storage),
+        identityServiceProvider.overrideWithValue(idService),
+        relayManagerProvider.overrideWithValue(relayManager),
+      ],
+    );
+
+    // Initialize notification service for the background isolate
+    final notifService = tempContainer.read(notificationServiceProvider);
+    await notifService.init();
+
+    final chatRepo = tempContainer.read(chatRepositoryProvider);
+    await chatRepo.init();
+
+    final wsService = tempContainer.read(webSocketServiceProvider);
+
+    wsService.onInboxMessages((messages) async {
+      debugPrint('GHOST_LOG: Background sync received messages: ${messages.length}');
+      if (messages.isNotEmpty) {
+        await chatRepo.processEnvelopes(messages);
+      }
+      debugPrint('GHOST_LOG: FCM_BACKGROUND_WAKEUP: SUCCESS (latency: ${stopwatch.elapsedMilliseconds}ms)');
+      if (!completer.isCompleted) {
+        completer.complete();
+      }
+    });
+
+    // Connect & Wait for challenge and identity verification
+    await relayManager.wakeUpRelay(relay);
+    wsService.connect(relay);
+
+    // Complete after 8 seconds timeout as safety
+    Future.delayed(const Duration(seconds: 8), () {
+      if (!completer.isCompleted) {
+        debugPrint('GHOST_LOG: FCM_BACKGROUND_WAKEUP: FAILURE error=Background sync timed out (latency: ${stopwatch.elapsedMilliseconds}ms)');
+        completer.complete();
+      }
+    });
+
+    await completer.future;
+
+    wsService.disconnect();
+    tempContainer.dispose();
+    debugPrint('GHOST_LOG: Background sync handler finished successfully.');
+  } catch (err) {
+    debugPrint('GHOST_LOG: FCM_BACKGROUND_WAKEUP: FAILURE error=$err (latency: ${stopwatch.elapsedMilliseconds}ms)');
+  }
 }
 
 void main() async {

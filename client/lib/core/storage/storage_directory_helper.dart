@@ -5,8 +5,22 @@ import 'package:path/path.dart' as p;
 
 class StorageDirectoryHelper {
   static Future<Directory> getBaseDirectory() async {
-    final supportDir = await getApplicationSupportDirectory();
-    return Directory(p.join(supportDir.path, 'GhostRoom'));
+    if (kIsWeb) {
+      throw UnsupportedError('Storage directories are not supported on web.');
+    }
+    if (Platform.isLinux) {
+      final home = Platform.environment['HOME'] ?? '';
+      return Directory(p.join(home, '.local', 'share', 'ghostroom'));
+    } else if (Platform.isMacOS) {
+      final home = Platform.environment['HOME'] ?? '';
+      return Directory(p.join(home, 'Library', 'Application Support', 'GhostRoom'));
+    } else if (Platform.isWindows) {
+      final appData = Platform.environment['APPDATA'] ?? '';
+      return Directory(p.join(appData, 'GhostRoom'));
+    } else {
+      final supportDir = await getApplicationSupportDirectory();
+      return Directory(p.join(supportDir.path, 'GhostRoom'));
+    }
   }
 
   static Future<Directory> getHiveDirectory() async {

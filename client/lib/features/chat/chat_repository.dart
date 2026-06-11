@@ -257,7 +257,8 @@ class ChatRepository with WidgetsBindingObserver {
 
     final String platform = kIsWeb ? 'web' : (Platform.isIOS ? 'ios' : 'android');
     final url = '${relay.apiUrl}/device/register';
-    _logger.i('GHOST_LOG: Registering device token at $url');
+    _logger.i('GHOST_LOG: FCM_TOKEN_REGISTRATION: START url=$url');
+    final stopwatch = Stopwatch()..start();
     
     try {
       final response = await http.post(
@@ -270,11 +271,14 @@ class ChatRepository with WidgetsBindingObserver {
         }),
       );
       if (response.statusCode == 200 || response.statusCode == 201) {
+        _logger.i('GHOST_LOG: FCM_TOKEN_REGISTRATION: SUCCESS (latency: ${stopwatch.elapsedMilliseconds}ms)');
         _logger.i('GHOST_LOG: Device token successfully registered on relay.');
       } else {
+        _logger.e('GHOST_LOG: FCM_TOKEN_REGISTRATION: FAILURE status=${response.statusCode} (latency: ${stopwatch.elapsedMilliseconds}ms)');
         _logger.w('GHOST_LOG: Device token registration failed with status ${response.statusCode}');
       }
     } catch (e) {
+      _logger.e('GHOST_LOG: FCM_TOKEN_REGISTRATION: FAILURE error=$e (latency: ${stopwatch.elapsedMilliseconds}ms)');
       _logger.e('GHOST_LOG: Error registering device token: $e');
     }
   }

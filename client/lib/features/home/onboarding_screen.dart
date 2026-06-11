@@ -283,15 +283,9 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
   }
 
   Widget _makeScrollable({required Widget child}) {
-    return LayoutBuilder(
-      builder: (context, constraints) => SingleChildScrollView(
-        child: ConstrainedBox(
-          constraints: BoxConstraints(minHeight: constraints.maxHeight),
-          child: IntrinsicHeight(
-            child: child,
-          ),
-        ),
-      ),
+    return SingleChildScrollView(
+      physics: const BouncingScrollPhysics(),
+      child: child,
     );
   }
 
@@ -315,7 +309,6 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
               textAlign: TextAlign.center,
               style: TextStyle(color: Colors.white, fontSize: 18, height: 1.5, fontWeight: FontWeight.w300),
             ),
-            const Spacer(),
             const SizedBox(height: 48),
             ElevatedButton(
               onPressed: _nextPage,
@@ -362,7 +355,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
               textAlign: TextAlign.center,
               style: TextStyle(color: Colors.white54, height: 1.6),
             ),
-            const Spacer(),
+            const SizedBox(height: 48),
             ElevatedButton(
               onPressed: _nextPage,
               style: ElevatedButton.styleFrom(minimumSize: const Size(double.infinity, 60)),
@@ -419,7 +412,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
               textAlign: TextAlign.center,
               style: TextStyle(color: Colors.white54, height: 1.6),
             ),
-            const Spacer(),
+            const SizedBox(height: 48),
             ElevatedButton(
               onPressed: _nextPage,
               style: ElevatedButton.styleFrom(minimumSize: const Size(double.infinity, 60)),
@@ -478,8 +471,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                 ],
               ],
             ),
-            const Spacer(),
-            const SizedBox(height: 24),
+            const SizedBox(height: 48),
             ElevatedButton(
               onPressed: _nextPage,
               style: ElevatedButton.styleFrom(minimumSize: const Size(double.infinity, 60)),
@@ -513,7 +505,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                 ),
               ),
             )),
-            const Spacer(),
+            const SizedBox(height: 48),
             ElevatedButton(
               onPressed: _verifyAndProceed,
               style: ElevatedButton.styleFrom(minimumSize: const Size(double.infinity, 60)),
@@ -545,7 +537,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
               textAlign: TextAlign.center,
               style: TextStyle(color: Colors.white54, height: 1.6),
             ),
-            const Spacer(),
+            const SizedBox(height: 48),
             if (!_backupSaved)
               ElevatedButton(
                 onPressed: _saveBackup,
@@ -611,7 +603,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                 ),
               ),
             )),
-            const Spacer(),
+            const SizedBox(height: 48),
             ElevatedButton(
               onPressed: _verifyDrillAndProceed,
               style: ElevatedButton.styleFrom(
@@ -647,7 +639,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
               textAlign: TextAlign.center,
               style: TextStyle(color: Colors.white54, height: 1.5),
             ),
-            const Spacer(),
+            const SizedBox(height: 48),
             ElevatedButton(
               onPressed: _completeOnboarding,
               style: ElevatedButton.styleFrom(

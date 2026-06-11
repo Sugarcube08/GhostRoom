@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'dart:convert';
+import 'dart:io';
 import '../../core/providers.dart';
 import '../contacts/contact.dart';
 import '../../core/crypto/identity_service.dart';
@@ -219,34 +221,75 @@ class QRScannerScreen extends StatefulWidget {
   State<QRScannerScreen> createState() => _QRScannerScreenState();
 }
 
-class _QRScannerScreenState extends State<QRScannerScreen> {
-  final MobileScannerController controller = MobileScannerController();
+class _QRScannerScreenState extends State<QRScannerScreen> with WidgetsBindingObserver {
+  MobileScannerController? controller;
   bool _isStopping = false;
+  bool _isStarting = false;
   bool _hasError = false;
+  bool _isStarted = false;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+
+    // On Linux or other unsupported platforms, fail gracefully immediately
+    if (!kIsWeb && Platform.isLinux) {
+      _hasError = true;
+      debugPrint('GHOST_LOG: Scanner not supported on Linux');
+      return;
+    }
+
+    controller = MobileScannerController(
+      autoStart: false,
+    );
     _startScanner();
   }
 
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (_hasError || controller == null) return;
+    if (state == AppLifecycleState.paused) {
+      _stopScanner();
+    } else if (state == AppLifecycleState.resumed) {
+      _startScanner();
+    }
+  }
+
   Future<void> _startScanner() async {
+    final c = controller;
+    if (c == null || _isStarting || _isStarted || _isStopping || !mounted) return;
+    _isStarting = true;
     try {
-      await controller.start();
+      await c.start();
+      _isStarted = true;
+      if (mounted) setState(() => _hasError = false);
     } catch (e) {
       debugPrint('GHOST_ERROR: MobileScanner failed to start: $e');
       if (mounted) setState(() => _hasError = true);
+    } finally {
+      _isStarting = false;
+    }
+  }
+
+  Future<void> _stopScanner() async {
+    final c = controller;
+    if (c == null || !_isStarted || _isStopping) return;
+    _isStopping = true;
+    try {
+      await c.stop();
+      _isStarted = false;
+    } catch (e) {
+      debugPrint('GHOST_ERROR: MobileScanner failed to stop: $e');
+    } finally {
+      _isStopping = false;
     }
   }
 
   Future<void> _stopAndPop([String? result]) async {
     if (_isStopping) return;
-    _isStopping = true;
-    try {
-      await controller.stop();
-    } catch (e) {
-      debugPrint('GHOST_ERROR: MobileScanner failed to stop: $e');
-    }
+    WidgetsBinding.instance.removeObserver(this);
+    await _stopScanner();
     if (mounted) {
       Navigator.of(context).pop(result);
     }
@@ -254,13 +297,14 @@ class _QRScannerScreenState extends State<QRScannerScreen> {
 
   @override
   void dispose() {
-    controller.dispose();
+    WidgetsBinding.instance.removeObserver(this);
+    controller?.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_hasError) {
+    if (_hasError || controller == null) {
       return Scaffold(
         appBar: AppBar(title: const Text('SCAN ERROR')),
         body: Center(

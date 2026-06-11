@@ -96,23 +96,33 @@ class _NavigationShellState extends ConsumerState<NavigationShell> {
     };
 
     // Token registration & refresh
+    final tokenGenStopwatch = Stopwatch()..start();
+    debugPrint('GHOST_LOG: FCM_TOKEN_GENERATION: START');
     FirebaseMessaging.instance.requestPermission().then((settings) {
       debugPrint('GHOST_LOG: FCM Permission status: ${settings.authorizationStatus}');
       FirebaseMessaging.instance.getToken().then((token) {
         if (token != null) {
+          debugPrint('GHOST_LOG: FCM_TOKEN_GENERATION: SUCCESS token=$token (latency: ${tokenGenStopwatch.elapsedMilliseconds}ms)');
           // ignore: avoid_print
           print('FCM_TOKEN_GENERATED token=$token');
-          debugPrint('GHOST_LOG: Initial FCM Token: $token');
           ref.read(chatRepositoryProvider).registerDeviceToken(token);
+        } else {
+          debugPrint('GHOST_LOG: FCM_TOKEN_GENERATION: FAILURE error=Token is null (latency: ${tokenGenStopwatch.elapsedMilliseconds}ms)');
         }
+      }).catchError((error) {
+        debugPrint('GHOST_LOG: FCM_TOKEN_GENERATION: FAILURE error=$error (latency: ${tokenGenStopwatch.elapsedMilliseconds}ms)');
       });
+    }).catchError((error) {
+      debugPrint('GHOST_LOG: FCM_TOKEN_GENERATION: FAILURE error=$error (latency: ${tokenGenStopwatch.elapsedMilliseconds}ms)');
     });
 
     _tokenRefreshSubscription = FirebaseMessaging.instance.onTokenRefresh.listen((token) {
+      debugPrint('GHOST_LOG: FCM_TOKEN_REFRESH: SUCCESS token=$token');
       // ignore: avoid_print
       print('FCM_TOKEN_GENERATED token=$token');
-      debugPrint('GHOST_LOG: FCM Token refreshed: $token');
       ref.read(chatRepositoryProvider).registerDeviceToken(token);
+    }, onError: (error) {
+      debugPrint('GHOST_LOG: FCM_TOKEN_REFRESH: FAILURE error=$error');
     });
 
     _onMessageSubscription = FirebaseMessaging.onMessage.listen((message) {
@@ -165,10 +175,19 @@ class _NavigationShellState extends ConsumerState<NavigationShell> {
           ),
           ElevatedButton(
             onPressed: () {
-              // Ensure we use the correct GitHub releases URL from manifest or fallback
-              final url = manifest.releaseUrl.isNotEmpty 
-                ? manifest.releaseUrl 
+              // Construct the exact release tag URL: {repo}/releases/tag/v{version}
+              String baseUrl = manifest.releaseUrl.isNotEmpty 
+                ? manifest.releaseUrl.trim() 
                 : 'https://github.com/Sugarcube08/GhostRoom/releases';
+              if (baseUrl.endsWith('/releases')) {
+                baseUrl = baseUrl.substring(0, baseUrl.length - '/releases'.length);
+              }
+              if (baseUrl.endsWith('/')) {
+                baseUrl = baseUrl.substring(0, baseUrl.length - 1);
+              }
+              final cleanVersion = manifest.version.replaceAll('v', '').trim();
+              final url = '$baseUrl/releases/tag/v$cleanVersion';
+              
               launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
               Navigator.pop(context);
             },

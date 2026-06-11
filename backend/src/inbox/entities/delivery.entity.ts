@@ -1,8 +1,11 @@
-import { Entity, Column, PrimaryColumn, UpdateDateColumn } from "typeorm";
+import { Entity, Column, PrimaryGeneratedColumn, UpdateDateColumn } from "typeorm";
 
 @Entity("message_delivery")
 export class DeliveryEntity {
-  @PrimaryColumn("uuid")
+  @PrimaryGeneratedColumn("uuid")
+  id: string;
+
+  @Column("uuid")
   message_id: string;
 
   @Column("varchar")
