@@ -1,4 +1,4 @@
-import { Injectable, Inject, Logger } from "@nestjs/common";
+import { Injectable, Inject, Logger, OnModuleInit } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository, MoreThan, IsNull, LessThan } from "typeorm";
 import { Cron, CronExpression } from "@nestjs/schedule";
@@ -23,7 +23,7 @@ export interface MessageEnvelope {
 }
 
 @Injectable()
-export class InboxService {
+export class InboxService implements OnModuleInit {
   private readonly logger = new Logger(InboxService.name);
   private readonly INBOX_TTL = 14 * 24 * 60 * 60; // 14 days for cache
 
@@ -32,6 +32,22 @@ export class InboxService {
 
   private oauthToken: string | null = null;
   private oauthTokenExpiresAt = 0;
+
+  onModuleInit() {
+    const projectId = this.configService.get<string>("FIREBASE_PROJECT_ID");
+    const clientEmail = this.configService.get<string>("FIREBASE_CLIENT_EMAIL");
+    const privateKey = this.configService.get<string>("FIREBASE_PRIVATE_KEY");
+    const serviceAccountJson = this.configService.get<string>("FCM_SERVICE_ACCOUNT");
+    const serverKey = this.configService.get<string>("FCM_SERVER_KEY");
+
+    this.logger.log(`GHOST_LOG: FCM_CONFIG_AUDIT: START`);
+    this.logger.log(`GHOST_LOG: FIREBASE_PROJECT_ID=${projectId || "MISSING"}`);
+    this.logger.log(`GHOST_LOG: FIREBASE_CLIENT_EMAIL=${clientEmail || "MISSING"}`);
+    this.logger.log(`GHOST_LOG: FIREBASE_PRIVATE_KEY_PRESENT=${!!privateKey}`);
+    this.logger.log(`GHOST_LOG: FCM_SERVICE_ACCOUNT_PRESENT=${!!serviceAccountJson}`);
+    this.logger.log(`GHOST_LOG: FCM_SERVER_KEY_PRESENT=${!!serverKey}`);
+    this.logger.log(`GHOST_LOG: FCM_CONFIG_AUDIT: SUCCESS`);
+  }
 
   constructor(
     private readonly configService: ConfigService,
@@ -519,7 +535,26 @@ export class InboxService {
 
   private async getFcmAccessToken(): Promise<string | null> {
     const serviceAccountJson = this.configService.get<string>("FCM_SERVICE_ACCOUNT");
-    if (!serviceAccountJson) {
+    const projectId = this.configService.get<string>("FIREBASE_PROJECT_ID");
+    const clientEmail = this.configService.get<string>("FIREBASE_CLIENT_EMAIL");
+    const privateKeyRaw = this.configService.get<string>("FIREBASE_PRIVATE_KEY");
+
+    let client_email: string;
+    let private_key: string;
+
+    if (serviceAccountJson) {
+      try {
+        const sa = JSON.parse(serviceAccountJson);
+        client_email = sa.client_email;
+        private_key = sa.private_key;
+      } catch (e: any) {
+        this.logger.error(`Failed to parse FCM_SERVICE_ACCOUNT JSON: ${e.message}`);
+        return null;
+      }
+    } else if (projectId && clientEmail && privateKeyRaw) {
+      client_email = clientEmail;
+      private_key = privateKeyRaw;
+    } else {
       return null;
     }
 
@@ -529,13 +564,15 @@ export class InboxService {
     }
 
     try {
-      const serviceAccount = JSON.parse(serviceAccountJson);
+      // Clean private key: replace escaped newlines with actual newlines
+      const cleanedPrivateKey = private_key.replace(/\\n/g, "\n");
+
       const jwtHeader = Buffer.from(JSON.stringify({ alg: "RS256", typ: "JWT" })).toString("base64url");
       const iat = Math.floor(Date.now() / 1000);
       const exp = iat + 3600;
       const jwtPayload = Buffer.from(
         JSON.stringify({
-          iss: serviceAccount.client_email,
+          iss: client_email,
           scope: "https://www.googleapis.com/auth/firebase.messaging",
           aud: "https://oauth2.googleapis.com/token",
           exp,
@@ -545,7 +582,7 @@ export class InboxService {
 
       const signMaterial = `${jwtHeader}.${jwtPayload}`;
       const signature = crypto
-        .sign("SHA256", Buffer.from(signMaterial), serviceAccount.private_key)
+        .sign("SHA256", Buffer.from(signMaterial), cleanedPrivateKey)
         .toString("base64url");
       const jwt = `${jwtHeader}.${jwtPayload}.${signature}`;
 
