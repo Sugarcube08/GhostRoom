@@ -10,6 +10,8 @@ import { MessageEntity } from "./entities/message.entity";
 import { DeliveryEntity } from "./entities/delivery.entity";
 import { DeviceEntity } from "./entities/device.entity";
 import { MediaService } from "../media/media.service";
+import { FirebaseService } from "./firebase.service";
+
 
 export interface MessageEnvelope {
   id: string;
@@ -30,27 +32,13 @@ export class InboxService implements OnModuleInit {
   private readonly INBOX_MAX_MESSAGES: number;
   private readonly PAIR_PENDING_MAX: number;
 
-  private oauthToken: string | null = null;
-  private oauthTokenExpiresAt = 0;
-
   onModuleInit() {
-    const projectId = this.configService.get<string>("FIREBASE_PROJECT_ID");
-    const clientEmail = this.configService.get<string>("FIREBASE_CLIENT_EMAIL");
-    const privateKey = this.configService.get<string>("FIREBASE_PRIVATE_KEY");
-    const serviceAccountJson = this.configService.get<string>("FCM_SERVICE_ACCOUNT");
-    const serverKey = this.configService.get<string>("FCM_SERVER_KEY");
-
-    this.logger.log(`GHOST_LOG: FCM_CONFIG_AUDIT: START`);
-    this.logger.log(`GHOST_LOG: FIREBASE_PROJECT_ID=${projectId || "MISSING"}`);
-    this.logger.log(`GHOST_LOG: FIREBASE_CLIENT_EMAIL=${clientEmail || "MISSING"}`);
-    this.logger.log(`GHOST_LOG: FIREBASE_PRIVATE_KEY_PRESENT=${!!privateKey}`);
-    this.logger.log(`GHOST_LOG: FCM_SERVICE_ACCOUNT_PRESENT=${!!serviceAccountJson}`);
-    this.logger.log(`GHOST_LOG: FCM_SERVER_KEY_PRESENT=${!!serverKey}`);
-    this.logger.log(`GHOST_LOG: FCM_CONFIG_AUDIT: SUCCESS`);
+    // Handled by FirebaseService
   }
 
   constructor(
     private readonly configService: ConfigService,
+    private readonly firebaseService: FirebaseService,
     @Inject("REDIS_CLIENT") private readonly redis: Redis,
     @InjectRepository(MessageEntity)
     private readonly messageRepo: Repository<MessageEntity>,
@@ -246,26 +234,18 @@ export class InboxService implements OnModuleInit {
 
     // Lookup recipient FCM Token and send FCM wake-up
     this.logger.log(`MESSAGE_RECEIVED recipient_identity=${publicId}`);
-    this.logger.log(`GHOST_LOG: FCM_RELAY_LOOKUP: START identity_id=${publicId}`);
+    this.logger.log(`FCM_RELAY_LOOKUP_START identity_id=${publicId}`);
     const lookupStart = Date.now();
     try {
       const device = await this.deviceRepo.findOne({
         where: { identity_id: publicId },
       });
-      const latency = Date.now() - lookupStart;
-      if (device) {
-        this.logger.log(`GHOST_LOG: FCM_RELAY_LOOKUP: SUCCESS found_token=${!!device.fcm_token} (latency: ${latency}ms)`);
-        this.logger.log(`DEVICE_LOOKUP found_token=${!!device.fcm_token} identity_id=${publicId}`);
-        if (device.fcm_token) {
-          await this.sendFcmWakeup(device.fcm_token);
-        }
-      } else {
-        this.logger.log(`GHOST_LOG: FCM_RELAY_LOOKUP: SUCCESS found_token=false (latency: ${latency}ms)`);
-        this.logger.log(`DEVICE_LOOKUP found_token=false identity_id=${publicId}`);
+      this.logger.log(`FCM_RELAY_LOOKUP_SUCCESS found_token=${!!device?.fcm_token}`);
+      this.logger.log(`DEVICE_LOOKUP found_token=${!!device?.fcm_token} identity_id=${publicId}`);
+      if (device && device.fcm_token) {
+        await this.sendFcmWakeup(device.fcm_token);
       }
     } catch (fcmErr: any) {
-      const latency = Date.now() - lookupStart;
-      this.logger.log(`GHOST_LOG: FCM_RELAY_LOOKUP: FAILURE error="${fcmErr.message}" (latency: ${latency}ms)`);
       this.logger.error(
         `Failed to lookup FCM token or send wake-up for recipient ${publicId}: ${fcmErr.message}`,
       );
@@ -533,175 +513,26 @@ export class InboxService implements OnModuleInit {
     this.logger.log(`Device registered: ${identityId} (${platform})`);
   }
 
-  private async getFcmAccessToken(): Promise<string | null> {
-    const serviceAccountJson = this.configService.get<string>("FCM_SERVICE_ACCOUNT");
-    const projectId = this.configService.get<string>("FIREBASE_PROJECT_ID");
-    const clientEmail = this.configService.get<string>("FIREBASE_CLIENT_EMAIL");
-    const privateKeyRaw = this.configService.get<string>("FIREBASE_PRIVATE_KEY");
-
-    let client_email: string;
-    let private_key: string;
-
-    if (serviceAccountJson) {
-      try {
-        const sa = JSON.parse(serviceAccountJson);
-        client_email = sa.client_email;
-        private_key = sa.private_key;
-      } catch (e: any) {
-        this.logger.error(`Failed to parse FCM_SERVICE_ACCOUNT JSON: ${e.message}`);
-        return null;
-      }
-    } else if (projectId && clientEmail && privateKeyRaw) {
-      client_email = clientEmail;
-      private_key = privateKeyRaw;
-    } else {
-      return null;
-    }
-
-    // Return cached token if valid (leave 30s buffer)
-    if (this.oauthToken && this.oauthTokenExpiresAt > Date.now() + 30000) {
-      return this.oauthToken;
-    }
-
-    try {
-      // Clean private key: replace escaped newlines with actual newlines
-      const cleanedPrivateKey = private_key.replace(/\\n/g, "\n");
-
-      const jwtHeader = Buffer.from(JSON.stringify({ alg: "RS256", typ: "JWT" })).toString("base64url");
-      const iat = Math.floor(Date.now() / 1000);
-      const exp = iat + 3600;
-      const jwtPayload = Buffer.from(
-        JSON.stringify({
-          iss: client_email,
-          scope: "https://www.googleapis.com/auth/firebase.messaging",
-          aud: "https://oauth2.googleapis.com/token",
-          exp,
-          iat,
-        }),
-      ).toString("base64url");
-
-      const signMaterial = `${jwtHeader}.${jwtPayload}`;
-      const signature = crypto
-        .sign("SHA256", Buffer.from(signMaterial), cleanedPrivateKey)
-        .toString("base64url");
-      const jwt = `${jwtHeader}.${jwtPayload}.${signature}`;
-
-      const res = await fetch("https://oauth2.googleapis.com/token", {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: new URLSearchParams({
-          grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
-          assertion: jwt,
-        }),
-      });
-
-      if (!res.ok) {
-        throw new Error(`Token exchange failed: ${await res.text()}`);
-      }
-
-      const data = (await res.json()) as any;
-      this.oauthToken = data.access_token;
-      this.oauthTokenExpiresAt = Date.now() + data.expires_in * 1000;
-      return this.oauthToken;
-    } catch (e: any) {
-      this.logger.error(`Failed to get OAuth token: ${e.message}`);
-      return null;
-    }
-  }
-
   async sendFcmWakeup(fcmToken: string): Promise<void> {
-    this.logger.log(`GHOST_LOG: FCM_DISPATCH: START token=${fcmToken}`);
-    this.logger.log(`FCM_SEND_START token=${fcmToken}`);
-    const dispatchStart = Date.now();
+    this.logger.log(`FCM_DISPATCH_START token=${fcmToken}`);
     try {
-      const oauthToken = await this.getFcmAccessToken();
-      const serverKey = this.configService.get<string>("FCM_SERVER_KEY");
-
-      let response: Response;
-      let isLegacy = false;
-
-      if (oauthToken) {
-        const projectId = this.configService.get<string>("FIREBASE_PROJECT_ID") || "ghostroom-fcm";
-        const url = `https://fcm.googleapis.com/v1/projects/${projectId}/messages:send`;
-        const payload = {
-          message: {
-            token: fcmToken,
-            data: {
-              event: "sync_required",
-            },
-            android: {
-              priority: "high" as const,
-            },
-            apns: {
-              headers: {
-                "apns-priority": "5",
-                "apns-push-type": "background",
-              },
-              payload: {
-                aps: {
-                  "content-available": 1,
-                },
-              },
-            },
-          },
-        };
-        response = await fetch(url, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${oauthToken}`,
-          },
-          body: JSON.stringify(payload),
-        });
-      } else if (serverKey) {
-        isLegacy = true;
-        const url = "https://fcm.googleapis.com/fcm/send";
-        const payload = {
-          to: fcmToken,
-          data: {
-            event: "sync_required",
-          },
-          priority: "high",
-        };
-        response = await fetch(url, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `key=${serverKey}`,
-          },
-          body: JSON.stringify(payload),
-        });
+      const msgId = await this.firebaseService.sendWakeup(fcmToken);
+      if (msgId) {
+        this.logger.log(`FCM_DISPATCH_SUCCESS message_id=${msgId}`);
+        this.logger.log(`MESSAGE_NOTIFICATION_SENT token=${fcmToken}`);
       } else {
-        throw new Error("No FCM credentials configured (FCM_SERVICE_ACCOUNT or FCM_SERVER_KEY required)");
-      }
-
-      const latency = Date.now() - dispatchStart;
-      const errText = !response.ok ? await response.text() : "";
-
-      if (!response.ok) {
-        this.logger.log(`GHOST_LOG: FCM_DISPATCH: FAILURE error="${errText}" status=${response.status} (latency: ${latency}ms)`);
-        this.logger.error(
-          `FCM_RESPONSE success=false error="${errText}" status=${response.status}`,
-        );
-        if (
-          response.status === 404 ||
-          response.status === 410 ||
-          errText.includes("UNREGISTERED") ||
-          errText.includes("InvalidRegistration")
-        ) {
-          this.logger.log(`Removing stale FCM token from database: ${fcmToken}`);
-          await this.deviceRepo.delete({ fcm_token: fcmToken });
-        }
-      } else {
-        const resJson = (await response.json()) as any;
-        const msgId = isLegacy ? (resJson.message_id || "unknown") : (resJson.name || "unknown");
-        this.logger.log(`GHOST_LOG: FCM_DISPATCH: SUCCESS message_id=${msgId} (latency: ${latency}ms)`);
-        this.logger.log(`FCM_RESPONSE success=true message_id=${msgId}`);
+        this.logger.log(`FCM_DISPATCH_FAILURE error="FCM disabled or not initialized"`);
       }
     } catch (err: any) {
-      const latency = Date.now() - dispatchStart;
-      this.logger.log(`GHOST_LOG: FCM_DISPATCH: FAILURE error="${err.message}" (latency: ${latency}ms)`);
-      this.logger.error(`FCM_RESPONSE success=false error="${err.message}"`);
+      this.logger.log(`FCM_DISPATCH_FAILURE error="${err.message}"`);
+      if (
+        err.code === "messaging/registration-token-not-registered" ||
+        err.message?.includes("unregistered") ||
+        err.message?.includes("InvalidRegistration")
+      ) {
+        this.logger.log(`Removing stale FCM token from database: ${fcmToken}`);
+        await this.deviceRepo.delete({ fcm_token: fcmToken });
+      }
     }
   }
 }

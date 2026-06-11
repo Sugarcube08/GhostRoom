@@ -12,7 +12,9 @@ import '../../core/crypto/identity_service.dart';
 
 mixin ContactActions<T extends ConsumerStatefulWidget> on ConsumerState<T> {
   void openScanner(BuildContext context) async {
+    debugPrint('GHOST_LOG: CAMERA_PERMISSION_STATUS status=checking');
     final status = await Permission.camera.request();
+    debugPrint('GHOST_LOG: CAMERA_PERMISSION_STATUS status=$status');
     if (!context.mounted) return;
 
     if (status.isGranted) {
@@ -24,6 +26,7 @@ mixin ContactActions<T extends ConsumerStatefulWidget> on ConsumerState<T> {
         processScannedData(context, result);
       }
     } else {
+      debugPrint('GHOST_LOG: QR_SCAN_FAILURE error=CameraPermissionDenied');
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Camera permission is required to scan QR codes.'))
       );
@@ -233,10 +236,13 @@ class _QRScannerScreenState extends State<QRScannerScreen> with WidgetsBindingOb
     super.initState();
     WidgetsBinding.instance.addObserver(this);
 
+    debugPrint('GHOST_LOG: QR_SCAN_STARTED');
+
     // On Linux or other unsupported platforms, fail gracefully immediately
     if (!kIsWeb && Platform.isLinux) {
       _hasError = true;
       debugPrint('GHOST_LOG: Scanner not supported on Linux');
+      debugPrint('GHOST_LOG: QR_SCAN_FAILURE error=PlatformNotSupported');
       return;
     }
 
@@ -261,11 +267,14 @@ class _QRScannerScreenState extends State<QRScannerScreen> with WidgetsBindingOb
     if (c == null || _isStarting || _isStarted || _isStopping || !mounted) return;
     _isStarting = true;
     try {
+      debugPrint('GHOST_LOG: CAMERA_INITIALIZATION_START');
       await c.start();
       _isStarted = true;
+      debugPrint('GHOST_LOG: CAMERA_INITIALIZATION_SUCCESS');
       if (mounted) setState(() => _hasError = false);
     } catch (e) {
-      debugPrint('GHOST_ERROR: MobileScanner failed to start: $e');
+      debugPrint('GHOST_LOG: CAMERA_INITIALIZATION_FAILURE error=$e');
+      debugPrint('GHOST_LOG: QR_SCAN_FAILURE error=$e');
       if (mounted) setState(() => _hasError = true);
     } finally {
       _isStarting = false;
@@ -343,10 +352,16 @@ class _QRScannerScreenState extends State<QRScannerScreen> with WidgetsBindingOb
               controller: controller,
               onDetect: (capture) async {
                 final List<Barcode> barcodes = capture.barcodes;
+                if (barcodes.isEmpty) {
+                  debugPrint('GHOST_LOG: QR_SCAN_FAILURE error=EmptyBarcodeCaptured');
+                }
                 for (final barcode in barcodes) {
                   if (barcode.rawValue != null) {
+                    debugPrint('GHOST_LOG: QR_SCAN_SUCCESS raw_value=${barcode.rawValue}');
                     await _stopAndPop(barcode.rawValue);
                     break;
+                  } else {
+                    debugPrint('GHOST_LOG: QR_SCAN_FAILURE error=NullRawValue');
                   }
                 }
               },

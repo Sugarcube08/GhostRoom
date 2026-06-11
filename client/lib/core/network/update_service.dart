@@ -58,15 +58,68 @@ class UpdateService {
   }
 
   bool _isNewer(String remote, String local) {
-    List<int> remoteParts = remote.split('.').map(int.parse).toList();
-    List<int> localParts = local.split('.').map(int.parse).toList();
+    try {
+      Map<String, dynamic> parseVersion(String ver) {
+        var clean = ver.trim();
+        if (clean.toLowerCase().startsWith('v')) {
+          clean = clean.substring(1);
+        }
+        
+        String releasePart = clean;
+        String prereleasePart = '';
+        final dashIndex = clean.indexOf('-');
+        if (dashIndex != -1) {
+          releasePart = clean.substring(0, dashIndex);
+          prereleasePart = clean.substring(dashIndex + 1);
+        }
 
-    for (int i = 0; i < remoteParts.length; i++) {
-      if (i >= localParts.length) return true;
-      if (remoteParts[i] > localParts[i]) return true;
-      if (remoteParts[i] < localParts[i]) return false;
+        final parts = releasePart.split('.');
+        final numbers = <int>[];
+        for (final p in parts) {
+          final n = int.tryParse(p) ?? 0;
+          numbers.add(n);
+        }
+        
+        return {
+          'numbers': numbers,
+          'prerelease': prereleasePart,
+        };
+      }
+
+      final remoteParsed = parseVersion(remote);
+      final localParsed = parseVersion(local);
+
+      final List<int> remoteNumbers = remoteParsed['numbers'];
+      final List<int> localNumbers = localParsed['numbers'];
+
+      final maxLen = remoteNumbers.length > localNumbers.length 
+          ? remoteNumbers.length 
+          : localNumbers.length;
+          
+      for (int i = 0; i < maxLen; i++) {
+        final r = i < remoteNumbers.length ? remoteNumbers[i] : 0;
+        final l = i < localNumbers.length ? localNumbers[i] : 0;
+        if (r > l) return true;
+        if (r < l) return false;
+      }
+
+      final remotePre = remoteParsed['prerelease'] as String;
+      final localPre = localParsed['prerelease'] as String;
+
+      if (remotePre.isEmpty && localPre.isNotEmpty) {
+        return true;
+      }
+      if (remotePre.isNotEmpty && localPre.isEmpty) {
+        return false;
+      }
+      if (remotePre.isNotEmpty && localPre.isNotEmpty) {
+        return remotePre.compareTo(localPre) > 0;
+      }
+
+      return false;
+    } catch (_) {
+      return false;
     }
-    return false;
   }
 }
 

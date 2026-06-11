@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'dart:io';
 import 'package:sodium/sodium_sumo.dart';
 import 'package:ghostroom/features/chat/dm_service.dart';
 import 'package:ghostroom/core/crypto/identity_service.dart';
@@ -111,9 +112,20 @@ bool listEquals(Uint8List a, Uint8List b) {
 }
 
 void main() {
+  late Directory tempDir;
+
   setUpAll(() async {
     TestWidgetsFlutterBinding.ensureInitialized();
-    Hive.init('.');
+    tempDir = Directory.systemTemp.createTempSync('ghostroom_test_hive_');
+    Hive.init(tempDir.path);
+  });
+
+  tearDownAll(() async {
+    try {
+      if (tempDir.existsSync()) {
+        tempDir.deleteSync(recursive: true);
+      }
+    } catch (_) {}
   });
 
   test('Message Reliability: Replay protection and ACK flow', () async {

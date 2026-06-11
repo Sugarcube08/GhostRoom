@@ -271,13 +271,16 @@ class ChatRepository with WidgetsBindingObserver {
         }),
       );
       if (response.statusCode == 200 || response.statusCode == 201) {
+        debugPrint('GHOST_LOG: TOKEN_REGISTERED');
         _logger.i('GHOST_LOG: FCM_TOKEN_REGISTRATION: SUCCESS (latency: ${stopwatch.elapsedMilliseconds}ms)');
         _logger.i('GHOST_LOG: Device token successfully registered on relay.');
       } else {
+        debugPrint('GHOST_LOG: TOKEN_REGISTRATION_FAILED status=${response.statusCode}');
         _logger.e('GHOST_LOG: FCM_TOKEN_REGISTRATION: FAILURE status=${response.statusCode} (latency: ${stopwatch.elapsedMilliseconds}ms)');
         _logger.w('GHOST_LOG: Device token registration failed with status ${response.statusCode}');
       }
     } catch (e) {
+      debugPrint('GHOST_LOG: TOKEN_REGISTRATION_FAILED error=$e');
       _logger.e('GHOST_LOG: FCM_TOKEN_REGISTRATION: FAILURE error=$e (latency: ${stopwatch.elapsedMilliseconds}ms)');
       _logger.e('GHOST_LOG: Error registering device token: $e');
     }

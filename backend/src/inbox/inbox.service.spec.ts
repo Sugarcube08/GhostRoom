@@ -6,6 +6,7 @@ import { MessageEntity } from "./entities/message.entity";
 import { DeliveryEntity } from "./entities/delivery.entity";
 import { DeviceEntity } from "./entities/device.entity";
 import { MediaService } from "../media/media.service";
+import { FirebaseService } from "./firebase.service";
 import { describe, expect, it, jest, beforeEach } from "@jest/globals";
 
 describe("InboxService", () => {
@@ -47,10 +48,12 @@ describe("InboxService", () => {
     mockDeliveryRepo = {
       create: jest.fn().mockImplementation((entity) => entity),
       save: (jest.fn() as any).mockResolvedValue({}),
+      find: (jest.fn() as any).mockResolvedValue([]),
       update: (jest.fn() as any).mockResolvedValue({}),
       count: (jest.fn() as any).mockResolvedValue(0),
       findOne: (jest.fn() as any).mockResolvedValue({
         sender_id: "sender-id",
+        status: "PENDING",
       }),
       delete: (jest.fn() as any).mockResolvedValue({}),
     };
@@ -58,6 +61,16 @@ describe("InboxService", () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         InboxService,
+        {
+          provide: FirebaseService,
+          useValue: {
+            sendWakeup: (jest.fn() as any).mockResolvedValue("test-msg-id"),
+            getFcmEnabled: jest.fn().mockReturnValue(true),
+            getApp: jest.fn().mockReturnValue({}),
+            getProjectId: jest.fn().mockReturnValue("test-project-id"),
+            getCredentialSource: jest.fn().mockReturnValue("env_vars"),
+          },
+        },
         {
           provide: ConfigService,
           useValue: {
@@ -121,14 +134,14 @@ describe("InboxService", () => {
 
   describe("acknowledgeMessage", () => {
     it("should update delivered_at for PERSISTENT messages", async () => {
+      mockDeliveryRepo.find.mockResolvedValue([
+        { status: "ACKNOWLEDGED" }
+      ]);
       await service.acknowledgeMessage("test-id", "msg-id");
 
       expect(mockMessageRepo.findOne).toHaveBeenCalled();
       expect(mockMessageRepo.save).toHaveBeenCalled(); // Since it's PERSISTENT in mock
-      expect(mockDeliveryRepo.update).toHaveBeenCalledWith(
-        { message_id: "msg-id" },
-        { status: "ACKNOWLEDGED" },
-      );
+      expect(mockDeliveryRepo.save).toHaveBeenCalled();
     });
 
     it("should delete VIEW_ONCE messages", async () => {
@@ -136,6 +149,9 @@ describe("InboxService", () => {
         id: "msg-id",
         retention_mode: "VIEW_ONCE",
       });
+      mockDeliveryRepo.find.mockResolvedValue([
+        { status: "ACKNOWLEDGED" }
+      ]);
       await service.acknowledgeMessage("test-id", "msg-id");
 
       expect(mockMessageRepo.delete).toHaveBeenCalledWith("msg-id");

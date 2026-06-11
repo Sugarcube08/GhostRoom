@@ -102,6 +102,7 @@ class _NavigationShellState extends ConsumerState<NavigationShell> {
       debugPrint('GHOST_LOG: FCM Permission status: ${settings.authorizationStatus}');
       FirebaseMessaging.instance.getToken().then((token) {
         if (token != null) {
+          debugPrint('GHOST_LOG: TOKEN_GENERATED token=$token');
           debugPrint('GHOST_LOG: FCM_TOKEN_GENERATION: SUCCESS token=$token (latency: ${tokenGenStopwatch.elapsedMilliseconds}ms)');
           // ignore: avoid_print
           print('FCM_TOKEN_GENERATED token=$token');
@@ -117,6 +118,7 @@ class _NavigationShellState extends ConsumerState<NavigationShell> {
     });
 
     _tokenRefreshSubscription = FirebaseMessaging.instance.onTokenRefresh.listen((token) {
+      debugPrint('GHOST_LOG: TOKEN_REFRESHED token=$token');
       debugPrint('GHOST_LOG: FCM_TOKEN_REFRESH: SUCCESS token=$token');
       // ignore: avoid_print
       print('FCM_TOKEN_GENERATED token=$token');
@@ -185,7 +187,10 @@ class _NavigationShellState extends ConsumerState<NavigationShell> {
               if (baseUrl.endsWith('/')) {
                 baseUrl = baseUrl.substring(0, baseUrl.length - 1);
               }
-              final cleanVersion = manifest.version.replaceAll('v', '').trim();
+              var cleanVersion = manifest.version.trim();
+              if (cleanVersion.startsWith('v') || cleanVersion.startsWith('V')) {
+                cleanVersion = cleanVersion.substring(1);
+              }
               final url = '$baseUrl/releases/tag/v$cleanVersion';
               
               launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
