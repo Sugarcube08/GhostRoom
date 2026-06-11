@@ -29,7 +29,7 @@ class ManualMockNotificationService implements NotificationService {
   @override
   Future<void> init() async {}
   @override
-  Future<void> showNotification({required String title, required String body, String? payload}) async {}
+  Future<void> showNotification({required String title, required String body, String? payload, int? id}) async {}
   
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);

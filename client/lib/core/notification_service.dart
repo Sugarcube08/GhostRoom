@@ -55,6 +55,7 @@ class NotificationService {
     required String title,
     required String body,
     String? payload,
+    int? id,
   }) async {
     debugPrint('GHOST_LOG: FCM_NOTIFICATION_CREATION: START');
     final stopwatch = Stopwatch()..start();
@@ -83,7 +84,7 @@ class NotificationService {
       );
 
       await _notifications.show(
-        DateTime.now().millisecond, // Unique ID
+        id ?? (DateTime.now().millisecondsSinceEpoch % 100000), // Unique ID under limits
         title,
         body,
         notificationDetails,
@@ -92,6 +93,14 @@ class NotificationService {
       debugPrint('GHOST_LOG: FCM_NOTIFICATION_CREATION: SUCCESS (latency: ${stopwatch.elapsedMilliseconds}ms)');
     } catch (e) {
       debugPrint('GHOST_LOG: FCM_NOTIFICATION_CREATION: FAILURE error=$e (latency: ${stopwatch.elapsedMilliseconds}ms)');
+    }
+  }
+
+  Future<void> cancelNotification(int id) async {
+    try {
+      await _notifications.cancel(id);
+    } catch (e) {
+      debugPrint('Error cancelling notification: $e');
     }
   }
 }

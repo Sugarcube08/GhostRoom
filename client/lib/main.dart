@@ -25,6 +25,7 @@ import 'features/chat/message.dart';
 import 'features/chat/conversation_state.dart';
 import 'core/network/relay_manager.dart';
 import 'core/storage/storage_directory_helper.dart';
+import 'core/notification_service.dart';
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
@@ -41,10 +42,28 @@ Future<void> ghostRoomBackgroundHandler(RemoteMessage message) async {
 
   if (message.data['event'] != 'sync_required') {
     debugPrint('GHOST_LOG: FCM_BACKGROUND_WAKEUP: FAILURE error=Ignored non-sync background event (latency: ${stopwatch.elapsedMilliseconds}ms)');
+    // ignore: avoid_print
+    print("BACKGROUND_HANDLER_FINISHED");
     return;
   }
 
   WidgetsFlutterBinding.ensureInitialized();
+  
+  // Show manual background notification immediately for terminated/killed state
+  try {
+    final ns = NotificationService();
+    await ns.init();
+    await ns.showNotification(
+      title: 'GhostRoom',
+      body: 'New secure message received',
+      id: 999,
+    );
+    // ignore: avoid_print
+    print("BACKGROUND_NOTIFICATION_CREATED");
+  } catch (e) {
+    debugPrint('GHOST_LOG: Failed to create background notification: $e');
+  }
+
   try {
     try {
       await Firebase.initializeApp();
@@ -146,8 +165,12 @@ Future<void> ghostRoomBackgroundHandler(RemoteMessage message) async {
     wsService.disconnect();
     tempContainer.dispose();
     debugPrint('GHOST_LOG: Background sync handler finished successfully.');
+    // ignore: avoid_print
+    print("BACKGROUND_HANDLER_FINISHED");
   } catch (err) {
     debugPrint('GHOST_LOG: FCM_BACKGROUND_WAKEUP: FAILURE error=$err (latency: ${stopwatch.elapsedMilliseconds}ms)');
+    // ignore: avoid_print
+    print("BACKGROUND_HANDLER_FINISHED");
   }
 }
 
