@@ -38,7 +38,10 @@ class ManualMockNotificationService implements NotificationService {
 class ManualMockWebSocketService implements WebSocketService {
   String? lastAckedId;
   @override
-  void acknowledgeMessage(String? messageId) => lastAckedId = messageId;
+  Future<bool> acknowledgeMessage(String messageId) async {
+    lastAckedId = messageId;
+    return true;
+  }
   
   @override
   void onIdentityVerified(Function(dynamic) callback) {}

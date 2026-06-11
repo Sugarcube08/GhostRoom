@@ -25,7 +25,6 @@ import 'features/chat/message.dart';
 import 'features/chat/conversation_state.dart';
 import 'core/network/relay_manager.dart';
 import 'core/storage/storage_directory_helper.dart';
-import 'core/notification_service.dart';
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
@@ -48,21 +47,6 @@ Future<void> ghostRoomBackgroundHandler(RemoteMessage message) async {
   }
 
   WidgetsFlutterBinding.ensureInitialized();
-  
-  // Show manual background notification immediately for terminated/killed state
-  try {
-    final ns = NotificationService();
-    await ns.init();
-    await ns.showNotification(
-      title: 'GhostRoom',
-      body: 'New secure message received',
-      id: 999,
-    );
-    // ignore: avoid_print
-    print("BACKGROUND_NOTIFICATION_CREATED");
-  } catch (e) {
-    debugPrint('GHOST_LOG: Failed to create background notification: $e');
-  }
 
   try {
     try {
@@ -142,6 +126,8 @@ Future<void> ghostRoomBackgroundHandler(RemoteMessage message) async {
       if (messages.isNotEmpty) {
         await chatRepo.processEnvelopes(messages);
       }
+      // ignore: avoid_print
+      print("SYNC_COMPLETE");
       debugPrint('GHOST_LOG: FCM_BACKGROUND_WAKEUP: SUCCESS (latency: ${stopwatch.elapsedMilliseconds}ms)');
       if (!completer.isCompleted) {
         completer.complete();
@@ -161,6 +147,11 @@ Future<void> ghostRoomBackgroundHandler(RemoteMessage message) async {
     });
 
     await completer.future;
+
+    // Grace period: Wait 1.5 seconds to ensure all outgoing TCP packets (such as message ACKs)
+    // are fully flushed to the relay server before we close the socket connection.
+    debugPrint('GHOST_LOG: Background sync completed. Waiting for ACK flush...');
+    await Future.delayed(const Duration(milliseconds: 1500));
 
     wsService.disconnect();
     tempContainer.dispose();

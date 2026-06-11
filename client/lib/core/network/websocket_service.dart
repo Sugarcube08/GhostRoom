@@ -28,7 +28,9 @@ class WebSocketService {
   int _listenerInitCount = 0;
 
   WebSocketService(this._ref) {
-    _logger.i('GHOST_LOG: WebSocketService constructor invoked (Singleton verification)');
+    _logger.i(
+      'GHOST_LOG: WebSocketService constructor invoked (Singleton verification)',
+    );
   }
 
   bool get isConnected => _socket?.connected ?? false;
@@ -40,14 +42,17 @@ class WebSocketService {
 
   void connect(RelayProfile profile) async {
     final now = DateTime.now();
-    if (_lastConnectAttempt != null && now.difference(_lastConnectAttempt!) < _minConnectInterval) {
+    if (_lastConnectAttempt != null &&
+        now.difference(_lastConnectAttempt!) < _minConnectInterval) {
       _logger.d('WebSocket connection attempt throttled for ${profile.label}');
       return;
     }
     _lastConnectAttempt = now;
 
     if (_isConnecting) {
-      _logger.d('WebSocket connection already in progress for ${profile.label}');
+      _logger.d(
+        'WebSocket connection already in progress for ${profile.label}',
+      );
       StabilityTracker.logEvent('WS_Connect_Skipped_Busy');
       return;
     }
@@ -61,21 +66,28 @@ class WebSocketService {
     }
 
     if (_socket != null && _activeUrl == connectionUrl) {
-      _logger.d('WebSocket already targeting ${profile.label}. Status: ${_socket!.connected ? "Connected" : "Reconnecting/Disconnected"}');
+      _logger.d(
+        'WebSocket already targeting ${profile.label}. Status: ${_socket!.connected ? "Connected" : "Reconnecting/Disconnected"}',
+      );
       if (!_socket!.connected) {
         _logger.d('Ensuring existing socket is connected...');
-        _socket!.connect(); // Manually trigger connect if autoConnect didn't catch it
+        _socket!
+            .connect(); // Manually trigger connect if autoConnect didn't catch it
       }
       return;
     }
 
     _logger.i('Connecting to relay: ${profile.label} ($connectionUrl)');
+    // ignore: avoid_print
+    print("WS_CONNECT_START");
     StabilityTracker.logEvent('WS_Connecting', data: {'relay': profile.label});
     _isConnecting = true;
 
     try {
       if (_socket != null) {
-        _logger.i('Disposing existing socket for different URL: $_activeUrl -> $connectionUrl');
+        _logger.i(
+          'Disposing existing socket for different URL: $_activeUrl -> $connectionUrl',
+        );
         _socket!.dispose();
         _socket = null;
         _listenerSetupDone = false;
@@ -99,7 +111,6 @@ class WebSocketService {
 
       _activeUrl = connectionUrl;
       _setupInternalListeners(profile);
-      
     } catch (e) {
       _logger.e('Failed to initiate WebSocket connection: $e');
     } finally {
@@ -119,6 +130,8 @@ class WebSocketService {
     _socket!.onConnect((_) {
       _connectCount++;
       _logger.i('Connected to relay: ${profile.label}');
+      // ignore: avoid_print
+      print("WS_CONNECT_SUCCESS");
       _logger.i("SOCKET_CONNECTED");
       _logger.i('GHOST_LOG: WS_CONNECT count: $_connectCount');
       StabilityTracker.logEvent('WS_Connected');
@@ -132,7 +145,9 @@ class WebSocketService {
     _socket!.on('identity.challenge', (data) async {
       final nonce = data['nonce'] as String;
       _logger.d('Received identity challenge. Solving...');
-      
+      // ignore: avoid_print
+      print("AUTH_START");
+
       try {
         final idService = _ref.read(identityServiceProvider);
         final identity = idService.currentIdentity;
@@ -142,7 +157,7 @@ class WebSocketService {
         }
 
         final signature = idService.signChallenge(nonce);
-        
+
         _socket!.emit('identity.prove', {
           'public_id': identity.publicId,
           'public_key': base64Encode(identity.ed25519KeyPair.publicKey),
@@ -157,7 +172,9 @@ class WebSocketService {
     _socket!.on('identity.verified', (data) {
       _isAuthenticated = true;
       _logger.i('Identity verified by relay: ${data['public_id']}');
-      
+      // ignore: avoid_print
+      print("AUTH_SUCCESS");
+
       final callback = _callbacks['identity.verified'];
       if (callback != null) {
         try {
@@ -243,21 +260,51 @@ class WebSocketService {
     _socket?.emit('inbox.fetch', {'since': since});
   }
 
-  void acknowledgeMessage(String messageId) {
-    if (!_isAuthenticated) return;
-    _socket?.emit('message.ack', {'message_id': messageId});
+  Future<bool> acknowledgeMessage(String messageId) {
+    final completer = Completer<bool>();
+    if (!_isAuthenticated) {
+      completer.complete(false);
+      return completer.future;
+    }
+    // ignore: avoid_print
+    print("DELIVERY_RECEIPT_SEND_START");
+    _socket?.emitWithAck(
+      'message.ack',
+      {'message_id': messageId},
+      ack: (response) {
+        // ignore: avoid_print
+        print("DELIVERY_RECEIPT_SEND_SUCCESS");
+        completer.complete(true);
+      },
+    );
+
+    Future.delayed(const Duration(seconds: 3), () {
+      if (!completer.isCompleted) {
+        completer.complete(false);
+      }
+    });
+    return completer.future;
   }
 
-  void sendMessage(String targetId, Map<String, dynamic> payload, {int version = 1, Function(dynamic)? ack}) {
+  void sendMessage(
+    String targetId,
+    Map<String, dynamic> payload, {
+    int version = 1,
+    Function(dynamic)? ack,
+  }) {
     final Map<String, dynamic> data = {
       'target_id': targetId,
       'v': version,
-      ...payload
+      ...payload,
     };
     if (ack != null) {
-      _socket?.emitWithAck('message.send', data, ack: (response) {
-        ack(response);
-      });
+      _socket?.emitWithAck(
+        'message.send',
+        data,
+        ack: (response) {
+          ack(response);
+        },
+      );
     } else {
       _socket?.emit('message.send', data);
     }
@@ -309,18 +356,27 @@ class WebSocketService {
 
   Future<List<Map<String, dynamic>>> getDevices(String publicId) async {
     if (!_isAuthenticated) return [];
-    
+
     final completer = Completer<List<Map<String, dynamic>>>();
-    _socket?.emitWithAck('identity.devices', {'public_id': publicId}, ack: (response) {
-      if (response != null && response['status'] == 'ok') {
-        final devices = List<Map<String, dynamic>>.from(response['devices'] ?? []);
-        completer.complete(devices);
-      } else {
-        completer.complete([]);
-      }
-    });
-    
-    return completer.future.timeout(const Duration(seconds: 5), onTimeout: () => []);
+    _socket?.emitWithAck(
+      'identity.devices',
+      {'public_id': publicId},
+      ack: (response) {
+        if (response != null && response['status'] == 'ok') {
+          final devices = List<Map<String, dynamic>>.from(
+            response['devices'] ?? [],
+          );
+          completer.complete(devices);
+        } else {
+          completer.complete([]);
+        }
+      },
+    );
+
+    return completer.future.timeout(
+      const Duration(seconds: 5),
+      onTimeout: () => [],
+    );
   }
 
   void logMemoryUsage() {

@@ -227,6 +227,8 @@ class ChatRepository with WidgetsBindingObserver {
 
   void _handleIdentityVerified(dynamic data) {
     _logger.i('GHOST_LOG: Identity verified. Triggering inbox sync...');
+    // ignore: avoid_print
+    print("SYNC_START");
     _wsService.fetchInbox(since: lastSyncTimestamp);
 
     // Register FCM token on mobile platforms only
@@ -367,7 +369,7 @@ class ChatRepository with WidgetsBindingObserver {
         _logger.i('GHOST_LOG: MESSAGE_RECEIVED id: ${envelope.id}');
         
         if (isProcessed(envelope.id)) {
-          _wsService.acknowledgeMessage(envelope.id);
+          await _wsService.acknowledgeMessage(envelope.id);
           continue;
         }
 
@@ -443,7 +445,7 @@ class ChatRepository with WidgetsBindingObserver {
 
         if (isBlocked) {
           _logger.i('Auto-rejected message from blocked sender: $senderId');
-          _wsService.acknowledgeMessage(envelope.id);
+          await _wsService.acknowledgeMessage(envelope.id);
           continue;
         }
 
@@ -451,7 +453,7 @@ class ChatRepository with WidgetsBindingObserver {
         if (!isKnownContact) {
           if (type != MessageType.text) {
             _logger.w('Dropped media attachment from unknown sender: $senderId');
-            _wsService.acknowledgeMessage(envelope.id);
+            await _wsService.acknowledgeMessage(envelope.id);
             continue;
           }
           isRequest = true;
@@ -507,7 +509,7 @@ class ChatRepository with WidgetsBindingObserver {
           }
           // Do not save system messages to the box
           await _markProcessed(envelope.id, actualTimestamp);
-          _wsService.acknowledgeMessage(envelope.id);
+          await _wsService.acknowledgeMessage(envelope.id);
           continue;
         }
 
@@ -572,14 +574,14 @@ class ChatRepository with WidgetsBindingObserver {
         _logger.i("MESSAGE_RENDERED_UI");
         _logger.i("MESSAGE_RENDERED");
         await _markProcessed(message.id, actualTimestamp);
-        _wsService.acknowledgeMessage(message.id);
+        await _wsService.acknowledgeMessage(message.id);
         
       } catch (e) {
         _logger.e("MESSAGE_DECRYPT_FAILED");
         _logger.e('Error processing envelope: $e');
         // Acknowledge anyway to prevent infinite retry loop for broken envelopes
         if (data['id'] != null) {
-          _wsService.acknowledgeMessage(data['id']);
+          await _wsService.acknowledgeMessage(data['id']);
         }
       }
     }

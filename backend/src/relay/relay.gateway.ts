@@ -265,7 +265,9 @@ export class RelayGateway implements OnGatewayConnection, OnGatewayDisconnect {
   async handleMessageAck(client: Socket, payload: { message_id: string }) {
     const publicId = client.data.publicId;
     const deviceId = client.data.deviceId;
-    if (!publicId) return;
+    if (!publicId) return { success: false, error: "Not authenticated" };
+
+    this.logger.log(`DELIVERY_RECEIPT_RECEIVED message_id=${payload.message_id} recipient_id=${publicId}`);
 
     const result = await this.inboxService.acknowledgeMessage(
       publicId,
@@ -280,6 +282,7 @@ export class RelayGateway implements OnGatewayConnection, OnGatewayDisconnect {
         recipient_id: publicId,
         timestamp: Date.now(),
       });
+      this.logger.log(`MESSAGE_MARKED_DELIVERED message_id=${payload.message_id} sender_id=${result.senderId} recipient_id=${publicId}`);
     }
 
     this.logger.log(
@@ -291,6 +294,7 @@ export class RelayGateway implements OnGatewayConnection, OnGatewayDisconnect {
       device_id: deviceId,
     });
     this.metricsService.messagesAcked.inc();
+    return { success: true, message_id: payload.message_id };
   }
 
   @SubscribeMessage("message.seen")
