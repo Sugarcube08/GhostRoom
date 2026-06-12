@@ -29,6 +29,17 @@ import 'core/storage/storage_directory_helper.dart';
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
 @pragma('vm:entry-point')
+class BackgroundRelayManager extends RelayManager {
+  final RelayProfile _cachedRelay;
+  BackgroundRelayManager(super.storage, this._cachedRelay);
+
+  @override
+  Future<RelayProfile?> getActiveRelay() async {
+    return _cachedRelay;
+  }
+}
+
+@pragma('vm:entry-point')
 Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   final stopwatch = Stopwatch()..start();
   // ignore: avoid_print
@@ -54,14 +65,57 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 
   WidgetsFlutterBinding.ensureInitialized();
 
+  // STEP 1: Firebase Initialization
   try {
-    try {
-      await Firebase.initializeApp();
-    } catch (e) {
-      debugPrint('GHOST_LOG: Firebase.initializeApp() failed or already initialized: $e');
+    await Firebase.initializeApp();
+    // ignore: avoid_print
+    print('STEP_1_FIREBASE_DONE');
+  } catch (e, s) {
+    // ignore: avoid_print
+    print('BACKGROUND_FATAL=$e');
+    // ignore: avoid_print
+    print(s);
+  }
+
+  // STEP 2 & 3: Identity & DB Loading from Background Cache
+  // ignore: avoid_print
+  print('STEP_2_IDENTITY_START');
+  
+  late final Uint8List encryptionKey;
+  late final RelayProfile relay;
+  late final IdentityService idService;
+  late final BackgroundRelayManager relayManager;
+  late final SodiumSumo sodium;
+
+  try {
+    final cacheFile = await StorageDirectoryHelper.getBackgroundCacheFile();
+    if (!await cacheFile.exists()) {
+      debugPrint('GHOST_LOG: FCM_BACKGROUND_WAKEUP: FAILURE error=Background cache file not found');
+      // ignore: avoid_print
+      print("BACKGROUND_HANDLER_FINISHED");
+      return;
     }
 
-    final sodium = await SodiumSumoInit.init();
+    final cacheContent = await cacheFile.readAsString();
+    final cacheData = jsonDecode(cacheContent);
+    final String? hiveKeyBase64 = cacheData['hive_encryption_key'];
+    if (hiveKeyBase64 == null) {
+      debugPrint('GHOST_LOG: FCM_BACKGROUND_WAKEUP: FAILURE error=No Hive encryption key in cache');
+      // ignore: avoid_print
+      print("BACKGROUND_HANDLER_FINISHED");
+      return;
+    }
+    encryptionKey = base64.decode(hiveKeyBase64);
+
+    relay = RelayProfile(
+      id: cacheData['active_relay_id'] ?? 'default',
+      label: cacheData['active_relay_label'] ?? 'Default Relay',
+      websocketUrl: cacheData['active_relay_websocket_url'] ?? '',
+      apiUrl: cacheData['active_relay_api_url'] ?? '',
+      token: cacheData['active_relay_token'],
+    );
+
+    sodium = await SodiumSumoInit.init();
     await StorageDirectoryHelper.migrateIfNeeded();
     final hiveDir = await StorageDirectoryHelper.getHiveDirectory();
     Hive.init(hiveDir.path);
@@ -71,16 +125,6 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
     if (!Hive.isAdapterRegistered(2)) Hive.registerAdapter(MessageTypeAdapter());
     if (!Hive.isAdapterRegistered(3)) Hive.registerAdapter(ConversationModeAdapter());
     if (!Hive.isAdapterRegistered(4)) Hive.registerAdapter(ConversationStateAdapter());
-
-    final storage = const FlutterSecureStorage(aOptions: AndroidOptions(resetOnError: true));
-    String? existingKey = await storage.read(key: 'hive_encryption_key');
-    if (existingKey == null) {
-      debugPrint('GHOST_LOG: FCM_BACKGROUND_WAKEUP: FAILURE error=No encryption key found (latency: ${stopwatch.elapsedMilliseconds}ms)');
-      // ignore: avoid_print
-      print("BACKGROUND_HANDLER_FINISHED");
-      return;
-    }
-    final encryptionKey = base64.decode(existingKey);
 
     // Open Hive boxes
     await Future.wait([
@@ -97,56 +141,68 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
     ]);
 
     final fcmMessageId = message.data['message_id'];
+    final syncBox = Hive.box('sync_metadata');
     if (fcmMessageId != null) {
-      final syncBox = Hive.box('sync_metadata');
       await syncBox.put('notified_$fcmMessageId', true);
       debugPrint('GHOST_LOG: Marked FCM notification as shown for message: $fcmMessageId');
     }
 
-    final idService = IdentityService(sodium, storage);
-    await idService.initIdentity();
-    if (!idService.hasIdentity) {
-      debugPrint('GHOST_LOG: FCM_BACKGROUND_WAKEUP: FAILURE error=No identity found (latency: ${stopwatch.elapsedMilliseconds}ms)');
+    final storage = const FlutterSecureStorage(aOptions: AndroidOptions(resetOnError: true));
+    idService = IdentityService(sodium, storage);
+    
+    // Load identity from cache (bypasses Keystore/SecureStorage)
+    final loaded = await idService.loadIdentityFromCache();
+    if (!loaded || !idService.hasIdentity) {
+      debugPrint('GHOST_LOG: FCM_BACKGROUND_WAKEUP: FAILURE error=Identity load from cache failed');
       // ignore: avoid_print
       print("BACKGROUND_HANDLER_FINISHED");
       return;
     }
 
-    final relayManager = RelayManager(storage);
-    final relay = await relayManager.getActiveRelay();
-    if (relay == null) {
-      debugPrint('GHOST_LOG: FCM_BACKGROUND_WAKEUP: FAILURE error=No active relay (latency: ${stopwatch.elapsedMilliseconds}ms)');
-      // ignore: avoid_print
-      print("BACKGROUND_HANDLER_FINISHED");
-      return;
-    }
-
-    final completer = Completer<void>();
-    final tempContainer = ProviderContainer(
-      overrides: [
-        sodiumProvider.overrideWithValue(sodium),
-        secureStorageProvider.overrideWithValue(storage),
-        identityServiceProvider.overrideWithValue(idService),
-        relayManagerProvider.overrideWithValue(relayManager),
-      ],
-    );
-
-    // Initialize notification service for the background isolate
-    final notifService = tempContainer.read(notificationServiceProvider);
-    await notifService.init();
-
-    final chatRepo = tempContainer.read(chatRepositoryProvider);
-    await chatRepo.init();
-
-    final wsService = tempContainer.read(webSocketServiceProvider);
-
+    relayManager = BackgroundRelayManager(storage, relay);
+    
     // ignore: avoid_print
-    print("BACKGROUND_SYNC_START");
+    print('STEP_3_IDENTITY_DONE');
+  } catch (e, s) {
+    // ignore: avoid_print
+    print('BACKGROUND_FATAL=$e');
+    // ignore: avoid_print
+    print(s);
+    // ignore: avoid_print
+    print("BACKGROUND_HANDLER_FINISHED");
+    return;
+  }
+
+  final tempContainer = ProviderContainer(
+    overrides: [
+      sodiumProvider.overrideWithValue(sodium),
+      secureStorageProvider.overrideWithValue(const FlutterSecureStorage(aOptions: AndroidOptions(resetOnError: true))),
+      identityServiceProvider.overrideWithValue(idService),
+      relayManagerProvider.overrideWithValue(relayManager),
+    ],
+  );
+
+  // Initialize notification service for the background isolate
+  final notifService = tempContainer.read(notificationServiceProvider);
+  await notifService.init();
+
+  final chatRepo = tempContainer.read(chatRepositoryProvider);
+  await chatRepo.init();
+
+  final wsService = tempContainer.read(webSocketServiceProvider);
+  final completer = Completer<void>();
+  bool syncSucceeded = false;
+
+  // STEP 4: WebSocket Sync Start
+  // ignore: avoid_print
+  print('STEP_4_SYNC_START');
+  try {
     wsService.onInboxMessages((messages) async {
       debugPrint('GHOST_LOG: Background sync received messages: ${messages.length}');
       if (messages.isNotEmpty) {
-        await chatRepo.processEnvelopes(messages, enableNotification: true);
+        await chatRepo.processEnvelopes(messages, enableNotification: false);
       }
+      syncSucceeded = true;
       // ignore: avoid_print
       print("SYNC_COMPLETE");
       // ignore: avoid_print
@@ -161,8 +217,8 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
     await relayManager.wakeUpRelay(relay);
     wsService.connect(relay);
 
-    // Complete after 8 seconds timeout as safety
-    Future.delayed(const Duration(seconds: 8), () {
+    // Complete after 5 seconds timeout as safety
+    Future.delayed(const Duration(seconds: 5), () {
       if (!completer.isCompleted) {
         debugPrint('GHOST_LOG: FCM_BACKGROUND_WAKEUP: FAILURE error=Background sync timed out (latency: ${stopwatch.elapsedMilliseconds}ms)');
         completer.complete();
@@ -170,7 +226,36 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
     });
 
     await completer.future;
+    // ignore: avoid_print
+    print('STEP_5_SYNC_DONE');
+  } catch (e, s) {
+    // ignore: avoid_print
+    print('BACKGROUND_FATAL=$e');
+    // ignore: avoid_print
+    print(s);
+  }
 
+  // STEP 6: Direct HTTP Delivery Receipt Fallback if WebSocket sync failed or timed out
+  // ignore: avoid_print
+  print('STEP_6_RECEIPT_START');
+  try {
+    final fcmMessageId = message.data['message_id'];
+    if (fcmMessageId != null) {
+      if (!syncSucceeded) {
+        debugPrint('GHOST_LOG: WebSocket sync failed/timed out. Sending fallback HTTP receipt...');
+        await chatRepo.sendDeliveryReceipt(fcmMessageId);
+      }
+      // ignore: avoid_print
+      print('STEP_7_RECEIPT_DONE');
+    }
+  } catch (e, s) {
+    // ignore: avoid_print
+    print('BACKGROUND_FATAL=$e');
+    // ignore: avoid_print
+    print(s);
+  }
+
+  try {
     // Grace period: Wait 1.5 seconds to ensure all outgoing TCP packets (such as message ACKs)
     // are fully flushed to the relay server before we close the socket connection.
     debugPrint('GHOST_LOG: Background sync completed. Waiting for ACK flush...');

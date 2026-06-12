@@ -269,6 +269,8 @@ class IdentityService {
         deviceId: deviceId,
       );
 
+      await saveBackgroundCache();
+
       return _currentIdentity!;
     } catch (e, stack) {
       _logger.e('GHOST_CRITICAL: restoreIdentity failed: $e', error: e, stackTrace: stack);
@@ -354,6 +356,13 @@ class IdentityService {
       await fallbackStorage.deleteAll();
     } catch (_) {}
 
+    try {
+      final file = await StorageDirectoryHelper.getBackgroundCacheFile();
+      if (await file.exists()) {
+        await file.delete();
+      }
+    } catch (_) {}
+
     await _clearPublicIdentityFlag();
     _currentIdentity = null;
   }
@@ -369,5 +378,77 @@ class IdentityService {
       'publicId': _currentIdentity?.publicId,
     };
     StabilityTracker.logComponentDiagnostics('IdentityService', stats);
+  }
+
+  Future<void> saveBackgroundCache({String? customHiveKey}) async {
+    try {
+      if (_currentIdentity == null) return;
+      final file = await StorageDirectoryHelper.getBackgroundCacheFile();
+      
+      String? hiveKey = customHiveKey;
+      if (hiveKey == null) {
+        try {
+          hiveKey = await _storage.read(key: 'hive_encryption_key');
+        } catch (_) {}
+      }
+
+      // Read active relay details
+      final relayManager = RelayManager(_storage);
+      final activeRelay = await relayManager.getActiveRelay();
+      
+      final data = {
+        'public_id': _currentIdentity!.publicId,
+        'device_id': _currentIdentity!.deviceId,
+        'ed25519_public_key': base64Encode(_currentIdentity!.ed25519KeyPair.publicKey),
+        'ed25519_secret_key': base64Encode(_currentIdentity!.ed25519KeyPair.secretKey.extractBytes()),
+        'x25519_public_key': base64Encode(_currentIdentity!.x25519KeyPair.publicKey),
+        'x25519_secret_key': base64Encode(_currentIdentity!.x25519KeyPair.secretKey.extractBytes()),
+        'hive_encryption_key': hiveKey,
+        if (activeRelay != null) ...{
+          'active_relay_id': activeRelay.id,
+          'active_relay_label': activeRelay.label,
+          'active_relay_websocket_url': activeRelay.websocketUrl,
+          'active_relay_api_url': activeRelay.apiUrl,
+          'active_relay_token': activeRelay.token,
+        }
+      };
+      
+      await file.writeAsString(jsonEncode(data));
+      _logger.i("GHOST_LOG: Saved background identity cache successfully.");
+    } catch (e) {
+      _logger.e("GHOST_LOG: Failed to save background identity cache: $e");
+    }
+  }
+
+  Future<bool> loadIdentityFromCache() async {
+    try {
+      final file = await StorageDirectoryHelper.getBackgroundCacheFile();
+      if (!await file.exists()) {
+        _logger.w("GHOST_LOG: Background identity cache file does not exist.");
+        return false;
+      }
+      
+      final content = await file.readAsString();
+      final data = jsonDecode(content);
+      
+      final ed25519Pk = base64Decode(data['ed25519_public_key']);
+      final ed25519Sk = base64Decode(data['ed25519_secret_key']);
+      final x25519Pk = base64Decode(data['x25519_public_key']);
+      final x25519Sk = base64Decode(data['x25519_secret_key']);
+      
+      _currentIdentity = Identity(
+        mnemonic: '', // Not needed for background operations
+        ed25519KeyPair: KeyPair(publicKey: ed25519Pk, secretKey: SecureKey.fromList(sodium, ed25519Sk)),
+        x25519KeyPair: KeyPair(publicKey: x25519Pk, secretKey: SecureKey.fromList(sodium, x25519Sk)),
+        publicId: data['public_id'],
+        fingerprint: '', // Not needed for background operations
+        deviceId: data['device_id'],
+      );
+      _logger.i("GHOST_LOG: Successfully loaded identity from background cache.");
+      return true;
+    } catch (e) {
+      _logger.e("GHOST_LOG: Failed to load identity from background cache: $e");
+      return false;
+    }
   }
 }

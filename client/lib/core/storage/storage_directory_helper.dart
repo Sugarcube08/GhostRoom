@@ -153,4 +153,9 @@ class StorageDirectoryHelper {
       } catch (_) {}
     }
   }
+
+  static Future<File> getBackgroundCacheFile() async {
+    final baseDir = await getBaseDirectory();
+    return File(p.join(baseDir.path, 'background_identity_cache.json'));
+  }
 }

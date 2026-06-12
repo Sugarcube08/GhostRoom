@@ -107,6 +107,9 @@ class AppInitializer {
       // 4. Identity
       debugPrint('GHOST_LOG: Initializing IdentityService...');
       await container.read(identityServiceProvider).initIdentity();
+      await container.read(identityServiceProvider).saveBackgroundCache(
+        customHiveKey: base64Encode(encryptionKey),
+      );
 
       status = InitializationStatus.success;
       debugPrint('GHOST_LOG: System initialization complete.');
