@@ -14,7 +14,7 @@ import { MetricsService } from "./metrics.service";
 import { CryptoUtils } from "../inbox/crypto-utils.service";
 import { FederationService } from "../federation/federation.service";
 import { GroupsService } from "../groups/groups.service";
-import { Inject, Logger } from "@nestjs/common";
+import { Inject, Logger, OnModuleInit } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import Redis from "ioredis";
 import { randomBytes } from "crypto";
@@ -26,7 +26,7 @@ import { io, Socket as ClientSocket } from "socket.io-client";
     origin: "*",
   },
 })
-export class RelayGateway implements OnGatewayConnection, OnGatewayDisconnect {
+export class RelayGateway implements OnGatewayConnection, OnGatewayDisconnect, OnModuleInit {
   private readonly logger = new Logger(RelayGateway.name);
 
   @WebSocketServer()
@@ -56,6 +56,13 @@ export class RelayGateway implements OnGatewayConnection, OnGatewayDisconnect {
       this.configService.get<string>("RATE_LIMIT_DAY") || "500",
     );
     this.setupKeyspaceNotifications();
+  }
+
+  onModuleInit() {
+    this.inboxService.registerFcmDeliveryCallback(async (senderId, messageId, recipientId) => {
+      await this.emitStatusUpdate(senderId, messageId, "DELIVERED", recipientId);
+      this.logger.log(`STATUS_UPDATE_EMIT message_id=${messageId} sender_id=${senderId} status=DELIVERED`);
+    });
   }
 
   async handleConnection(client: Socket) {
@@ -687,6 +694,7 @@ export class RelayGateway implements OnGatewayConnection, OnGatewayDisconnect {
       timestamp: Date.now(),
     };
 
+    this.logger.log(`STATUS_UPDATE_EMIT message_id=${messageId} sender_id=${senderId} status=${status}`);
     this.logger.log(`STATUS_UPDATE_EMIT_START room=${room} message_id=${messageId}`);
     
     const clients = this.server.sockets.adapter.rooms.get(room)?.size ?? 0;

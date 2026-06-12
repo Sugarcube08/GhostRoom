@@ -1,6 +1,6 @@
 import { Injectable, Inject, Logger, OnModuleInit } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { Repository, MoreThan, IsNull, LessThan } from "typeorm";
+import { Repository, MoreThan, IsNull, LessThan, In } from "typeorm";
 import { Cron, CronExpression } from "@nestjs/schedule";
 import { ConfigService } from "@nestjs/config";
 import * as crypto from "crypto";
@@ -31,6 +31,12 @@ export class InboxService implements OnModuleInit {
 
   private readonly INBOX_MAX_MESSAGES: number;
   private readonly PAIR_PENDING_MAX: number;
+
+  private fcmDeliveryCallback: ((senderId: string, messageId: string, recipientId: string) => void) | null = null;
+
+  registerFcmDeliveryCallback(cb: (senderId: string, messageId: string, recipientId: string) => void) {
+    this.fcmDeliveryCallback = cb;
+  }
 
   onModuleInit() {
     // Handled by FirebaseService
@@ -67,7 +73,7 @@ export class InboxService implements OnModuleInit {
       where: {
         recipient_id: publicId,
         recipient_device_id: recipientDeviceId || IsNull(),
-        status: "PENDING",
+        status: In(["PENDING", "DELIVERED"]),
       },
     });
     if (pendingCount >= this.INBOX_MAX_MESSAGES) {
@@ -81,7 +87,7 @@ export class InboxService implements OnModuleInit {
           recipient_id: publicId,
           recipient_device_id: recipientDeviceId || IsNull(),
           sender_id: senderId,
-          status: "PENDING",
+          status: In(["PENDING", "DELIVERED"]),
         },
       });
       if (pairCount >= this.PAIR_PENDING_MAX) {
@@ -138,6 +144,7 @@ export class InboxService implements OnModuleInit {
           status: "PENDING",
         });
         await this.deliveryRepo.save(deliveryEntity);
+        this.logger.log(`MESSAGE_STORED message_id=${messageId}`);
         this.logger.log(
           `Audit: Additional device delivery queued for ${publicId} device ${recipientDeviceId || "default"}`,
         );
@@ -191,6 +198,7 @@ export class InboxService implements OnModuleInit {
       });
       await this.deliveryRepo.save(deliveryEntity);
 
+      this.logger.log(`MESSAGE_STORED message_id=${messageId}`);
       this.logger.log(
         `Audit: Message ${messageId} queued for ${publicId} device ${recipientDeviceId || "default"}`,
       );
@@ -243,7 +251,7 @@ export class InboxService implements OnModuleInit {
       this.logger.log(`FCM_RELAY_LOOKUP_SUCCESS found_token=${!!device?.fcm_token}`);
       this.logger.log(`DEVICE_LOOKUP found_token=${!!device?.fcm_token} identity_id=${publicId}`);
       if (device && device.fcm_token) {
-        await this.sendFcmWakeup(device.fcm_token, messageId);
+        await this.sendFcmWakeup(device.fcm_token, messageId, senderId, publicId);
       }
     } catch (fcmErr: any) {
       this.logger.error(
@@ -266,12 +274,12 @@ export class InboxService implements OnModuleInit {
           {
             recipient_id: publicId,
             recipient_device_id: deviceId || IsNull(),
-            status: "PENDING",
+            status: In(["PENDING", "DELIVERED"]),
           },
           {
             recipient_id: publicId,
             recipient_device_id: IsNull(),
-            status: "PENDING",
+            status: In(["PENDING", "DELIVERED"]),
           },
         ],
       });
@@ -513,13 +521,38 @@ export class InboxService implements OnModuleInit {
     this.logger.log(`Device registered: ${identityId} (${platform})`);
   }
 
-  async sendFcmWakeup(fcmToken: string, messageId: string): Promise<void> {
+  async sendFcmWakeup(fcmToken: string, messageId: string, senderId?: string, recipientId?: string): Promise<void> {
     this.logger.log(`FCM_DISPATCH_START token=${fcmToken} message_id=${messageId}`);
+    this.logger.log(`FCM_SEND_START message_id=${messageId}`);
     try {
       const msgId = await this.firebaseService.sendWakeup(fcmToken, messageId);
       if (msgId) {
         this.logger.log(`FCM_DISPATCH_SUCCESS message_id=${msgId}`);
         this.logger.log(`MESSAGE_NOTIFICATION_SENT token=${fcmToken}`);
+        this.logger.log(`FCM_SEND_SUCCESS message_id=${messageId}`);
+
+        // Mark delivery records as DELIVERED in DB
+        if (recipientId) {
+          await this.deliveryRepo.update(
+            { message_id: messageId, recipient_id: recipientId },
+            { status: "DELIVERED" }
+          );
+        }
+
+        // Mark message entity as delivered
+        const message = await this.messageRepo.findOne({
+          where: { id: messageId },
+        });
+        if (message && !message.delivered_at) {
+          message.delivered_at = new Date();
+          await this.messageRepo.save(message);
+        }
+
+        this.logger.log(`MESSAGE_MARKED_DELIVERED message_id=${messageId}`);
+
+        if (senderId && recipientId && this.fcmDeliveryCallback) {
+          this.fcmDeliveryCallback(senderId, messageId, recipientId);
+        }
       } else {
         this.logger.log(`FCM_DISPATCH_FAILURE error="FCM disabled or not initialized"`);
       }
