@@ -44,6 +44,12 @@ class ManualMockWebSocketService implements WebSocketService {
   }
   
   @override
+  Future<bool> sendDeliveryReceipt(String messageId) async {
+    lastAckedId = messageId;
+    return true;
+  }
+  
+  @override
   void onIdentityVerified(Function(dynamic) callback) {}
   @override
   void onMessage(Function(dynamic) callback) {}

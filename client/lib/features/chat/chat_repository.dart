@@ -108,6 +108,8 @@ class ChatRepository with WidgetsBindingObserver {
   }
 
   Future<void> sync() async {
+    // ignore: avoid_print
+    print("SYNC_INBOX_START");
     _logger.i('GHOST_LOG: Sync requested.');
     final relay = await _relayManager.getActiveRelay();
     if (relay != null) {
@@ -120,6 +122,21 @@ class ChatRepository with WidgetsBindingObserver {
         _wsService.fetchInbox(since: lastSyncTimestamp);
       }
     }
+    // ignore: avoid_print
+    print("SYNC_INBOX_SUCCESS");
+  }
+
+  Future<void> syncInbox() async {
+    await sync();
+  }
+
+  Future<bool> sendDeliveryReceipt(String messageId) async {
+    // ignore: avoid_print
+    print("REPOSITORY_SEND_DELIVERY_RECEIPT_START");
+    final result = await _wsService.sendDeliveryReceipt(messageId);
+    // ignore: avoid_print
+    print("REPOSITORY_SEND_DELIVERY_RECEIPT_SUCCESS");
+    return result;
   }
 
   void dispose() {
@@ -393,7 +410,7 @@ class ChatRepository with WidgetsBindingObserver {
         _logger.i('GHOST_LOG: MESSAGE_RECEIVED id: ${envelope.id}');
         
         if (isProcessed(envelope.id)) {
-          await _wsService.acknowledgeMessage(envelope.id);
+          await sendDeliveryReceipt(envelope.id);
           continue;
         }
 
@@ -469,7 +486,7 @@ class ChatRepository with WidgetsBindingObserver {
 
         if (isBlocked) {
           _logger.i('Auto-rejected message from blocked sender: $senderId');
-          await _wsService.acknowledgeMessage(envelope.id);
+          await sendDeliveryReceipt(envelope.id);
           continue;
         }
 
@@ -477,7 +494,7 @@ class ChatRepository with WidgetsBindingObserver {
         if (!isKnownContact) {
           if (type != MessageType.text) {
             _logger.w('Dropped media attachment from unknown sender: $senderId');
-            await _wsService.acknowledgeMessage(envelope.id);
+            await sendDeliveryReceipt(envelope.id);
             continue;
           }
           isRequest = true;
@@ -533,7 +550,7 @@ class ChatRepository with WidgetsBindingObserver {
           }
           // Do not save system messages to the box
           await _markProcessed(envelope.id, actualTimestamp);
-          await _wsService.acknowledgeMessage(envelope.id);
+          await sendDeliveryReceipt(envelope.id);
           continue;
         }
 
@@ -600,14 +617,14 @@ class ChatRepository with WidgetsBindingObserver {
         _logger.i("MESSAGE_RENDERED_UI");
         _logger.i("MESSAGE_RENDERED");
         await _markProcessed(message.id, actualTimestamp);
-        await _wsService.acknowledgeMessage(message.id);
+        await sendDeliveryReceipt(message.id);
         
       } catch (e) {
         _logger.e("MESSAGE_DECRYPT_FAILED");
         _logger.e('Error processing envelope: $e');
         // Acknowledge anyway to prevent infinite retry loop for broken envelopes
         if (data['id'] != null) {
-          await _wsService.acknowledgeMessage(data['id']);
+          await sendDeliveryReceipt(data['id']);
         }
       }
     }

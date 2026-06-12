@@ -97,25 +97,21 @@ export class FirebaseService implements OnModuleInit {
 
     const message: Message = {
       token: fcmToken,
-      notification: {
-        title: "New Message",
-        body: "You have a new encrypted message",
-      },
       data: {
         event: "sync_required",
         message_id: messageId,
       },
       android: {
         priority: "high",
-        notification: {
-          channelId: "ghostroom_messages",
-          priority: "max",
-          defaultSound: true,
-        },
       },
       apns: {
         headers: {
           "apns-priority": "10",
+        },
+        payload: {
+          aps: {
+            contentAvailable: true,
+          },
         },
       },
     };

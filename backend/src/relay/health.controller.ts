@@ -1,4 +1,4 @@
-import { Controller, Get, Inject, HttpException, HttpStatus } from "@nestjs/common";
+import { Controller, Get, Post, Body, Inject, HttpException, HttpStatus } from "@nestjs/common";
 import { MetricsService } from "./metrics.service";
 import Redis from "ioredis";
 import { InjectDataSource } from "@nestjs/typeorm";
@@ -8,6 +8,7 @@ import { InboxService } from "../inbox/inbox.service";
 import { FederationService } from "../federation/federation.service";
 import { RelayGateway } from "./relay.gateway";
 import { FirebaseService } from "../inbox/firebase.service";
+import { CryptoUtils } from "../inbox/crypto-utils.service";
 
 @Controller()
 export class HealthController {
@@ -18,6 +19,7 @@ export class HealthController {
     private readonly federationService: FederationService,
     private readonly relayGateway: RelayGateway,
     private readonly firebaseService: FirebaseService,
+    private readonly cryptoUtils: CryptoUtils,
     @Inject("REDIS_CLIENT") private readonly redis: Redis,
     @InjectDataSource() private readonly dataSource: DataSource,
   ) {}
@@ -225,5 +227,41 @@ export class HealthController {
   @Get("metrics")
   async getMetrics() {
     return await this.metricsService.getMetrics();
+  }
+
+  @Post("delivery-receipt")
+  async handleDeliveryReceipt(
+    @Body() payload: {
+      public_id: string;
+      device_id?: string;
+      message_id: string;
+      public_key: string;
+      signature: string;
+    },
+  ) {
+    // 1. Verify that public_key matches public_id
+    const derivedId = this.cryptoUtils.derivePublicId(payload.public_key);
+    if (derivedId !== payload.public_id) {
+      throw new HttpException("Invalid Public ID for provided key", HttpStatus.BAD_REQUEST);
+    }
+
+    // 2. Verify signature on message_id
+    const isValid = this.cryptoUtils.verifySignature(
+      payload.message_id,
+      payload.signature,
+      payload.public_key,
+    );
+    if (!isValid) {
+      throw new HttpException("Cryptographic proof failed", HttpStatus.FORBIDDEN);
+    }
+
+    // 3. Acknowledge and emit status
+    await this.relayGateway.acknowledgeAndEmitStatus(
+      payload.public_id,
+      payload.message_id,
+      payload.device_id,
+    );
+
+    return { success: true, message_id: payload.message_id };
   }
 }

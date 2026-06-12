@@ -29,14 +29,20 @@ import 'core/storage/storage_directory_helper.dart';
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
 @pragma('vm:entry-point')
-Future<void> ghostRoomBackgroundHandler(RemoteMessage message) async {
+Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   final stopwatch = Stopwatch()..start();
   // ignore: avoid_print
   print("BACKGROUND_HANDLER_STARTED");
   // ignore: avoid_print
+  print("BACKGROUND_MESSAGE_ID=${message.data['message_id']}");
+  // ignore: avoid_print
   print("FCM_BACKGROUND_HANDLER_ENTERED");
   // ignore: avoid_print
   print("FCM_MESSAGE_DATA=${message.data}");
+  // ignore: avoid_print
+  print(message.data);
+  // ignore: avoid_print
+  print(message.notification);
   debugPrint('GHOST_LOG: FCM_BACKGROUND_WAKEUP: START data=${message.data}');
 
   if (message.data['event'] != 'sync_required') {
@@ -70,6 +76,8 @@ Future<void> ghostRoomBackgroundHandler(RemoteMessage message) async {
     String? existingKey = await storage.read(key: 'hive_encryption_key');
     if (existingKey == null) {
       debugPrint('GHOST_LOG: FCM_BACKGROUND_WAKEUP: FAILURE error=No encryption key found (latency: ${stopwatch.elapsedMilliseconds}ms)');
+      // ignore: avoid_print
+      print("BACKGROUND_HANDLER_FINISHED");
       return;
     }
     final encryptionKey = base64.decode(existingKey);
@@ -99,6 +107,8 @@ Future<void> ghostRoomBackgroundHandler(RemoteMessage message) async {
     await idService.initIdentity();
     if (!idService.hasIdentity) {
       debugPrint('GHOST_LOG: FCM_BACKGROUND_WAKEUP: FAILURE error=No identity found (latency: ${stopwatch.elapsedMilliseconds}ms)');
+      // ignore: avoid_print
+      print("BACKGROUND_HANDLER_FINISHED");
       return;
     }
 
@@ -106,6 +116,8 @@ Future<void> ghostRoomBackgroundHandler(RemoteMessage message) async {
     final relay = await relayManager.getActiveRelay();
     if (relay == null) {
       debugPrint('GHOST_LOG: FCM_BACKGROUND_WAKEUP: FAILURE error=No active relay (latency: ${stopwatch.elapsedMilliseconds}ms)');
+      // ignore: avoid_print
+      print("BACKGROUND_HANDLER_FINISHED");
       return;
     }
 
@@ -128,13 +140,17 @@ Future<void> ghostRoomBackgroundHandler(RemoteMessage message) async {
 
     final wsService = tempContainer.read(webSocketServiceProvider);
 
+    // ignore: avoid_print
+    print("BACKGROUND_SYNC_START");
     wsService.onInboxMessages((messages) async {
       debugPrint('GHOST_LOG: Background sync received messages: ${messages.length}');
       if (messages.isNotEmpty) {
-        await chatRepo.processEnvelopes(messages, enableNotification: false);
+        await chatRepo.processEnvelopes(messages, enableNotification: true);
       }
       // ignore: avoid_print
       print("SYNC_COMPLETE");
+      // ignore: avoid_print
+      print("BACKGROUND_SYNC_SUCCESS");
       debugPrint('GHOST_LOG: FCM_BACKGROUND_WAKEUP: SUCCESS (latency: ${stopwatch.elapsedMilliseconds}ms)');
       if (!completer.isCompleted) {
         completer.complete();
@@ -178,7 +194,7 @@ void main() async {
     if (Platform.isAndroid || Platform.isIOS) {
       try {
         await Firebase.initializeApp();
-        FirebaseMessaging.onBackgroundMessage(ghostRoomBackgroundHandler);
+        FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
       } catch (e) {
         debugPrint('GHOST_LOG: Firebase initialization failed: $e');
       }

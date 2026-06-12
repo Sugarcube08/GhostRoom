@@ -664,6 +664,20 @@ export class RelayGateway implements OnGatewayConnection, OnGatewayDisconnect {
     });
   }
 
+  async acknowledgeAndEmitStatus(publicId: string, messageId: string, deviceId?: string) {
+    this.logger.log(`DELIVERY_RECEIPT_RECEIVED message_id=${messageId} recipient_id=${publicId}`);
+    const result = await this.inboxService.acknowledgeMessage(
+      publicId,
+      messageId,
+      deviceId,
+    );
+    if (result && result.senderId) {
+      await this.emitStatusUpdate(result.senderId, messageId, "DELIVERED", publicId);
+      this.logger.log(`MESSAGE_MARKED_DELIVERED message_id=${messageId} sender_id=${result.senderId} recipient_id=${publicId}`);
+    }
+    return result;
+  }
+
   private async emitStatusUpdate(senderId: string, messageId: string, status: "DELIVERED" | "SEEN", recipientId: string) {
     const room = `inbox:${senderId}`;
     const payload = {

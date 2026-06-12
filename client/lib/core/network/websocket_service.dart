@@ -7,6 +7,7 @@ import '../providers.dart';
 import 'dart:convert';
 import 'dart:async';
 import '../stability_tracker.dart';
+import 'package:http/http.dart' as http;
 
 class WebSocketService {
   final Ref _ref;
@@ -80,6 +81,8 @@ class WebSocketService {
     _logger.i('Connecting to relay: ${profile.label} ($connectionUrl)');
     // ignore: avoid_print
     print("WS_CONNECT_START");
+    // ignore: avoid_print
+    print("SOCKET_CONNECT_START");
     StabilityTracker.logEvent('WS_Connecting', data: {'relay': profile.label});
     _isConnecting = true;
 
@@ -136,6 +139,8 @@ class WebSocketService {
       _logger.i('Connected to relay: ${profile.label}');
       // ignore: avoid_print
       print("WS_CONNECT_SUCCESS");
+      // ignore: avoid_print
+      print("SOCKET_CONNECT_SUCCESS");
       _logger.i("SOCKET_CONNECTED");
       _logger.i('GHOST_LOG: WS_CONNECT count: $_connectCount');
       StabilityTracker.logEvent('WS_Connected');
@@ -239,10 +244,14 @@ class WebSocketService {
 
     _socket!.onConnectError((err) {
       _logger.e('Connection error: $err');
+      // ignore: avoid_print
+      print("SOCKET_CONNECT_FAILURE");
     });
 
     _socket!.onError((err) {
       _logger.e('Socket error: $err');
+      // ignore: avoid_print
+      print("SOCKET_CONNECT_FAILURE");
     });
 
     _socket!.on('space.joined', (data) {
@@ -266,30 +275,116 @@ class WebSocketService {
     _socket?.emit('inbox.fetch', {'since': since});
   }
 
-  Future<bool> acknowledgeMessage(String messageId) {
-    final completer = Completer<bool>();
-    if (!_isAuthenticated) {
-      completer.complete(false);
-      return completer.future;
+  Future<bool> _sendDeliveryReceiptHttp(String messageId) async {
+    try {
+      final idService = _ref.read(identityServiceProvider);
+      final relayManager = _ref.read(relayManagerProvider);
+      final relay = await relayManager.getActiveRelay();
+      
+      if (relay == null) {
+        _logger.e('HTTP delivery receipt: No active relay.');
+        return false;
+      }
+      
+      final identity = idService.currentIdentity;
+      if (identity == null) {
+        _logger.e('HTTP delivery receipt: No identity initialized.');
+        return false;
+      }
+
+      final signature = idService.signChallenge(messageId);
+      final publicKey = base64Encode(identity.ed25519KeyPair.publicKey);
+      final publicId = identity.publicId;
+      final deviceId = identity.deviceId;
+
+      final url = '${relay.apiUrl}/delivery-receipt';
+      _logger.i('HTTP delivery receipt: Sending POST to $url');
+
+      final response = await http.post(
+        Uri.parse(url),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'public_id': publicId,
+          'device_id': deviceId,
+          'message_id': messageId,
+          'public_key': publicKey,
+          'signature': signature,
+        }),
+      );
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        _logger.i('HTTP delivery receipt: Successfully acknowledged $messageId');
+        return true;
+      } else {
+        _logger.e('HTTP delivery receipt: Failed with status ${response.statusCode}');
+        return false;
+      }
+    } catch (e) {
+      _logger.e('HTTP delivery receipt: Error sending receipt: $e');
+      return false;
     }
+  }
+
+  Future<bool> acknowledgeMessage(String messageId) async {
+    final completer = Completer<bool>();
+    
+    // ignore: avoid_print
+    print("DELIVERY_RECEIPT_START");
+
+    if (!_isAuthenticated) {
+      final success = await _sendDeliveryReceiptHttp(messageId);
+      if (success) {
+        // ignore: avoid_print
+        print("DELIVERY_RECEIPT_SUCCESS");
+        return true;
+      }
+      // ignore: avoid_print
+      print("DELIVERY_RECEIPT_FAILURE=Not authenticated and HTTP receipt failed");
+      return false;
+    }
+
     // ignore: avoid_print
     print("DELIVERY_RECEIPT_SEND_START");
+    // ignore: avoid_print
+    print("SOCKET_EMIT_WITH_ACK_START");
     _socket?.emitWithAck(
       'message.ack',
       {'message_id': messageId},
       ack: (response) {
         // ignore: avoid_print
+        print("SOCKET_EMIT_WITH_ACK_SUCCESS");
+        // ignore: avoid_print
         print("DELIVERY_RECEIPT_SEND_SUCCESS");
+        // ignore: avoid_print
+        print("DELIVERY_RECEIPT_SUCCESS");
         completer.complete(true);
       },
     );
 
-    Future.delayed(const Duration(seconds: 3), () {
+    Future.delayed(const Duration(seconds: 3), () async {
       if (!completer.isCompleted) {
-        completer.complete(false);
+        final success = await _sendDeliveryReceiptHttp(messageId);
+        if (success) {
+          // ignore: avoid_print
+          print("DELIVERY_RECEIPT_SUCCESS");
+          completer.complete(true);
+        } else {
+          // ignore: avoid_print
+          print("DELIVERY_RECEIPT_FAILURE=Socket ack timeout and HTTP receipt failed");
+          completer.complete(false);
+        }
       }
     });
     return completer.future;
+  }
+
+  Future<bool> sendDeliveryReceipt(String messageId) async {
+    // ignore: avoid_print
+    print("API_SEND_DELIVERY_RECEIPT_START");
+    final result = await acknowledgeMessage(messageId);
+    // ignore: avoid_print
+    print("API_SEND_DELIVERY_RECEIPT_SUCCESS");
+    return result;
   }
 
   void sendMessage(
