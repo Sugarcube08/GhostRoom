@@ -7,11 +7,9 @@ import 'package:hive/hive.dart';
 import 'package:http/http.dart' as http;
 import 'package:sodium/sodium_sumo.dart' hide Box;
 import 'package:crypto/crypto.dart' as crypto;
-import 'package:logger/logger.dart';
 import 'attachment_envelope.dart';
 import '../../core/network/relay_manager.dart';
 import 'media_service.dart';
-import '../../core/stability_tracker.dart';
 import '../../core/storage/storage_directory_helper.dart';
 
 import 'lru_memory_cache.dart';
@@ -102,21 +100,8 @@ class MediaManager {
   final Completer<void> _initCompleter = Completer<void>();
   bool _isInitializing = false;
 
-  final Logger _logger = Logger(
-    level: kReleaseMode ? Level.warning : Level.info,
-    printer: PrettyPrinter(
-      methodCount: 0,
-      errorMethodCount: 5,
-      lineLength: 50,
-      colors: true,
-      printEmojis: true,
-      dateTimeFormat: DateTimeFormat.onlyTimeAndSinceStart,
-    ),
-  );
-
   MediaManager(this._sodium, this._mediaService) {
     _thumbnailQueue = ThumbnailQueue(_mediaService, this);
-    _logger.i('GHOST_LOG: MediaManager constructor invoked (Singleton verification)');
   }
 
   Stream<MediaStateUpdate> get stateStream => _stateController.stream;
@@ -135,9 +120,6 @@ class MediaManager {
       await _tempDir.create(recursive: true);
 
       _cacheIndex = await Hive.openBox<dynamic>('media_cache_index');
-      _logger.i(
-        'GHOST_LOG: MediaManager initialized. Directories and Cache Index ready.',
-      );
       if (!_initCompleter.isCompleted) {
         _initCompleter.complete();
       }
@@ -245,7 +227,6 @@ class MediaManager {
     if (currentState == state) return;
 
     if (!_isValidTransition(currentState, state)) {
-      _logger.w('GHOST_WARNING: Invalid MediaState transition from ${currentState?.name ?? "null"} to ${state.name} for media $mediaId isThumb $isThumbnail');
     }
     assert(
       _isValidTransition(currentState, state),
@@ -259,9 +240,6 @@ class MediaManager {
     }
     _stateController.add(
       MediaStateUpdate(mediaId, state, isThumbnail: isThumbnail),
-    );
-    _logger.i(
-      'GHOST_LOG: Media state update: $mediaId isThumb: $isThumbnail state: ${state.name}',
     );
   }
 
@@ -298,7 +276,6 @@ class MediaManager {
           final cachedMedia = CachedMedia.fromMap(cached as Map);
           final file = File(cachedMedia.localPath);
           if (await file.exists()) {
-            _logger.i('GHOST_LOG: Media cache hit for $key');
             _updateState(
               envelope.mediaId,
               MediaState.READY,
@@ -363,7 +340,6 @@ class MediaManager {
             ? '${relay.apiUrl}/media/download-url/$mediaId?thumbnail=true'
             : '${relay.apiUrl}/media/download-url/$mediaId';
 
-        _logger.i('GHOST_LOG: MEDIA_DOWNLOAD_START messageId: ${messageId ?? "unknown"} mediaId: $mediaId mediaKind: ${envelope.kind.name} url: $urlString');
 
         final response = await http.get(Uri.parse(urlString));
         if (response.statusCode == 404) {
@@ -391,11 +367,9 @@ class MediaManager {
         }
 
         final ciphertext = getResponse.bodyBytes;
-        _logger.i('GHOST_LOG: MEDIA_DOWNLOAD_SUCCESS messageId: ${messageId ?? "unknown"} mediaId: $mediaId mediaKind: ${envelope.kind.name} url: $downloadUrl');
 
         // Step 2: Decrypting
         _updateState(mediaId, MediaState.DECRYPTING, isThumbnail: isThumbnail);
-        _logger.i('GHOST_LOG: MEDIA_DECRYPT_START messageId: ${messageId ?? "unknown"} mediaId: $mediaId mediaKind: ${envelope.kind.name} url: $downloadUrl');
 
         late final Uint8List decrypted;
         try {
@@ -417,7 +391,6 @@ class MediaManager {
             nonce: base64Decode(nonceBase64),
             key: messageKey,
           );
-          _logger.i('GHOST_LOG: MEDIA_DECRYPT_SUCCESS messageId: ${messageId ?? "unknown"} mediaId: $mediaId mediaKind: ${envelope.kind.name} url: $downloadUrl');
         } catch (e) {
           throw Exception(
             'Decryption failure: $e',
@@ -481,33 +454,22 @@ class MediaManager {
         final errStr = e.toString();
         // Fail immediately rules
         if (errStr.contains('404') || errStr.contains('Decryption failure')) {
-          _logger.e('GHOST_LOG: Media pipeline failed immediately: $errStr');
           rethrow;
         }
 
         // Hash mismatch rule: retry once (max 2 attempts total)
         if (isHashMismatch) {
           if (attempts >= 2) {
-            _logger.e('GHOST_LOG: Hash mismatch check failed after retry.');
             rethrow;
           }
-          _logger.w(
-            'GHOST_LOG: Hash mismatch detected. Retrying download once... Error: $errStr',
-          );
           continue;
         }
 
         // Other network/timeout errors: retry 3x
         if (attempts >= maxAttempts) {
-          _logger.e(
-            'GHOST_LOG: Media download failed after $attempts attempts: $errStr',
-          );
           rethrow;
         }
 
-        _logger.w(
-          'GHOST_LOG: Network error during media download. Retrying in ${attempts * 2}s... Error: $errStr',
-        );
         await Future.delayed(Duration(seconds: attempts * 2));
       }
     }
@@ -545,8 +507,8 @@ class MediaManager {
       if (await originalFile.exists()) {
         try {
           await originalFile.copy(finalOriginalFile.path);
-        } catch (e) {
-          _logger.w('Failed to copy original file to cache: $e');
+        } catch (_) {
+          // Ignore
         }
       }
     }
@@ -563,7 +525,6 @@ class MediaManager {
     );
     await _cacheIndex.put('${mediaId}_original', originalEntry.toMap());
     _updateState(mediaId, MediaState.READY, isThumbnail: false);
-    _logger.i('GHOST_LOG: LOCAL_MEDIA_READY messageId: pending mediaId: $mediaId');
 
     // 2. If thumbnail bytes are present, save them
     if (thumbnailBytes != null) {
@@ -582,7 +543,6 @@ class MediaManager {
     await _cacheIndex.clear();
     _states.clear();
     _thumbStates.clear();
-    _logger.i('GHOST_LOG: Media cache cleared.');
   }
 
   Future<void> deleteMedia(String mediaId) async {
@@ -616,7 +576,6 @@ class MediaManager {
 
     _states.remove(mediaId);
     _thumbStates.remove(mediaId);
-    _logger.i('GHOST_LOG: Local media deleted for $mediaId');
   }
 
   Map<String, int> getCacheSizes() {
@@ -648,24 +607,6 @@ class MediaManager {
     };
   }
 
-  void logMemoryUsage() {
-    final cacheStats = getCacheSizes();
-    final stats = {
-      'initialized': _initCompleter.isCompleted,
-      'activeDownloadsCount': _activeDownloads.length,
-      'statesCacheSize': _states.currentSizeBytes,
-      'statesCacheCount': _states.length,
-      'thumbStatesCacheSize': _thumbStates.currentSizeBytes,
-      'thumbStatesCacheCount': _thumbStates.length,
-      'cacheIndexKeysCount': _initCompleter.isCompleted ? _cacheIndex.length : 0,
-      'thumbnailQueueLength': _thumbnailQueue._queue.length,
-      'thumbnailCount': cacheStats['thumbnailCount'],
-      'thumbnailBytes': cacheStats['thumbnailBytes'],
-      'previewCount': cacheStats['mediaCount'],
-      'previewBytes': cacheStats['mediaBytes'],
-    };
-    StabilityTracker.logComponentDiagnostics('MediaManager', stats);
-  }
 }
 
 class ThumbnailQueue {
@@ -698,10 +639,8 @@ class ThumbnailQueue {
           await _mediaManager.saveThumbnailDirectly(task.mediaId, thumbBytes);
         }
       }
-    } catch (e) {
-      debugPrint(
-        'GHOST_ERROR: Background thumbnail generation failed for ${task.mediaId}: $e',
-      );
+    } catch (_) {
+      // Ignore
     } finally {
       _isProcessing = false;
       _processNext();

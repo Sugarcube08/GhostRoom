@@ -4,8 +4,6 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:bip39/bip39.dart' as bip39;
 import 'package:bs58/bs58.dart';
 import '../network/relay_manager.dart';
-import '../stability_tracker.dart';
-import 'package:logger/logger.dart';
 import 'package:flutter/foundation.dart';
 import '../storage/storage_directory_helper.dart';
 
@@ -73,9 +71,6 @@ class Identity {
 class IdentityService {
   final SodiumSumo sodium;
   final FlutterSecureStorage _storage;
-  final Logger _logger = Logger(
-    level: kReleaseMode ? Level.warning : Level.info,
-  );
 
   static const String _seedKey = 'identity_seed_phrase';
   static const String _deviceIdKey = 'device_id';
@@ -83,9 +78,7 @@ class IdentityService {
 
   Identity? _currentIdentity;
 
-  IdentityService(this.sodium, this._storage) {
-    _logger.i('GHOST_LOG: IdentityService constructor invoked (Singleton verification)');
-  }
+  IdentityService(this.sodium, this._storage);
 
   Identity? get currentIdentity => _currentIdentity;
 
@@ -128,31 +121,24 @@ class IdentityService {
   }
 
   Future<void> initIdentity() async {
-    StabilityTracker.logMemory('IdentityInit_Start');
-    _logger.i("SecureStorage initialization check");
     try {
       // 1. Keystore settlement delay
-      _logger.i("Waiting for keystore settlement...");
       await Future.delayed(const Duration(seconds: 2));
 
       String? seedPhrase;
       for (int i = 0; i < 5; i++) {
         try {
-          _logger.i("Attempt ${i + 1}: Reading seed from SecureStorage...");
           seedPhrase = await _storage.read(key: _seedKey);
           if (seedPhrase != null) {
-            _logger.i("Seed phrase found in SecureStorage.");
             break;
           }
           
           // FALLBACK: Try reading from standard storage if encrypted read returns null
           // This helps if the app was previously using default options.
           if (i == 0) {
-            _logger.i("Trying fallback read without encryptedSharedPreferences...");
             const fallbackStorage = FlutterSecureStorage();
             seedPhrase = await fallbackStorage.read(key: _seedKey);
             if (seedPhrase != null) {
-              _logger.i("SUCCESS: Seed phrase found in fallback storage! Migrating...");
               await _storage.write(key: _seedKey, value: seedPhrase);
               final devId = await fallbackStorage.read(key: _deviceIdKey);
               if (devId != null) await _storage.write(key: _deviceIdKey, value: devId);
@@ -160,42 +146,27 @@ class IdentityService {
             }
           }
           
-          _logger.w("Seed phrase NOT found in attempt ${i + 1}");
           await Future.delayed(const Duration(milliseconds: 500));
         } catch (e) {
-          _logger.e("SecureStorage read error in attempt ${i + 1}: $e");
           await Future.delayed(const Duration(milliseconds: 500));
         }
       }
 
       final flagExists = await _checkPublicIdentityFlag();
-      _logger.i("Public identity flag file exists: $flagExists");
 
       if (seedPhrase != null) {
-        _logger.i("Identity restoration starting...");
-        StabilityTracker.logEvent('IdentityFound_Restoring');
         await restoreIdentity(seedPhrase);
-        _logger.i("IDENTITY_READY");
-        StabilityTracker.logEvent('IdentityRestored_Success');
         if (!flagExists) {
-          _logger.i("Writing missing public flag file...");
           await _writePublicIdentityFlag();
         }
       } else {
         if (flagExists) {
-          _logger.e("CRITICAL: Flag file exists but seed is missing/unreadable!");
-          StabilityTracker.logEvent('Identity_Data_Missing_Warning');
         } else {
-          _logger.w("No identity found (no seed, no flag).");
-          StabilityTracker.logEvent('IdentityNotFound_Empty');
         }
       }
     } catch (e) {
-      StabilityTracker.logEvent('IdentityInit_Error', data: {'error': e.toString()});
-      _logger.e('Identity initialization failed: $e');
       rethrow; 
     } finally {
-      StabilityTracker.logMemory('IdentityInit_End');
     }
   }
 
@@ -272,8 +243,7 @@ class IdentityService {
       await saveBackgroundCache();
 
       return _currentIdentity!;
-    } catch (e, stack) {
-      _logger.e('GHOST_CRITICAL: restoreIdentity failed: $e', error: e, stackTrace: stack);
+    } catch (e) {
       rethrow;
     }
   }
@@ -371,15 +341,6 @@ class IdentityService {
     return _currentIdentity?.deviceId ?? await _storage.read(key: _deviceIdKey);
   }
 
-  void logMemoryUsage() {
-    final stats = {
-      'hasIdentity': _currentIdentity != null,
-      'deviceId': _currentIdentity?.deviceId,
-      'publicId': _currentIdentity?.publicId,
-    };
-    StabilityTracker.logComponentDiagnostics('IdentityService', stats);
-  }
-
   Future<void> saveBackgroundCache({String? customHiveKey}) async {
     try {
       if (_currentIdentity == null) return;
@@ -414,9 +375,8 @@ class IdentityService {
       };
       
       await file.writeAsString(jsonEncode(data));
-      _logger.i("GHOST_LOG: Saved background identity cache successfully.");
-    } catch (e) {
-      _logger.e("GHOST_LOG: Failed to save background identity cache: $e");
+    } catch (_) {
+      // Ignore
     }
   }
 
@@ -424,7 +384,6 @@ class IdentityService {
     try {
       final file = await StorageDirectoryHelper.getBackgroundCacheFile();
       if (!await file.exists()) {
-        _logger.w("GHOST_LOG: Background identity cache file does not exist.");
         return false;
       }
       
@@ -444,10 +403,8 @@ class IdentityService {
         fingerprint: '', // Not needed for background operations
         deviceId: data['device_id'],
       );
-      _logger.i("GHOST_LOG: Successfully loaded identity from background cache.");
       return true;
-    } catch (e) {
-      _logger.e("GHOST_LOG: Failed to load identity from background cache: $e");
+    } catch (_) {
       return false;
     }
   }

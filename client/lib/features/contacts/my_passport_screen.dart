@@ -164,12 +164,12 @@ class _MyPassportScreenState extends ConsumerState<MyPassportScreen> with Identi
                               isMonospace: true,
                             ),
                             const SizedBox(height: AppSpacing.l),
-                            const Padding(
-                              padding: EdgeInsets.symmetric(vertical: AppSpacing.l),
+                            Padding(
+                              padding: const EdgeInsets.symmetric(vertical: AppSpacing.l),
                               child: Text(
                                 'Scan this passport to establish a secure, end-to-end encrypted channel. Your identity is local and sovereign.',
                                 textAlign: TextAlign.center,
-                                style: TextStyle(fontSize: 13, color: Colors.white38, height: 1.5),
+                                style: TextStyle(fontSize: 13, color: colors.textMuted, height: 1.5),
                               ),
                             ),
                             const SizedBox(height: AppSpacing.l),

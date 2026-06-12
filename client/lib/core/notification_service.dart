@@ -33,7 +33,6 @@ class NotificationService {
     await _notifications.initialize(
       initSettings,
       onDidReceiveNotificationResponse: (details) {
-        debugPrint('Notification tapped: ${details.payload}');
         if (onNotificationTap != null) {
           onNotificationTap!(details.payload);
         }
@@ -48,7 +47,6 @@ class NotificationService {
     }
     
     _initialized = true;
-    debugPrint('NotificationService initialized.');
   }
 
   Future<void> showNotification({
@@ -57,8 +55,6 @@ class NotificationService {
     String? payload,
     int? id,
   }) async {
-    debugPrint('GHOST_LOG: FCM_NOTIFICATION_CREATION: START');
-    final stopwatch = Stopwatch()..start();
     try {
       const androidDetails = AndroidNotificationDetails(
         'ghostroom_messages',
@@ -90,17 +86,16 @@ class NotificationService {
         notificationDetails,
         payload: payload,
       );
-      debugPrint('GHOST_LOG: FCM_NOTIFICATION_CREATION: SUCCESS (latency: ${stopwatch.elapsedMilliseconds}ms)');
-    } catch (e) {
-      debugPrint('GHOST_LOG: FCM_NOTIFICATION_CREATION: FAILURE error=$e (latency: ${stopwatch.elapsedMilliseconds}ms)');
+    } catch (_) {
+      // Ignore
     }
   }
 
   Future<void> cancelNotification(int id) async {
     try {
       await _notifications.cancel(id);
-    } catch (e) {
-      debugPrint('Error cancelling notification: $e');
+    } catch (_) {
+      // Ignore
     }
   }
 }

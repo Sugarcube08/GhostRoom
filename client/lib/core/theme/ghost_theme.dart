@@ -4,54 +4,79 @@ import 'package:hive_flutter/hive_flutter.dart';
 import '../../design_system/animations.dart';
 
 class GhostColorsExtension extends ThemeExtension<GhostColorsExtension> {
-  final Color primaryBackground;
-  final Color secondaryBackground;
-  final Color elevatedSurface;
-  final Color hairline;
-  final Color primaryText;
-  final Color secondaryText;
-  final Color ghostAccent;
+  final Color backgroundPrimary;
+  final Color backgroundSecondary;
+  final Color surfacePrimary;
+  final Color surfaceSecondary;
+  final Color borderPrimary;
+  final Color borderMuted;
+  final Color textPrimary;
+  final Color textSecondary;
+  final Color textMuted;
   final Color success;
   final Color warning;
   final Color error;
+  final Color info;
+  final Color accent;
 
   const GhostColorsExtension({
-    required this.primaryBackground,
-    required this.secondaryBackground,
-    required this.elevatedSurface,
-    required this.hairline,
-    required this.primaryText,
-    required this.secondaryText,
-    required this.ghostAccent,
+    required this.backgroundPrimary,
+    required this.backgroundSecondary,
+    required this.surfacePrimary,
+    required this.surfaceSecondary,
+    required this.borderPrimary,
+    required this.borderMuted,
+    required this.textPrimary,
+    required this.textSecondary,
+    required this.textMuted,
     required this.success,
     required this.warning,
     required this.error,
+    required this.info,
+    required this.accent,
   });
+
+  // Legacy compatibility getters mapping to semantic tokens
+  Color get primaryBackground => backgroundPrimary;
+  Color get secondaryBackground => backgroundSecondary;
+  Color get elevatedSurface => surfacePrimary;
+  Color get hairline => borderPrimary;
+  Color get primaryText => textPrimary;
+  Color get secondaryText => textSecondary;
+  Color get ghostAccent => accent;
 
   @override
   ThemeExtension<GhostColorsExtension> copyWith({
-    Color? primaryBackground,
-    Color? secondaryBackground,
-    Color? elevatedSurface,
-    Color? hairline,
-    Color? primaryText,
-    Color? secondaryText,
-    Color? ghostAccent,
+    Color? backgroundPrimary,
+    Color? backgroundSecondary,
+    Color? surfacePrimary,
+    Color? surfaceSecondary,
+    Color? borderPrimary,
+    Color? borderMuted,
+    Color? textPrimary,
+    Color? textSecondary,
+    Color? textMuted,
     Color? success,
     Color? warning,
     Color? error,
+    Color? info,
+    Color? accent,
   }) {
     return GhostColorsExtension(
-      primaryBackground: primaryBackground ?? this.primaryBackground,
-      secondaryBackground: secondaryBackground ?? this.secondaryBackground,
-      elevatedSurface: elevatedSurface ?? this.elevatedSurface,
-      hairline: hairline ?? this.hairline,
-      primaryText: primaryText ?? this.primaryText,
-      secondaryText: secondaryText ?? this.secondaryText,
-      ghostAccent: ghostAccent ?? this.ghostAccent,
+      backgroundPrimary: backgroundPrimary ?? this.backgroundPrimary,
+      backgroundSecondary: backgroundSecondary ?? this.backgroundSecondary,
+      surfacePrimary: surfacePrimary ?? this.surfacePrimary,
+      surfaceSecondary: surfaceSecondary ?? this.surfaceSecondary,
+      borderPrimary: borderPrimary ?? this.borderPrimary,
+      borderMuted: borderMuted ?? this.borderMuted,
+      textPrimary: textPrimary ?? this.textPrimary,
+      textSecondary: textSecondary ?? this.textSecondary,
+      textMuted: textMuted ?? this.textMuted,
       success: success ?? this.success,
       warning: warning ?? this.warning,
       error: error ?? this.error,
+      info: info ?? this.info,
+      accent: accent ?? this.accent,
     );
   }
 
@@ -64,51 +89,63 @@ class GhostColorsExtension extends ThemeExtension<GhostColorsExtension> {
       return this;
     }
     return GhostColorsExtension(
-      primaryBackground: Color.lerp(primaryBackground, other.primaryBackground, t)!,
-      secondaryBackground: Color.lerp(secondaryBackground, other.secondaryBackground, t)!,
-      elevatedSurface: Color.lerp(elevatedSurface, other.elevatedSurface, t)!,
-      hairline: Color.lerp(hairline, other.hairline, t)!,
-      primaryText: Color.lerp(primaryText, other.primaryText, t)!,
-      secondaryText: Color.lerp(secondaryText, other.secondaryText, t)!,
-      ghostAccent: Color.lerp(ghostAccent, other.ghostAccent, t)!,
+      backgroundPrimary: Color.lerp(backgroundPrimary, other.backgroundPrimary, t)!,
+      backgroundSecondary: Color.lerp(backgroundSecondary, other.backgroundSecondary, t)!,
+      surfacePrimary: Color.lerp(surfacePrimary, other.surfacePrimary, t)!,
+      surfaceSecondary: Color.lerp(surfaceSecondary, other.surfaceSecondary, t)!,
+      borderPrimary: Color.lerp(borderPrimary, other.borderPrimary, t)!,
+      borderMuted: Color.lerp(borderMuted, other.borderMuted, t)!,
+      textPrimary: Color.lerp(textPrimary, other.textPrimary, t)!,
+      textSecondary: Color.lerp(textSecondary, other.textSecondary, t)!,
+      textMuted: Color.lerp(textMuted, other.textMuted, t)!,
       success: Color.lerp(success, other.success, t)!,
       warning: Color.lerp(warning, other.warning, t)!,
       error: Color.lerp(error, other.error, t)!,
+      info: Color.lerp(info, other.info, t)!,
+      accent: Color.lerp(accent, other.accent, t)!,
     );
   }
 }
 
 class GhostTheme {
   static const darkColors = GhostColorsExtension(
-    primaryBackground: Color(0xFF080808),
-    secondaryBackground: Color(0xFF101010),
-    elevatedSurface: Color(0xFF181818),
-    hairline: Color(0x14FFFFFF),
-    primaryText: Color(0xFFFFFFFF),
-    secondaryText: Color(0xB8FFFFFF),
-    ghostAccent: Color(0xFF7F7FFF),
+    backgroundPrimary: Color(0xFF080808),
+    backgroundSecondary: Color(0xFF101010),
+    surfacePrimary: Color(0xFF181818),
+    surfaceSecondary: Color(0xFF202020),
+    borderPrimary: Color(0x14FFFFFF),
+    borderMuted: Color(0x0AFFFFFF),
+    textPrimary: Color(0xFFFFFFFF),
+    textSecondary: Color(0xB8FFFFFF),
+    textMuted: Color(0x66FFFFFF),
     success: Color(0xFF3DDC97),
     warning: Color(0xFFFFB74D),
     error: Color(0xFFFF6B6B),
+    info: Color(0xFF7F7FFF),
+    accent: Color(0xFF7F7FFF),
   );
 
   static const lightColors = GhostColorsExtension(
-    primaryBackground: Color(0xFFF5F5F7),
-    secondaryBackground: Color(0xFFFFFFFF),
-    elevatedSurface: Color(0xFFEFEFF4),
-    hairline: Color(0x14000000),
-    primaryText: Color(0xFF000000),
-    secondaryText: Color(0x99000000),
-    ghostAccent: Color(0xFF5C5CFF),
+    backgroundPrimary: Color(0xFFF5F5F7),
+    backgroundSecondary: Color(0xFFFFFFFF),
+    surfacePrimary: Color(0xFFEFEFF4),
+    surfaceSecondary: Color(0xFFE5E5EA),
+    borderPrimary: Color(0x14000000),
+    borderMuted: Color(0x0A000000),
+    textPrimary: Color(0xFF000000),
+    textSecondary: Color(0x99000000),
+    textMuted: Color(0x4D000000),
     success: Color(0xFF2EAF7D),
     warning: Color(0xFFE69C24),
     error: Color(0xFFE53935),
+    info: Color(0xFF5C5CFF),
+    accent: Color(0xFF5C5CFF),
   );
 
   static ThemeData get darkTheme => ThemeData(
     useMaterial3: true,
     brightness: Brightness.dark,
-    scaffoldBackgroundColor: darkColors.primaryBackground,
+    scaffoldBackgroundColor: darkColors.backgroundPrimary,
     pageTransitionsTheme: const PageTransitionsTheme(
       builders: {
         TargetPlatform.android: GhostPageTransitionsBuilder(),
@@ -119,22 +156,27 @@ class GhostTheme {
       },
     ),
     appBarTheme: AppBarTheme(
-      backgroundColor: darkColors.primaryBackground,
+      backgroundColor: darkColors.backgroundPrimary,
       elevation: 0,
       centerTitle: true,
       titleTextStyle: TextStyle(
-        color: darkColors.primaryText,
+        color: darkColors.textPrimary,
         fontSize: 18,
         fontWeight: FontWeight.w400,
         letterSpacing: 1.2,
       ),
-      iconTheme: IconThemeData(color: darkColors.primaryText),
+      iconTheme: IconThemeData(color: darkColors.textPrimary),
     ),
-    colorScheme: ColorScheme.dark(
-      surface: darkColors.secondaryBackground,
-      primary: darkColors.primaryText,
-      secondary: darkColors.ghostAccent,
+    colorScheme: ColorScheme(
+      brightness: Brightness.dark,
+      primary: darkColors.accent,
+      onPrimary: const Color(0xFF000000),
+      secondary: darkColors.surfaceSecondary,
+      onSecondary: darkColors.textPrimary,
       error: darkColors.error,
+      onError: const Color(0xFF000000),
+      surface: darkColors.backgroundSecondary,
+      onSurface: darkColors.textPrimary,
     ),
     extensions: const [darkColors],
   );
@@ -142,7 +184,7 @@ class GhostTheme {
   static ThemeData get lightTheme => ThemeData(
     useMaterial3: true,
     brightness: Brightness.light,
-    scaffoldBackgroundColor: lightColors.primaryBackground,
+    scaffoldBackgroundColor: lightColors.backgroundPrimary,
     pageTransitionsTheme: const PageTransitionsTheme(
       builders: {
         TargetPlatform.android: GhostPageTransitionsBuilder(),
@@ -153,22 +195,27 @@ class GhostTheme {
       },
     ),
     appBarTheme: AppBarTheme(
-      backgroundColor: lightColors.primaryBackground,
+      backgroundColor: lightColors.backgroundPrimary,
       elevation: 0,
       centerTitle: true,
       titleTextStyle: TextStyle(
-        color: lightColors.primaryText,
+        color: lightColors.textPrimary,
         fontSize: 18,
         fontWeight: FontWeight.w500,
         letterSpacing: 1.2,
       ),
-      iconTheme: IconThemeData(color: lightColors.primaryText),
+      iconTheme: IconThemeData(color: lightColors.textPrimary),
     ),
-    colorScheme: ColorScheme.light(
-      surface: lightColors.secondaryBackground,
-      primary: lightColors.primaryText,
-      secondary: lightColors.ghostAccent,
+    colorScheme: ColorScheme(
+      brightness: Brightness.light,
+      primary: lightColors.accent,
+      onPrimary: const Color(0xFFFFFFFF),
+      secondary: lightColors.surfaceSecondary,
+      onSecondary: lightColors.textPrimary,
       error: lightColors.error,
+      onError: const Color(0xFFFFFFFF),
+      surface: lightColors.backgroundSecondary,
+      onSurface: lightColors.textPrimary,
     ),
     extensions: const [lightColors],
   );

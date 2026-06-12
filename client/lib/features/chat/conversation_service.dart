@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:hive_flutter/hive_flutter.dart';
-import 'package:logger/logger.dart';
+import 'package:uuid/uuid.dart';
 import 'message.dart';
 import 'chat_repository.dart';
 import '../contacts/contact_resolver.dart';
@@ -39,15 +39,6 @@ class ConversationService {
   final ContactService _contactService;
   final IdentityService _idService;
   final MediaService _mediaService;
-  final Logger _logger = Logger(
-    level: Level.info,
-    printer: PrettyPrinter(
-      methodCount: 0,
-      errorMethodCount: 5,
-      colors: true,
-      printEmojis: true,
-    ),
-  );
 
   ConversationService(
     this._chatRepository,
@@ -122,7 +113,6 @@ class ConversationService {
     }
 
     if (lastMessages.isNotEmpty) {
-      _logger.i('GHOST_LOG: Requests discovered: ${lastMessages.length}');
     }
 
     return lastMessages.entries.map((entry) {
@@ -210,9 +200,8 @@ class ConversationService {
     final isGhost = mode == ConversationMode.ghost;
 
     // 1. Create Placeholder
-    final placeholderId = 'pending_${DateTime.now().microsecondsSinceEpoch}';
+    final placeholderId = const Uuid().v7();
     
-    _logger.i('GHOST_LOG: MEDIA_PICKED messageId: $placeholderId mediaId: pending mediaKind: image url: pending');
 
     final placeholder = Message(
       id: placeholderId,
@@ -234,9 +223,7 @@ class ConversationService {
       await _chatRepository.updateMessageMetadata(placeholderId, {
         'status': 'COMPRESSING',
       });
-      _logger.i('GHOST_LOG: MEDIA_COMPRESS_START messageId: $placeholderId mediaId: pending mediaKind: image url: pending');
       final compressed = await _mediaService.compressImage(file);
-      _logger.i('GHOST_LOG: MEDIA_COMPRESS_SUCCESS messageId: $placeholderId mediaId: pending mediaKind: image url: pending');
 
       await _chatRepository.updateMessageMetadata(placeholderId, {
         'status': 'UPLOADING',
@@ -272,9 +259,8 @@ class ConversationService {
     final isGhost = mode == ConversationMode.ghost;
 
     // 1. Create Placeholder
-    final placeholderId = 'pending_${DateTime.now().microsecondsSinceEpoch}';
+    final placeholderId = const Uuid().v7();
 
-    _logger.i('GHOST_LOG: MEDIA_PICKED messageId: $placeholderId mediaId: pending mediaKind: video url: pending');
 
     final placeholder = Message(
       id: placeholderId,
@@ -296,9 +282,7 @@ class ConversationService {
       await _chatRepository.updateMessageMetadata(placeholderId, {
         'status': 'COMPRESSING',
       });
-      _logger.i('GHOST_LOG: MEDIA_COMPRESS_START messageId: $placeholderId mediaId: pending mediaKind: video url: pending');
       final compressed = await _mediaService.compressVideo(file);
-      _logger.i('GHOST_LOG: MEDIA_COMPRESS_SUCCESS messageId: $placeholderId mediaId: pending mediaKind: video url: pending');
 
       await _chatRepository.updateMessageMetadata(placeholderId, {
         'status': 'UPLOADING',
@@ -338,7 +322,7 @@ class ConversationService {
     final isGhost = mode == ConversationMode.ghost;
 
     // 1. Create Placeholder
-    final placeholderId = 'pending_${DateTime.now().microsecondsSinceEpoch}';
+    final placeholderId = const Uuid().v7();
     final placeholder = Message(
       id: placeholderId,
       senderId: _chatRepository.myPublicId,

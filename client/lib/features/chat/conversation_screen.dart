@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:image_picker/image_picker.dart';
@@ -25,7 +24,6 @@ import '../../design_system/components/components.dart';
 import '../../design_system/haptics.dart';
 import 'widgets/voice_recorder.dart';
 import 'widgets/voice_message_bubble.dart';
-import 'package:logger/logger.dart';
 import '../../core/stability_tracker.dart';
 
 class ConversationScreen extends ConsumerStatefulWidget {
@@ -68,6 +66,7 @@ class RecentMediaItem {
   }
 
   Widget buildThumbnail(BuildContext context) {
+    final colors = AppColors.of(context);
     if (asset != null) {
       return AssetEntityImage(
         asset!,
@@ -76,8 +75,8 @@ class RecentMediaItem {
         fit: BoxFit.cover,
         errorBuilder: (context, error, stackTrace) {
           return Container(
-            color: Colors.white10,
-            child: const Icon(Icons.image, color: Colors.white24),
+            color: colors.surfaceSecondary,
+            child: Icon(Icons.image, color: colors.textMuted),
           );
         },
       );
@@ -89,15 +88,15 @@ class RecentMediaItem {
         cacheHeight: 200,
         errorBuilder: (context, error, stackTrace) {
           return Container(
-            color: Colors.white10,
-            child: const Icon(Icons.image, color: Colors.white24),
+            color: colors.surfaceSecondary,
+            child: Icon(Icons.image, color: colors.textMuted),
           );
         },
       );
     }
     return Container(
-      color: Colors.white10,
-      child: const Icon(Icons.image, color: Colors.white24),
+      color: colors.surfaceSecondary,
+      child: Icon(Icons.image, color: colors.textMuted),
     );
   }
 }
@@ -118,12 +117,8 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
   bool _isInitialScroll = true;
   bool _isRecording = false;
   late final ChatRepository _chatRepository;
-  final Logger _logger = Logger(
-    level: kReleaseMode ? Level.warning : Level.info,
-  );
   int _lastMessageCount = 0;
   int _newMessagesCount = 0;
-  int _buildCount = 0;
 
   @override
   void initState() {
@@ -175,12 +170,7 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
 
   @override
   Widget build(BuildContext context) {
-    if (!kReleaseMode) {
-      _buildCount++;
-      _logger.w("GHOST_LOG: ConversationScreen build count: $_buildCount");
-    }
     // ignore: avoid_print
-    print("CHAT_REBUILD contact_id=${widget.conversation.contactId}");
     final colors = AppColors.of(context);
     
     return ValueListenableBuilder(
@@ -314,7 +304,6 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
               durationMs: durationMs
             );
           } catch (e) {
-            _logger.e('GHOST_LOG: VOICE_SEND_ERROR voice_recorder: $e');
             messenger.showSnackBar(SnackBar(content: Text('Failed to send voice note: $e')));
           }
         },
@@ -439,7 +428,7 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
             style: AppTypography.caption(context).copyWith(
               fontSize: 10,
               fontWeight: FontWeight.w900,
-              color: isSelected ? Colors.black : colors.secondaryText.withAlpha(100),
+              color: isSelected ? Theme.of(context).colorScheme.onPrimary : colors.secondaryText.withAlpha(100),
               letterSpacing: 1.0,
             ),
           ),
@@ -453,26 +442,13 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
     final isSent = msg.metadata?['status'] == 'SENT';
     final isDelivered = msg.deliveredAt != null;
     final isSeen = msg.seenAt != null;
-
-    String statusStr = 'PENDING';
-    if (isSeen) {
-      statusStr = 'SEEN';
-    } else if (isDelivered) {
-      statusStr = 'DELIVERED';
-    } else if (isSent) {
-      statusStr = 'SENT';
-    }
-
-    // ignore: avoid_print
-    print("STATUS_RENDERED message_id=${msg.id} status=$statusStr");
-
     IconData icon = Icons.access_time;
     Color color = colors.secondaryText.withAlpha(80);
     double size = 8;
 
     if (isSeen) {
       icon = Icons.done_all;
-      color = Colors.blueAccent;
+      color = colors.info;
       size = 12;
     } else if (isDelivered) {
       icon = Icons.done_all;
@@ -518,7 +494,6 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
   Widget _buildMessageBubble(Message msg, bool isMe) {
     final colors = AppColors.of(context);
     // ignore: avoid_print
-    print("MESSAGE_TILE_REBUILD message_id=${msg.id}");
     return Align(
       alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
       child: Container(
@@ -570,20 +545,21 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
   void _showSafetyNumbers(BuildContext context) {
     final contact = widget.conversation.contact;
     if (contact == null) return;
+    final colors = AppColors.of(context);
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        backgroundColor: AppColors.of(context).secondaryBackground,
+        backgroundColor: colors.backgroundSecondary,
         title: const Text('SAFETY NUMBERS'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Text('Verify these numbers with your contact to ensure no interception.', style: TextStyle(fontSize: 12, color: Colors.white54)),
+            Text('Verify these numbers with your contact to ensure no interception.', style: TextStyle(fontSize: 12, color: colors.textSecondary)),
             const SizedBox(height: 24),
             Container(
               padding: const EdgeInsets.all(16), 
               decoration: BoxDecoration(
-                color: Colors.white10,
+                color: colors.surfacePrimary,
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Text(contact.fingerprint, textAlign: TextAlign.center, style: const TextStyle(fontFamily: 'monospace', letterSpacing: 1, fontSize: 13))
@@ -628,34 +604,27 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
   }
 
   void _pickCamera() async {
-    _logger.i('GHOST_LOG: MEDIA_BUTTON_TAPPED camera');
     final messenger = ScaffoldMessenger.of(context);
     final convService = ref.read(conversationServiceProvider);
     final contactId = widget.conversation.contactId;
     try {
-      _logger.i('GHOST_LOG: MEDIA_PICKER_OPEN_START camera');
       final XFile? photo = await _picker.pickImage(source: ImageSource.camera);
       if (photo == null) {
-        _logger.i('GHOST_LOG: MEDIA_PICKER_CANCELLED camera');
         return;
       }
-      _logger.i('GHOST_LOG: MEDIA_PICKER_RETURNED camera path=${photo.path}');
       _sessionPickedPaths.insert(0, photo.path);
       
       messenger.showSnackBar(const SnackBar(content: Text('Encrypting & Uploading Image...')));
       await convService.sendImage(contactId, File(photo.path));
     } catch (e) {
-      _logger.e('GHOST_LOG: MEDIA_PICKER_ERROR camera: $e');
       if (mounted) messenger.showSnackBar(SnackBar(content: Text('Camera capture failed: $e')));
     }
   }
 
   void _confirmAndSendRecentMedia(RecentMediaItem item) async {
-    _logger.i('GHOST_LOG: RECENT_MEDIA_SELECTED');
     final scaffoldMessenger = ScaffoldMessenger.of(context);
     final file = await item.filePromise;
     if (file == null) {
-      _logger.e('GHOST_LOG: RECENT_MEDIA_FILE_NULL');
       scaffoldMessenger.showSnackBar(const SnackBar(content: Text('Failed to load media file.')));
       return;
     }
@@ -665,11 +634,10 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
     final convService = ref.read(conversationServiceProvider);
     final contactId = widget.conversation.contactId;
     
-    _logger.i('GHOST_LOG: SHOWING_CONFIRMATION_DIALOG isVideo=$isVideo');
     showDialog(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        backgroundColor: const Color(0xFF1A1A1A),
+        backgroundColor: AppColors.of(dialogContext).surfacePrimary,
         title: Text(isVideo ? 'Send Video?' : 'Send Image?'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
@@ -680,7 +648,7 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
                 height: 180,
                 width: 240,
                 child: isVideo
-                  ? const Center(child: Icon(Icons.play_circle_outline, color: Colors.blueAccent, size: 48))
+                  ? Center(child: Icon(Icons.play_circle_outline, color: AppColors.of(dialogContext).info, size: 48))
                   : item.buildThumbnail(context),
               ),
             ),
@@ -703,7 +671,6 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
                   await convService.sendImage(contactId, file);
                 }
               } catch (e) {
-                _logger.e('GHOST_LOG: MEDIA_SEND_ERROR confirm_dialog: $e');
                 scaffoldMessenger.showSnackBar(SnackBar(content: Text('Failed to send media: $e')));
               }
             },
@@ -715,7 +682,6 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
   }
 
   void _showGalleryBottomSheet() {
-    _logger.i('GHOST_LOG: MEDIA_BUTTON_TAPPED gallery_sheet');
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -747,7 +713,7 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
                         const Divider(height: 1),
                         Expanded(
                           child: items.isEmpty
-                              ? const Center(child: Icon(Icons.photo_library_outlined, size: 48, color: Colors.white10))
+                              ? Center(child: Icon(Icons.photo_library_outlined, size: 48, color: colors.textMuted))
                               : GridView.builder(
                                   controller: scrollController,
                                   padding: EdgeInsets.zero,
@@ -783,9 +749,9 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
                           padding: const EdgeInsets.only(left: 16, right: 16, bottom: 24, top: 12),
                           child: Row(
                             children: [
-                              _buildActionItem(context, Icons.camera_alt_outlined, 'Camera', Colors.pinkAccent, _pickCamera),
+                              _buildActionItem(context, Icons.camera_alt_outlined, 'Camera', colors.error, _pickCamera),
                               const SizedBox(width: 8),
-                              _buildActionItem(context, Icons.photo_library_outlined, 'Gallery', Colors.blueAccent, _pickMedia),
+                              _buildActionItem(context, Icons.photo_library_outlined, 'Gallery', colors.info, _pickMedia),
                             ],
                           ),
                         ),
@@ -802,13 +768,11 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
   }
 
   void _pickMedia() async {
-    _logger.i('GHOST_LOG: MEDIA_BUTTON_TAPPED native_picker');
     final messenger = ScaffoldMessenger.of(context);
     final convService = ref.read(conversationServiceProvider);
     final contactId = widget.conversation.contactId;
 
     try {
-      _logger.i('GHOST_LOG: MEDIA_PICKER_OPEN_START native_picker');
       File? pickedFile;
 
       if (Platform.isAndroid || Platform.isIOS) {
@@ -835,11 +799,9 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
       }
 
       if (pickedFile == null) {
-        _logger.i('GHOST_LOG: MEDIA_PICKER_CANCELLED native_picker');
         return;
       }
 
-      _logger.i('GHOST_LOG: MEDIA_PICKER_RETURNED native_picker path=${pickedFile.path}');
       _sessionPickedPaths.insert(0, pickedFile.path);
 
       final path = pickedFile.path.toLowerCase();
@@ -860,7 +822,6 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
         await convService.sendImage(contactId, pickedFile);
       }
     } catch (e) {
-      _logger.e('GHOST_LOG: MEDIA_PICKER_ERROR native_picker: $e');
       if (mounted) {
         messenger.showSnackBar(
           SnackBar(content: Text('Media selection/upload failed: $e')),
@@ -902,8 +863,8 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
             }
           }
         }
-      } catch (e) {
-        _logger.w('GHOST_LOG: Error getting recent media: $e');
+      } catch (_) {
+        // Ignore
       }
     }
 
@@ -977,9 +938,6 @@ class _AttachmentWidgetState extends ConsumerState<AttachmentWidget> {
     final mediaId = envelope.mediaId;
     final mediaManager = ref.read(mediaManagerProvider);
 
-    final urlHint = envelope.relayUrl ?? "active_relay";
-    debugPrint('GHOST_LOG: MEDIA_ATTACHMENT_DETECTED messageId: ${widget.message.id} mediaId: $mediaId mediaKind: ${envelope.kind.name} url: $urlHint');
-
     setState(() {
       _mediaState = mediaManager.getMediaState(mediaId, isThumbnail: false);
       _thumbState = mediaManager.getMediaState(mediaId, isThumbnail: true);
@@ -998,7 +956,6 @@ class _AttachmentWidgetState extends ConsumerState<AttachmentWidget> {
           if (update.state == MediaState.READY) {
             _loadFiles();
           } else if (update.state == MediaState.FAILED) {
-            debugPrint('GHOST_LOG: MEDIA_RENDER_FAILED messageId: ${widget.message.id} mediaId: $mediaId mediaKind: ${envelope.kind.name} url: $urlHint error: Media state transitioned to failed');
           }
         }
       }
@@ -1010,16 +967,13 @@ class _AttachmentWidgetState extends ConsumerState<AttachmentWidget> {
   void _loadFiles() async {
     if (widget.message.metadata == null || widget.message.metadata?['media_id'] == null) return;
     final envelope = AttachmentEnvelope.fromJson(widget.message.metadata!);
-    final mediaId = envelope.mediaId;
     final mediaManager = ref.read(mediaManagerProvider);
     final relay = await ref.read(activeRelayProvider.future);
     if (!mounted) return;
     
     final identity = ref.read(identityServiceProvider).currentIdentity;
-    final urlHint = envelope.relayUrl ?? relay?.apiUrl ?? "unknown";
 
     if (relay == null || identity == null) {
-      debugPrint('GHOST_LOG: MEDIA_RENDER_FAILED messageId: ${widget.message.id} mediaId: $mediaId mediaKind: ${envelope.kind.name} url: $urlHint error: Active relay or identity is null');
       return;
     }
 
@@ -1034,10 +988,9 @@ class _AttachmentWidgetState extends ConsumerState<AttachmentWidget> {
         );
         if (mounted) {
           setState(() => _thumbFile = file);
-          debugPrint('GHOST_LOG: MEDIA_RENDER_READY messageId: ${widget.message.id} mediaId: $mediaId mediaKind: ${envelope.kind.name} url: $urlHint (Thumbnail)');
         }
-      } catch (e) {
-        debugPrint('GHOST_LOG: MEDIA_RENDER_FAILED messageId: ${widget.message.id} mediaId: $mediaId mediaKind: ${envelope.kind.name} url: $urlHint error: Failed loading ready thumbnail: $e');
+      } catch (_) {
+        // Ignore
       }
     } else if (_thumbState == MediaState.NOT_DOWNLOADED) {
       try {
@@ -1050,10 +1003,9 @@ class _AttachmentWidgetState extends ConsumerState<AttachmentWidget> {
         );
         if (mounted) {
           setState(() { _thumbFile = file; _thumbState = MediaState.READY; });
-          debugPrint('GHOST_LOG: MEDIA_RENDER_READY messageId: ${widget.message.id} mediaId: $mediaId mediaKind: ${envelope.kind.name} url: $urlHint (Thumbnail downloaded)');
         }
-      } catch (e) {
-        debugPrint('GHOST_LOG: MEDIA_RENDER_FAILED messageId: ${widget.message.id} mediaId: $mediaId mediaKind: ${envelope.kind.name} url: $urlHint error: Failed downloading/decrypting thumbnail: $e');
+      } catch (_) {
+        // Ignore
       }
     }
 
@@ -1068,10 +1020,9 @@ class _AttachmentWidgetState extends ConsumerState<AttachmentWidget> {
         );
         if (mounted) {
           setState(() => _decryptedFile = file);
-          debugPrint('GHOST_LOG: MEDIA_RENDER_READY messageId: ${widget.message.id} mediaId: $mediaId mediaKind: ${envelope.kind.name} url: $urlHint (Original)');
         }
-      } catch (e) {
-        debugPrint('GHOST_LOG: MEDIA_RENDER_FAILED messageId: ${widget.message.id} mediaId: $mediaId mediaKind: ${envelope.kind.name} url: $urlHint error: Failed loading ready original: $e');
+      } catch (_) {
+        // Ignore
       }
     }
   }
@@ -1082,9 +1033,7 @@ class _AttachmentWidgetState extends ConsumerState<AttachmentWidget> {
 
     final mediaManager = ref.read(mediaManagerProvider);
     final envelope = AttachmentEnvelope.fromJson(widget.message.metadata!);
-    final mediaId = envelope.mediaId;
     final relay = await ref.read(activeRelayProvider.future);
-    final urlHint = envelope.relayUrl ?? relay?.apiUrl ?? "unknown";
 
     try {
       if (!mounted) return;
@@ -1103,11 +1052,10 @@ class _AttachmentWidgetState extends ConsumerState<AttachmentWidget> {
       );
       if (mounted) {
         setState(() { _decryptedFile = file; _mediaState = MediaState.READY; });
-        debugPrint('GHOST_LOG: MEDIA_RENDER_READY messageId: ${widget.message.id} mediaId: $mediaId mediaKind: ${envelope.kind.name} url: $urlHint (Downloaded Original)');
         _showFullScreen();
       }
-    } catch (e) {
-      debugPrint('GHOST_LOG: MEDIA_RENDER_FAILED messageId: ${widget.message.id} mediaId: $mediaId mediaKind: ${envelope.kind.name} url: $urlHint error: $e');
+    } catch (_) {
+      // Ignore
     }
   }
 
@@ -1213,7 +1161,9 @@ class _VideoPreviewState extends State<_VideoPreview> {
       if (!mounted) { controller.dispose(); return; }
       _chewieController = ChewieController(videoPlayerController: controller, autoPlay: true, aspectRatio: controller.value.aspectRatio);
       if (mounted) setState(() {});
-    } catch (_) {}
+    } catch (_) {
+      // Ignore
+    }
   }
 
   @override

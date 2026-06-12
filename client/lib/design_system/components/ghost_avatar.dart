@@ -45,6 +45,7 @@ class GhostAvatar extends StatelessWidget {
   }
 
   Widget _buildPlaceholder(BuildContext context) {
+    final colors = AppColors.of(context);
     if (alias != null && alias!.isNotEmpty) {
       final initial = alias![0].toUpperCase();
       return Center(
@@ -57,6 +58,6 @@ class GhostAvatar extends StatelessWidget {
         ),
       );
     }
-    return const Icon(Icons.person, color: Colors.white24);
+    return Icon(Icons.person, color: colors.textMuted);
   }
 }

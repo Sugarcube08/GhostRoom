@@ -19,11 +19,12 @@ class GlassContainer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = AppColors.of(context);
     final boxDecoration = BoxDecoration(
-      color: color ?? AppColors.secondaryBackground.withAlpha(102), // 0.4 opacity
+      color: color ?? colors.backgroundSecondary.withAlpha(102), // 0.4 opacity
       borderRadius: BorderRadius.circular(borderRadius),
       border: Border.all(
-        color: AppColors.hairline,
+        color: colors.borderPrimary,
         width: borderWidth,
       ),
     );
@@ -59,9 +60,10 @@ class GlassCapsule extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = AppColors.of(context);
     return GlassContainer(
       borderRadius: 99.0,
-      color: AppColors.elevatedSurface.withAlpha(153), // 0.6 opacity
+      color: colors.surfacePrimary.withAlpha(153), // 0.6 opacity
       child: Padding(
         padding: EdgeInsets.symmetric(
           horizontal: paddingHorizontal,

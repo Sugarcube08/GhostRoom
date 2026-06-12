@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
 
@@ -64,18 +63,12 @@ class RelayManager {
   /// Pings the relay's API to wake it up (for Render free tier)
   Future<void> wakeUpRelay(RelayProfile profile) async {
     try {
-      debugPrint('GHOST_LOG: Waking up relay: ${profile.apiUrl}');
       // We don't care about the response, just that it reaches the server
-      final response = await http
+      await http
           .get(Uri.parse('${profile.apiUrl}/health'))
           .timeout(const Duration(seconds: 5));
-      debugPrint(
-        'GHOST_LOG: Relay wake-up signal sent. Status: ${response.statusCode}',
-      );
-    } catch (e) {
-      debugPrint(
-        'GHOST_LOG: Relay wake-up signal failed (expected if server is starting): $e',
-      );
+    } catch (_) {
+      // Ignore
     }
   }
 
@@ -88,7 +81,6 @@ class RelayManager {
         const fallbackStorage = FlutterSecureStorage();
         data = await fallbackStorage.read(key: _relaysKey);
         if (data != null) {
-          debugPrint('GHOST_LOG: Migrating relays from fallback storage...');
           await _storage.write(key: _relaysKey, value: data);
           final activeId = await fallbackStorage.read(key: _activeRelayIdKey);
           if (activeId != null) {
@@ -123,9 +115,6 @@ class RelayManager {
       }
     }
     if (migrated) {
-      debugPrint(
-        'GHOST_LOG: Migrated relay URLs to https://ghostroom-vdd6.onrender.com',
-      );
       await _storage.write(
         key: _relaysKey,
         value: jsonEncode(relays.map((r) => r.toJson()).toList()),

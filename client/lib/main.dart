@@ -4,11 +4,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sodium/sodium_sumo.dart';
 import 'core/theme/ghost_theme.dart';
 import 'core/providers.dart';
+import 'design_system/colors.dart';
 
 import 'core/widgets/navigation_shell.dart';
 import 'features/home/onboarding_screen.dart';
 import 'core/app_initializer.dart';
-import 'core/stability_tracker.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'dart:async';
 import 'dart:io';
@@ -41,25 +41,7 @@ class BackgroundRelayManager extends RelayManager {
 
 @pragma('vm:entry-point')
 Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
-  final stopwatch = Stopwatch()..start();
-  // ignore: avoid_print
-  print("BACKGROUND_HANDLER_STARTED");
-  // ignore: avoid_print
-  print("BACKGROUND_MESSAGE_ID=${message.data['message_id']}");
-  // ignore: avoid_print
-  print("FCM_BACKGROUND_HANDLER_ENTERED");
-  // ignore: avoid_print
-  print("FCM_MESSAGE_DATA=${message.data}");
-  // ignore: avoid_print
-  print(message.data);
-  // ignore: avoid_print
-  print(message.notification);
-  debugPrint('GHOST_LOG: FCM_BACKGROUND_WAKEUP: START data=${message.data}');
-
   if (message.data['event'] != 'sync_required') {
-    debugPrint('GHOST_LOG: FCM_BACKGROUND_WAKEUP: FAILURE error=Ignored non-sync background event (latency: ${stopwatch.elapsedMilliseconds}ms)');
-    // ignore: avoid_print
-    print("BACKGROUND_HANDLER_FINISHED");
     return;
   }
 
@@ -68,18 +50,12 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   // STEP 1: Firebase Initialization
   try {
     await Firebase.initializeApp();
+  } catch (e) {
     // ignore: avoid_print
-    print('STEP_1_FIREBASE_DONE');
-  } catch (e, s) {
-    // ignore: avoid_print
-    print('BACKGROUND_FATAL=$e');
-    // ignore: avoid_print
-    print(s);
   }
 
   // STEP 2 & 3: Identity & DB Loading from Background Cache
   // ignore: avoid_print
-  print('STEP_2_IDENTITY_START');
   
   late final Uint8List encryptionKey;
   late final RelayProfile relay;
@@ -90,9 +66,7 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   try {
     final cacheFile = await StorageDirectoryHelper.getBackgroundCacheFile();
     if (!await cacheFile.exists()) {
-      debugPrint('GHOST_LOG: FCM_BACKGROUND_WAKEUP: FAILURE error=Background cache file not found');
       // ignore: avoid_print
-      print("BACKGROUND_HANDLER_FINISHED");
       return;
     }
 
@@ -100,9 +74,7 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
     final cacheData = jsonDecode(cacheContent);
     final String? hiveKeyBase64 = cacheData['hive_encryption_key'];
     if (hiveKeyBase64 == null) {
-      debugPrint('GHOST_LOG: FCM_BACKGROUND_WAKEUP: FAILURE error=No Hive encryption key in cache');
       // ignore: avoid_print
-      print("BACKGROUND_HANDLER_FINISHED");
       return;
     }
     encryptionKey = base64.decode(hiveKeyBase64);
@@ -144,7 +116,6 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
     final syncBox = Hive.box('sync_metadata');
     if (fcmMessageId != null) {
       await syncBox.put('notified_$fcmMessageId', true);
-      debugPrint('GHOST_LOG: Marked FCM notification as shown for message: $fcmMessageId');
     }
 
     final storage = const FlutterSecureStorage(aOptions: AndroidOptions(resetOnError: true));
@@ -153,23 +124,12 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
     // Load identity from cache (bypasses Keystore/SecureStorage)
     final loaded = await idService.loadIdentityFromCache();
     if (!loaded || !idService.hasIdentity) {
-      debugPrint('GHOST_LOG: FCM_BACKGROUND_WAKEUP: FAILURE error=Identity load from cache failed');
       // ignore: avoid_print
-      print("BACKGROUND_HANDLER_FINISHED");
       return;
     }
 
     relayManager = BackgroundRelayManager(storage, relay);
-    
-    // ignore: avoid_print
-    print('STEP_3_IDENTITY_DONE');
-  } catch (e, s) {
-    // ignore: avoid_print
-    print('BACKGROUND_FATAL=$e');
-    // ignore: avoid_print
-    print(s);
-    // ignore: avoid_print
-    print("BACKGROUND_HANDLER_FINISHED");
+  } catch (e) {
     return;
   }
 
@@ -194,20 +154,12 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   bool syncSucceeded = false;
 
   // STEP 4: WebSocket Sync Start
-  // ignore: avoid_print
-  print('STEP_4_SYNC_START');
   try {
     wsService.onInboxMessages((messages) async {
-      debugPrint('GHOST_LOG: Background sync received messages: ${messages.length}');
       if (messages.isNotEmpty) {
         await chatRepo.processEnvelopes(messages, enableNotification: false);
       }
       syncSucceeded = true;
-      // ignore: avoid_print
-      print("SYNC_COMPLETE");
-      // ignore: avoid_print
-      print("BACKGROUND_SYNC_SUCCESS");
-      debugPrint('GHOST_LOG: FCM_BACKGROUND_WAKEUP: SUCCESS (latency: ${stopwatch.elapsedMilliseconds}ms)');
       if (!completer.isCompleted) {
         completer.complete();
       }
@@ -220,56 +172,33 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
     // Complete after 5 seconds timeout as safety
     Future.delayed(const Duration(seconds: 5), () {
       if (!completer.isCompleted) {
-        debugPrint('GHOST_LOG: FCM_BACKGROUND_WAKEUP: FAILURE error=Background sync timed out (latency: ${stopwatch.elapsedMilliseconds}ms)');
         completer.complete();
       }
     });
 
     await completer.future;
-    // ignore: avoid_print
-    print('STEP_5_SYNC_DONE');
-  } catch (e, s) {
-    // ignore: avoid_print
-    print('BACKGROUND_FATAL=$e');
-    // ignore: avoid_print
-    print(s);
+  } catch (_) {
   }
 
   // STEP 6: Direct HTTP Delivery Receipt Fallback if WebSocket sync failed or timed out
-  // ignore: avoid_print
-  print('STEP_6_RECEIPT_START');
   try {
     final fcmMessageId = message.data['message_id'];
     if (fcmMessageId != null) {
       if (!syncSucceeded) {
-        debugPrint('GHOST_LOG: WebSocket sync failed/timed out. Sending fallback HTTP receipt...');
         await chatRepo.sendDeliveryReceipt(fcmMessageId);
       }
-      // ignore: avoid_print
-      print('STEP_7_RECEIPT_DONE');
     }
-  } catch (e, s) {
-    // ignore: avoid_print
-    print('BACKGROUND_FATAL=$e');
-    // ignore: avoid_print
-    print(s);
+  } catch (_) {
   }
 
   try {
     // Grace period: Wait 1.5 seconds to ensure all outgoing TCP packets (such as message ACKs)
     // are fully flushed to the relay server before we close the socket connection.
-    debugPrint('GHOST_LOG: Background sync completed. Waiting for ACK flush...');
     await Future.delayed(const Duration(milliseconds: 1500));
 
     wsService.disconnect();
     tempContainer.dispose();
-    debugPrint('GHOST_LOG: Background sync handler finished successfully.');
-    // ignore: avoid_print
-    print("BACKGROUND_HANDLER_FINISHED");
-  } catch (err) {
-    debugPrint('GHOST_LOG: FCM_BACKGROUND_WAKEUP: FAILURE error=$err (latency: ${stopwatch.elapsedMilliseconds}ms)');
-    // ignore: avoid_print
-    print("BACKGROUND_HANDLER_FINISHED");
+  } catch (_) {
   }
 }
 
@@ -280,8 +209,8 @@ void main() async {
       try {
         await Firebase.initializeApp();
         FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
-      } catch (e) {
-        debugPrint('GHOST_LOG: Firebase initialization failed: $e');
+      } catch (_) {
+        // Ignore
       }
     }
     
@@ -292,17 +221,11 @@ void main() async {
     // Global Error Handlers
     FlutterError.onError = (details) {
       FlutterError.presentError(details);
-      debugPrint('GHOST_FLUTTER_ERROR: ${details.exception}');
-      StabilityTracker.logEvent('Flutter_Error', data: {'error': details.exception.toString()});
       if (kDebugMode) {
-        print(details.stack);
       }
     };
 
     PlatformDispatcher.instance.onError = (error, stack) {
-      debugPrint('GHOST_PLATFORM_ERROR: $error');
-      debugPrint(stack.toString());
-      StabilityTracker.logEvent('Platform_Error', data: {'error': error.toString()});
       return true; // Error handled
     };
 
@@ -322,34 +245,6 @@ void main() async {
     // Initial kick-off (non-blocking here, SplashScreen handles wait)
     unawaited(container.read(appInitializerProvider).initialize());
 
-    // Periodic Memory Monitor (P0 Stability)
-    if (!kReleaseMode) {
-      Timer.periodic(const Duration(seconds: 60), (_) {
-        StabilityTracker.logMemory('Periodic_Monitor');
-        try {
-          final cache = PaintingBinding.instance.imageCache;
-          debugPrint('GHOST_LOG: IMAGE_CACHE entries=${cache.currentSize} bytes=${cache.currentSizeBytes}');
-          debugPrint(
-            'GHOST_LOG: ACTIVE_WIDGETS '
-            'activeVideoControllers=${StabilityTracker.activeVideoControllers} '
-            'activeMediaAttachmentBubbles=${StabilityTracker.activeMediaAttachmentBubbles} '
-            'activeFullScreenViews=${StabilityTracker.activeFullScreenViews} '
-            'activeVoiceMessageBubbles=${StabilityTracker.activeVoiceMessageBubbles} '
-            'activeMemoryImages=${StabilityTracker.activeMemoryImages} '
-            'activeConversationScreens=${StabilityTracker.activeConversationScreens}'
-          );
-        } catch (_) {}
-        try {
-          container.read(identityServiceProvider).logMemoryUsage();
-          container.read(chatRepositoryProvider).logMemoryUsage();
-          container.read(mediaManagerProvider).logMemoryUsage();
-          container.read(webSocketServiceProvider).logMemoryUsage();
-        } catch (e) {
-          debugPrint('GHOST_ERROR: Periodic monitor failed to log component memory: $e');
-        }
-      });
-    }
-
     runApp(
       UncontrolledProviderScope(
         container: container,
@@ -357,9 +252,7 @@ void main() async {
       ),
     );
   }, (error, stack) {
-    debugPrint('GHOST_ZONED_CRASH: $error');
-    debugPrint(stack.toString());
-    StabilityTracker.logEvent('Zoned_Crash', data: {'error': error.toString()});
+    // Ignore
   });
 }
 
@@ -387,7 +280,6 @@ class _GhostAppState extends ConsumerState<GhostApp> with WidgetsBindingObserver
   }
 
   void _handleDeepLink(Uri uri) {
-    debugPrint('GHOST_LOG: Handling deep link: $uri');
     if (uri.scheme == 'ghostroom' && uri.host == 'identity') {
       final payload = uri.pathSegments.isNotEmpty ? uri.pathSegments.first : null;
       if (payload != null) {
@@ -411,33 +303,43 @@ class _GhostAppState extends ConsumerState<GhostApp> with WidgetsBindingObserver
 
       showDialog(
         context: context,
-        builder: (dialogContext) => AlertDialog(
-          backgroundColor: const Color(0xFF121212),
-          title: const Text('NEW IDENTITY LINK'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text('An identity package was shared via deep link.', style: TextStyle(color: Colors.white54)),
-              const SizedBox(height: 16),
-              Text(publicId, style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.blueAccent)),
-              const SizedBox(height: 8),
-              const Text('Would you like to view and add this contact?', style: TextStyle(fontSize: 12)),
-            ],
-          ),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('CANCEL')),
-            ElevatedButton(
-              onPressed: () {
-                Navigator.pop(dialogContext);
-                processScannedData(context, payload);
-              }, 
-              child: const Text('ADD CONTACT')
+        builder: (dialogContext) {
+          final dialogColors = AppColors.of(dialogContext);
+          return AlertDialog(
+            backgroundColor: dialogColors.backgroundSecondary,
+            title: const Text('NEW IDENTITY LINK'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text('An identity package was shared via deep link.', style: TextStyle(color: dialogColors.textSecondary)),
+                const SizedBox(height: 16),
+                Text(publicId, style: TextStyle(fontWeight: FontWeight.bold, color: dialogColors.accent)),
+                const SizedBox(height: 8),
+                Text('Would you like to view and add this contact?', style: TextStyle(fontSize: 12, color: dialogColors.textPrimary)),
+              ],
             ),
-          ],
-        ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext), 
+                child: Text('CANCEL', style: TextStyle(color: dialogColors.textMuted))
+              ),
+              ElevatedButton(
+                onPressed: () {
+                  Navigator.pop(dialogContext);
+                  processScannedData(context, payload);
+                }, 
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: dialogColors.accent,
+                  foregroundColor: dialogColors.backgroundPrimary,
+                ),
+                child: const Text('ADD CONTACT')
+              ),
+            ],
+          );
+        },
       );
-    } catch (e) {
-      debugPrint('GHOST_ERROR: Failed to parse deep link payload: $e');
+    } catch (_) {
+      // Ignore
     }
   }
 
@@ -458,8 +360,6 @@ class _GhostAppState extends ConsumerState<GhostApp> with WidgetsBindingObserver
   @override
   void didHaveMemoryPressure() {
     super.didHaveMemoryPressure();
-    StabilityTracker.logEvent('System_Memory_Pressure');
-    debugPrint('GHOST_WARNING: System reporting memory pressure!');
     // Clear image cache on memory pressure
     PaintingBinding.instance.imageCache.clear();
     PaintingBinding.instance.imageCache.clearLiveImages();
@@ -479,33 +379,41 @@ class _GhostAppState extends ConsumerState<GhostApp> with WidgetsBindingObserver
         if (child == null) return const SizedBox.shrink();
         
         // Add a global error widget
-        ErrorWidget.builder = (details) => Scaffold(
-          backgroundColor: const Color(0xFF0A0A0A),
-          body: Center(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(32.0),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Icon(Icons.warning_amber_rounded, color: Colors.redAccent, size: 64),
-                  const SizedBox(height: 24),
-                  const Text('CRITICAL UI ERROR', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.white)),
-                  const SizedBox(height: 16),
-                  Text(details.exception.toString(), textAlign: TextAlign.center, style: const TextStyle(color: Colors.redAccent, fontSize: 12, fontFamily: 'monospace')),
-                  if (!kReleaseMode) ...[
-                    const SizedBox(height: 16),
-                    Text(details.stack.toString(), style: const TextStyle(color: Colors.white24, fontSize: 8, fontFamily: 'monospace')),
-                  ],
-                  const SizedBox(height: 32),
-                  ElevatedButton(
-                    style: ElevatedButton.styleFrom(backgroundColor: Colors.white10),
-                    onPressed: () => debugPrint('Retry or Restart logic here'),
-                    child: const Text('OK', style: TextStyle(color: Colors.white)),
+        ErrorWidget.builder = (details) => Builder(
+          builder: (context) {
+            final colors = AppColors.of(context);
+            return Scaffold(
+              backgroundColor: colors.backgroundPrimary,
+              body: Center(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.all(32.0),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.warning_amber_rounded, color: colors.error, size: 64),
+                      const SizedBox(height: 24),
+                      Text('CRITICAL UI ERROR', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: colors.textPrimary)),
+                      const SizedBox(height: 16),
+                      Text(details.exception.toString(), textAlign: TextAlign.center, style: TextStyle(color: colors.error, fontSize: 12, fontFamily: 'monospace')),
+                      if (!kReleaseMode) ...[
+                        const SizedBox(height: 16),
+                        Text(details.stack.toString(), style: TextStyle(color: colors.textMuted, fontSize: 8, fontFamily: 'monospace')),
+                      ],
+                      const SizedBox(height: 32),
+                      ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: colors.surfaceSecondary,
+                          foregroundColor: colors.textPrimary,
+                        ),
+                        onPressed: () {},
+                        child: const Text('OK'),
+                      ),
+                    ],
                   ),
-                ],
+                ),
               ),
-            ),
-          ),
+            );
+          }
         );
 
         return child;
@@ -562,25 +470,26 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
   }
 
   void _showIdentityMissingDialog() {
+    final colors = AppColors.of(context);
     showDialog(
       context: context,
       barrierDismissible: false,
       builder: (context) => AlertDialog(
-        backgroundColor: const Color(0xFF1A1A1A),
+        backgroundColor: colors.backgroundSecondary,
         title: const Text('Identity Warning'),
-        content: const Column(
+        content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
               'Your identity data was found but couldn\'t be loaded. '
               'Your system keyring might be locked, or data may have been cleared.',
-              style: TextStyle(color: Colors.white70)
+              style: TextStyle(color: colors.textSecondary)
             ),
-            SizedBox(height: 16),
+            const SizedBox(height: 16),
             Text(
               'You can try restarting the app or restore from your 24-word seed phrase.',
-              style: TextStyle(color: Colors.white54, fontSize: 12)
+              style: TextStyle(color: colors.textMuted, fontSize: 12)
             ),
           ],
         ),
@@ -590,14 +499,14 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
               Navigator.pop(context);
               _showResetConfirmDialog();
             },
-            child: const Text('RESET', style: TextStyle(color: Colors.redAccent)),
+            child: Text('RESET', style: TextStyle(color: colors.error)),
           ),
           TextButton(
             onPressed: () {
               Navigator.pop(context);
               _showRecoverDialog();
             },
-            child: const Text('RECOVER'),
+            child: Text('RECOVER', style: TextStyle(color: colors.accent)),
           ),
           TextButton(
             onPressed: () {
@@ -605,7 +514,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
               ref.read(appInitializerProvider).status = InitializationStatus.idle;
               _checkInitialization();
             },
-            child: const Text('RETRY'),
+            child: Text('RETRY', style: TextStyle(color: colors.textPrimary)),
           ),
         ],
       ),
@@ -613,16 +522,17 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
   }
 
   void _showRecoverDialog() {
+    final colors = AppColors.of(context);
     final controller = TextEditingController();
     showDialog(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        backgroundColor: const Color(0xFF1A1A1A),
+        backgroundColor: colors.backgroundSecondary,
         title: const Text('RECOVER IDENTITY'),
         content: TextField(
           controller: controller,
           maxLines: 3,
-          style: const TextStyle(color: Colors.white, fontSize: 12, fontFamily: 'monospace'),
+          style: TextStyle(color: colors.textPrimary, fontSize: 12, fontFamily: 'monospace'),
           decoration: const InputDecoration(
             hintText: 'Enter your 24-word seed phrase...',
             border: OutlineInputBorder(),
@@ -631,7 +541,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('CANCEL'),
+            child: Text('CANCEL', style: TextStyle(color: colors.textMuted)),
           ),
           TextButton(
             onPressed: () async {
@@ -657,7 +567,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
                 );
               }
             },
-            child: const Text('RESTORE'),
+            child: Text('RESTORE', style: TextStyle(color: colors.accent)),
           ),
         ],
       ),
@@ -665,20 +575,21 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
   }
 
   void _showResetConfirmDialog() {
+    final colors = AppColors.of(context);
     showDialog(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        backgroundColor: const Color(0xFF1A1A1A),
+        backgroundColor: colors.backgroundSecondary,
         title: const Text('RESET ALL LOCAL DATA?'),
-        content: const Text(
+        content: Text(
           'This action is irreversible. All local contacts, messages, and key rings will be wiped. '
           'You will start fresh as a new installation.',
-          style: TextStyle(color: Colors.white70),
+          style: TextStyle(color: colors.textSecondary),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('CANCEL'),
+            child: Text('CANCEL', style: TextStyle(color: colors.textMuted)),
           ),
           TextButton(
             onPressed: () async {
@@ -703,7 +614,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
               if (!mounted) return;
               _checkInitialization();
             },
-            child: const Text('RESET', style: TextStyle(color: Colors.redAccent)),
+            child: Text('RESET', style: TextStyle(color: colors.error)),
           ),
         ],
       ),
@@ -711,6 +622,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
   }
 
   void _showInitializationError(String message) {
+    final colors = AppColors.of(context);
     final isKeyringError = message.contains('Secure storage') || message.contains('keyring');
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -719,7 +631,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
         context: context,
         barrierDismissible: false,
         builder: (context) => AlertDialog(
-          backgroundColor: const Color(0xFF1A1A1A),
+          backgroundColor: colors.backgroundSecondary,
           title: Text(isKeyringError ? 'Identity Found' : 'STARTUP FAILURE'),
           content: Column(
             mainAxisSize: MainAxisSize.min,
@@ -729,10 +641,10 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
                 isKeyringError 
                     ? 'Secure storage unavailable' 
                     : 'GhostRoom could not initialize core services.', 
-                style: const TextStyle(color: Colors.white70)
+                style: TextStyle(color: colors.textSecondary)
               ),
               const SizedBox(height: 16),
-              Text(message, style: const TextStyle(color: Colors.redAccent, fontSize: 11, fontFamily: 'monospace')),
+              Text(message, style: TextStyle(color: colors.error, fontSize: 11, fontFamily: 'monospace')),
             ],
           ),
           actions: [
@@ -743,7 +655,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
               },
               child: Text(
                 isKeyringError ? 'RESET IDENTITY' : 'WIPE DATA', 
-                style: const TextStyle(color: Colors.redAccent)
+                style: TextStyle(color: colors.error)
               ),
             ),
             if (isKeyringError)
@@ -752,7 +664,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
                   Navigator.pop(context); // Close dialog
                   _showRecoverDialog();
                 },
-                child: const Text('RECOVER'),
+                child: Text('RECOVER', style: TextStyle(color: colors.accent)),
               ),
             TextButton(
               onPressed: () {
@@ -761,7 +673,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
                 ref.read(appInitializerProvider).initialize(); // Start initialization again
                 _checkInitialization(); // Re-run state checking
               },
-              child: const Text('RETRY'),
+              child: Text('RETRY', style: TextStyle(color: colors.textPrimary)),
             ),
           ],
         ),
@@ -774,7 +686,6 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
       final idService = ref.read(identityServiceProvider);
       
       if (!idService.hasIdentity) {
-        debugPrint('GHOST_LOG: Identity not found. Navigating to Onboarding.');
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted) {
             Navigator.pushReplacement(
@@ -799,7 +710,6 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
       }
 
       if (!mounted) return;
-      debugPrint('GHOST_LOG: Identity verified. Entering app.');
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
           Navigator.pushReplacement(
@@ -809,7 +719,6 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
         }
       });
     } catch (e) {
-      debugPrint('GHOST_ERROR: SplashScreen proceed failed: $e');
       if (mounted) {
         _showInitializationError(e.toString());
       }
@@ -818,15 +727,25 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final colors = AppColors.of(context);
     return Scaffold(
-      backgroundColor: const Color(0xFF0A0A0A),
+      backgroundColor: colors.backgroundPrimary,
       body: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Image.asset('assets/images/banner.png', height: 120, fit: BoxFit.contain),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+              decoration: BoxDecoration(
+                color: Theme.of(context).brightness == Brightness.light
+                    ? const Color(0xFF0A0A0A)
+                    : Colors.transparent,
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Image.asset('assets/images/banner.png', height: 120, fit: BoxFit.contain),
+            ),
             const SizedBox(height: 64),
-            const CircularProgressIndicator(color: Colors.white10, strokeWidth: 1),
+            CircularProgressIndicator(color: colors.textMuted.withAlpha(50), strokeWidth: 1),
           ],
         ),
       ),

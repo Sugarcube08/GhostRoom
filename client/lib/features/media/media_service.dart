@@ -7,7 +7,6 @@ import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:video_compress/video_compress.dart';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
-import 'package:logger/logger.dart';
 import '../../core/network/relay_manager.dart';
 import '../../core/crypto/identity_service.dart';
 import 'attachment_envelope.dart';
@@ -15,28 +14,13 @@ import 'attachment_envelope.dart';
 class MediaService {
   final SodiumSumo sodium;
   final IdentityService _idService;
-  final Logger _logger = Logger(
-    level: kReleaseMode ? Level.warning : Level.info,
-    printer: PrettyPrinter(
-      methodCount: 0, 
-      errorMethodCount: 5, 
-      lineLength: 50, 
-      colors: true, 
-      printEmojis: true, 
-      dateTimeFormat: DateTimeFormat.onlyTimeAndSinceStart,
-    ),
-  );
 
   MediaService(this.sodium, this._idService);
 
   Future<File> compressImage(File file) async {
-    final startTime = DateTime.now();
-    _logger.i('GHOST_LOG: MEDIA_COMPRESS_START kind: image source_size: ${file.lengthSync()}');
     
     // Skip compression on desktop (libraries not supported)
     if (!Platform.isAndroid && !Platform.isIOS) {
-      _logger.i('GHOST_LOG: MEDIA_COMPRESS_SKIP (Desktop platform)');
-      _logger.i('GHOST_LOG: MEDIA_COMPRESSED size: ${file.lengthSync()}');
       return file;
     }
 
@@ -55,20 +39,13 @@ class MediaService {
       
       if (result == null) throw Exception('FlutterImageCompress returned null');
       final compressedFile = File(result.path);
-      final elapsed = DateTime.now().difference(startTime).inMilliseconds;
-      _logger.i('GHOST_LOG: MEDIA_COMPRESS_SUCCESS elapsed=${elapsed}ms compressed_size: ${compressedFile.lengthSync()}');
-      _logger.i('GHOST_LOG: MEDIA_COMPRESSED size: ${compressedFile.lengthSync()}');
       return compressedFile;
     } catch (e) {
-      final elapsed = DateTime.now().difference(startTime).inMilliseconds;
-      _logger.w('GHOST_LOG: MEDIA_COMPRESS_FAILED elapsed=${elapsed}ms error: $e. Falling back to original image.');
-      _logger.i('GHOST_LOG: MEDIA_COMPRESSED size: ${file.lengthSync()}');
       return file;
     }
   }
 
   Future<Uint8List> generateImageThumbnail(File file) async {
-    final startTime = DateTime.now();
     // Basic fallback for desktop
     if (!Platform.isAndroid && !Platform.isIOS) {
       return await file.readAsBytes(); // Just use original as thumb on desktop for now
@@ -85,19 +62,13 @@ class MediaService {
       if (result == null) throw Exception('FlutterImageCompress returned null');
       return result;
     } catch (e) {
-      final elapsed = DateTime.now().difference(startTime).inMilliseconds;
-      _logger.w('GHOST_LOG: MEDIA_THUMBNAIL_FAILED elapsed=${elapsed}ms error: $e. Falling back to original bytes.');
       return await file.readAsBytes();
     }
   }
 
   Future<File> compressVideo(File file) async {
-    final startTime = DateTime.now();
-    _logger.i('GHOST_LOG: MEDIA_COMPRESS_START kind: video source_size: ${file.lengthSync()}');
     
     if (!Platform.isAndroid && !Platform.isIOS) {
-      _logger.i('GHOST_LOG: MEDIA_COMPRESS_SKIP (Desktop platform)');
-      _logger.i('GHOST_LOG: MEDIA_COMPRESSED size: ${file.lengthSync()}');
       return file;
     }
 
@@ -110,20 +81,13 @@ class MediaService {
         includeAudio: true,
       ).timeout(const Duration(seconds: 30));
       if (info == null || info.file == null) throw Exception('VideoCompress returned null');
-      final elapsed = DateTime.now().difference(startTime).inMilliseconds;
-      _logger.i('GHOST_LOG: MEDIA_COMPRESS_SUCCESS elapsed=${elapsed}ms compressed_size: ${info.file!.lengthSync()}');
-      _logger.i('GHOST_LOG: MEDIA_COMPRESSED size: ${info.file!.lengthSync()}');
       return info.file!;
     } catch (e) {
-      final elapsed = DateTime.now().difference(startTime).inMilliseconds;
-      _logger.w('GHOST_LOG: MEDIA_COMPRESS_FAILED elapsed=${elapsed}ms error: $e. Falling back to original video.');
-      _logger.i('GHOST_LOG: MEDIA_COMPRESSED size: ${file.lengthSync()}');
       return file;
     }
   }
 
   Future<Uint8List> generateVideoThumbnail(File file) async {
-    final startTime = DateTime.now();
     if (!Platform.isAndroid && !Platform.isIOS) {
       // Hard fallback: we might need a desktop-compatible way to get a video frame
       // For now, return empty or a placeholder if desktop
@@ -135,8 +99,6 @@ class MediaService {
       if (result == null) throw Exception('VideoCompress.getByteThumbnail returned null');
       return result;
     } catch (e) {
-      final elapsed = DateTime.now().difference(startTime).inMilliseconds;
-      _logger.w('GHOST_LOG: MEDIA_THUMBNAIL_FAILED elapsed=${elapsed}ms error: $e. Returning empty thumbnail.');
       return Uint8List(0);
     }
   }
@@ -160,7 +122,6 @@ class MediaService {
   }
 
   Future<Map<String, dynamic>> encryptMedia(Uint8List plaintext, SecureKey? existingKey) async {
-    _logger.i('GHOST_LOG: MEDIA_ENCRYPT_START size: ${plaintext.length}');
     final messageKey = existingKey ?? sodium.crypto.aeadXChaCha20Poly1305IETF.keygen();
     final nonce = sodium.randombytes.buf(sodium.crypto.aeadXChaCha20Poly1305IETF.nonceBytes);
     final ciphertext = sodium.crypto.aeadXChaCha20Poly1305IETF.encrypt(
@@ -169,8 +130,6 @@ class MediaService {
       key: messageKey,
     );
     final hash = crypto.sha256.convert(plaintext).toString();
-    _logger.i('GHOST_LOG: MEDIA_ENCRYPT_SUCCESS hash: $hash');
-    _logger.i('GHOST_LOG: MEDIA_ENCRYPTED hash: $hash');
 
     return {
       'ciphertext': ciphertext,
@@ -186,7 +145,6 @@ class MediaService {
     required SecureKey messageKey,
     required String expectedHash,
   }) async {
-    _logger.i('GHOST_LOG: MEDIA_DECRYPT_START');
     final decrypted = sodium.crypto.aeadXChaCha20Poly1305IETF.decrypt(
       cipherText: ciphertext,
       nonce: nonce,
@@ -195,7 +153,6 @@ class MediaService {
 
     final actualHash = crypto.sha256.convert(decrypted).toString();
     if (actualHash != expectedHash) throw Exception('Integrity check failed: Hash mismatch');
-    _logger.i('GHOST_LOG: MEDIA_DECRYPT_SUCCESS');
     return decrypted;
   }
 
@@ -209,13 +166,11 @@ class MediaService {
     final identity = _idService.currentIdentity;
     if (identity == null) throw Exception('Identity not initialized');
 
-    _logger.i('GHOST_LOG: MEDIA_ENCRYPT_START messageId: ${messageId ?? "unknown"} mediaId: pending mediaKind: ${kind.name} url: pending');
 
     final bytes = await file.readAsBytes();
     final encrypted = await encryptMedia(bytes, null);
     final SecureKey messageKey = encrypted['messageKey'];
 
-    _logger.i('GHOST_LOG: MEDIA_ENCRYPT_SUCCESS messageId: ${messageId ?? "unknown"} mediaId: pending mediaKind: ${kind.name} url: pending');
 
     // Metadata extraction
     Map<String, dynamic>? meta = {
@@ -227,7 +182,6 @@ class MediaService {
     }
 
     // 1. Request Upload URLs
-    _logger.i('GHOST_LOG: MEDIA_UPLOAD_STEP_URL_START');
     final response = await _retryHttp(() => http.post(
       Uri.parse('${relay.apiUrl}/media/upload-url'),
       headers: {'Content-Type': 'application/json', 'x-public-id': identity.publicId},
@@ -245,36 +199,28 @@ class MediaService {
     final String thumbUrl = data['thumbUrl'];
 
     // 2. PUT Bulk File
-    _logger.i('GHOST_LOG: MEDIA_UPLOAD_START messageId: ${messageId ?? "unknown"} mediaId: $mediaId mediaKind: ${kind.name} url: $uploadUrl');
     await _retryHttp(() => http.put(Uri.parse(uploadUrl), body: encrypted['ciphertext']));
-    _logger.i('GHOST_LOG: MEDIA_BLOB_PUT_SUCCESS id: $mediaId');
 
     // 3. Handle Thumbnail
     String? thumbNonceBase64;
     Uint8List? thumbnailBytes;
     if (kind == AttachmentKind.image || kind == AttachmentKind.video) {
-      _logger.i('GHOST_LOG: MEDIA_UPLOAD_STEP_THUMB_START');
       final thumbBytes = kind == AttachmentKind.image 
         ? await generateImageThumbnail(file)
         : await generateVideoThumbnail(file);
         
       thumbnailBytes = thumbBytes;
-      _logger.i('GHOST_LOG: MEDIA_THUMBNAIL_SUCCESS');
       final encryptedThumb = await encryptMedia(thumbBytes, messageKey);
       await _retryHttp(() => http.put(Uri.parse(thumbUrl), body: encryptedThumb['ciphertext']));
       thumbNonceBase64 = base64Encode(encryptedThumb['nonce']);
       meta['thumb_nonce'] = thumbNonceBase64;
-      _logger.i('GHOST_LOG: MEDIA_THUMB_PUT_SUCCESS');
     }
 
     // 4. Confirm Upload
-    _logger.i('GHOST_LOG: MEDIA_UPLOAD_STEP_CONFIRM_START');
     await _retryHttp(() => http.post(
       Uri.parse('${relay.apiUrl}/media/confirm/$mediaId'),
       headers: {'x-public-id': identity.publicId},
     ));
-    _logger.i('GHOST_LOG: MEDIA_UPLOAD_CONFIRMED');
-    _logger.i('GHOST_LOG: MEDIA_UPLOADED id: $mediaId');
 
     // 5. Wrap Key
     final wrappedKey = sodium.crypto.box.seal(
@@ -282,7 +228,6 @@ class MediaService {
       publicKey: recipientXid,
     );
 
-    _logger.i('GHOST_LOG: MEDIA_UPLOAD_SUCCESS messageId: ${messageId ?? "unknown"} mediaId: $mediaId mediaKind: ${kind.name} url: $uploadUrl');
 
     final envelope = AttachmentEnvelope(
       kind: kind,
@@ -306,10 +251,8 @@ class MediaService {
           return response;
         }
         if (attempts >= maxAttempts) return response;
-        _logger.w('GHOST_LOG: HTTP_RETRY attempt: $attempts code: ${response.statusCode}');
       } catch (e) {
         if (attempts >= maxAttempts) rethrow;
-        _logger.w('GHOST_LOG: HTTP_RETRY_ERROR attempt: $attempts error: $e');
       }
       await Future.delayed(Duration(seconds: attempts * 2));
     }
@@ -322,7 +265,6 @@ class MediaService {
     required KeyPair myXidKeyPair,
     bool isThumbnail = false,
   }) async {
-    _logger.i('GHOST_LOG: MEDIA_DOWNLOAD_START isThumb: $isThumbnail');
     final urlString = isThumbnail 
         ? '${relay.apiUrl}/media/download-url/${envelope.mediaId}?thumbnail=true'
         : '${relay.apiUrl}/media/download-url/${envelope.mediaId}';
@@ -334,8 +276,6 @@ class MediaService {
 
     final getResponse = await http.get(Uri.parse(downloadUrl));
     if (getResponse.statusCode != 200) throw Exception('R2 Download failed');
-    _logger.i('GHOST_LOG: MEDIA_DOWNLOAD_SUCCESS');
-    _logger.i('GHOST_LOG: MEDIA_DOWNLOADED isThumb: $isThumbnail');
 
     final messageKeyBytes = sodium.crypto.box.sealOpen(
       cipherText: base64Decode(envelope.encryptedKey),
@@ -350,20 +290,15 @@ class MediaService {
     
     if (nonceBase64 == null) throw Exception('Missing nonce');
 
-    _logger.i('GHOST_LOG: MEDIA_DECRYPT_START isThumb: $isThumbnail');
     final decrypted = sodium.crypto.aeadXChaCha20Poly1305IETF.decrypt(
       cipherText: getResponse.bodyBytes,
       nonce: base64Decode(nonceBase64),
       key: messageKey,
     );
-    _logger.i('GHOST_LOG: MEDIA_DECRYPT_SUCCESS isThumb: $isThumbnail');
-    _logger.i('GHOST_LOG: MEDIA_DECRYPTED isThumb: $isThumbnail');
 
     if (!isThumbnail) {
       final actualHash = crypto.sha256.convert(decrypted).toString();
-      _logger.i('GHOST_LOG: MEDIA_INTEGRITY_CHECK_START expected: ${envelope.hash} actual: $actualHash');
       if (actualHash != envelope.hash) throw Exception('Integrity check failed');
-      _logger.i('GHOST_LOG: MEDIA_INTEGRITY_CHECK_SUCCESS');
     }
 
     return decrypted;

@@ -1,4 +1,3 @@
-import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -25,11 +24,9 @@ class AppInitializer {
     }
 
     status = InitializationStatus.initializing;
-    debugPrint('GHOST_LOG: Starting system initialization...');
 
     try {
       // 1. Eagerly register Hive Adapters
-      debugPrint('GHOST_LOG: Registering Hive adapters...');
       if (!Hive.isAdapterRegistered(0)) {
         Hive.registerAdapter(ContactAdapter());
       }
@@ -47,7 +44,6 @@ class AppInitializer {
       }
 
       // 2. Eagerly open standard Hive boxes
-      debugPrint('GHOST_LOG: Opening standard Hive boxes...');
       if (!Hive.isBoxOpen('messages')) {
         await Hive.openBox<Message>('messages');
       }
@@ -74,7 +70,6 @@ class AppInitializer {
       }
 
       // 3. Eagerly open encrypted contacts box
-      debugPrint('GHOST_LOG: Opening encrypted contacts box...');
       final storage = container.read(secureStorageProvider);
       String? existingKey = await storage.read(key: 'hive_encryption_key');
       if (existingKey == null) {
@@ -105,19 +100,15 @@ class AppInitializer {
       }
 
       // 4. Identity
-      debugPrint('GHOST_LOG: Initializing IdentityService...');
       await container.read(identityServiceProvider).initIdentity();
       await container.read(identityServiceProvider).saveBackgroundCache(
         customHiveKey: base64Encode(encryptionKey),
       );
 
       status = InitializationStatus.success;
-      debugPrint('GHOST_LOG: System initialization complete.');
-    } catch (e, stack) {
+    } catch (e) {
       status = InitializationStatus.failure;
       errorMessage = e.toString();
-      debugPrint('GHOST_FATAL: System initialization failed: $e');
-      debugPrint(stack.toString());
     }
   }
 }

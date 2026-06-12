@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:qr_flutter/qr_flutter.dart';
+import '../../design_system/colors.dart';
 import '../spaces/space_service.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:gal/gal.dart';
@@ -64,6 +65,8 @@ class _InviteScreenState extends ConsumerState<InviteScreen> {
     final encodedKey = Uri.encodeComponent(keyBase64);
     final inviteLink = 'ghost://room/${widget.config.roomId}?key=$encodedKey';
 
+    final colors = AppColors.of(context);
+
     return Scaffold(
       appBar: AppBar(title: const Text('INVITE')),
       body: Center(
@@ -93,9 +96,9 @@ class _InviteScreenState extends ConsumerState<InviteScreen> {
                 style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 4),
               ),
               const SizedBox(height: 8),
-              const Text(
+              Text(
                 'This invite will expire with the space.',
-                style: TextStyle(color: Colors.white30, fontSize: 12),
+                style: TextStyle(color: colors.textMuted, fontSize: 12),
               ),
               const SizedBox(height: 48),
               ElevatedButton.icon(

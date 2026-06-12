@@ -31,7 +31,6 @@ class ContactService {
         const fallbackStorage = FlutterSecureStorage();
         existingKey = await fallbackStorage.read(key: _hiveKey);
         if (existingKey != null) {
-          debugPrint('GHOST_LOG: Migrating Hive key from fallback storage...');
           await _storage.write(key: _hiveKey, value: existingKey);
         }
       } catch (_) {}

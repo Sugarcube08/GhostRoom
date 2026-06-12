@@ -14,6 +14,7 @@ import '../../features/chat/requests_screen.dart';
 import '../../features/chat/conversation_service.dart';
 import '../../main.dart' show navigatorKey;
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:hive_flutter/hive_flutter.dart';
 import 'dart:async';
 import 'dart:io';
 
@@ -52,15 +53,12 @@ class _NavigationShellState extends ConsumerState<NavigationShell> {
 
   void _initFcmAndNotifications() {
     if (!Platform.isAndroid && !Platform.isIOS) {
-      debugPrint('GHOST_LOG: Skipping FCM registration on non-mobile platform.');
       return;
     }
 
     final notifService = ref.read(notificationServiceProvider);
     notifService.init().then((_) {
-      debugPrint('GHOST_LOG: NotificationService initialized in NavigationShell.');
     }).catchError((e) {
-      debugPrint('GHOST_LOG: NotificationService initialization failed: $e');
     });
 
     notifService.onNotificationTap = (payload) {
@@ -96,41 +94,26 @@ class _NavigationShellState extends ConsumerState<NavigationShell> {
     };
 
     // Token registration & refresh
-    final tokenGenStopwatch = Stopwatch()..start();
-    debugPrint('GHOST_LOG: FCM_TOKEN_GENERATION: START');
     FirebaseMessaging.instance.requestPermission().then((settings) {
-      debugPrint('GHOST_LOG: FCM Permission status: ${settings.authorizationStatus}');
       FirebaseMessaging.instance.getToken().then((token) {
         if (token != null) {
-          debugPrint('GHOST_LOG: TOKEN_GENERATED token=$token');
-          debugPrint('GHOST_LOG: FCM_TOKEN_GENERATION: SUCCESS token=$token (latency: ${tokenGenStopwatch.elapsedMilliseconds}ms)');
-          // ignore: avoid_print
-          print('FCM_TOKEN_GENERATED token=$token');
           ref.read(chatRepositoryProvider).registerDeviceToken(token);
-        } else {
-          debugPrint('GHOST_LOG: FCM_TOKEN_GENERATION: FAILURE error=Token is null (latency: ${tokenGenStopwatch.elapsedMilliseconds}ms)');
         }
-      }).catchError((error) {
-        debugPrint('GHOST_LOG: FCM_TOKEN_GENERATION: FAILURE error=$error (latency: ${tokenGenStopwatch.elapsedMilliseconds}ms)');
+      }).catchError((_) {
+        // Ignore
       });
-    }).catchError((error) {
-      debugPrint('GHOST_LOG: FCM_TOKEN_GENERATION: FAILURE error=$error (latency: ${tokenGenStopwatch.elapsedMilliseconds}ms)');
+    }).catchError((_) {
+      // Ignore
     });
 
     _tokenRefreshSubscription = FirebaseMessaging.instance.onTokenRefresh.listen((token) {
-      debugPrint('GHOST_LOG: TOKEN_REFRESHED token=$token');
-      debugPrint('GHOST_LOG: FCM_TOKEN_REFRESH: SUCCESS token=$token');
-      // ignore: avoid_print
-      print('FCM_TOKEN_GENERATED token=$token');
       ref.read(chatRepositoryProvider).registerDeviceToken(token);
-    }, onError: (error) {
-      debugPrint('GHOST_LOG: FCM_TOKEN_REFRESH: FAILURE error=$error');
+    }, onError: (_) {
+      // Ignore
     });
 
     _onMessageSubscription = FirebaseMessaging.onMessage.listen((message) {
       // ignore: avoid_print
-      print('FCM_FOREGROUND_RECEIVED data=${message.data}');
-      debugPrint('GHOST_LOG: Foreground FCM message received: ${message.data}');
       if (message.data['event'] == 'sync_required') {
         ref.read(chatRepositoryProvider).sync();
       }
@@ -138,8 +121,6 @@ class _NavigationShellState extends ConsumerState<NavigationShell> {
 
     _onMessageOpenedAppSubscription = FirebaseMessaging.onMessageOpenedApp.listen((message) {
       // ignore: avoid_print
-      print('FCM_OPENED_APP data=${message.data}');
-      debugPrint('GHOST_LOG: FCM message opened app: ${message.data}');
       ref.read(chatRepositoryProvider).sync();
     });
   }
@@ -150,6 +131,14 @@ class _NavigationShellState extends ConsumerState<NavigationShell> {
     final manifest = await updateService.checkForUpdate();
     
     if (manifest != null && mounted) {
+      final syncBox = Hive.box('sync_metadata');
+      final dismissedVersion = syncBox.get('dismissed_update_version') as String?;
+      if (dismissedVersion == manifest.version) {
+        return; // Already dismissed this version
+      }
+
+      // ignore: avoid_print
+      // ignore: avoid_print
       _showUpdateDialog(manifest);
     }
   }
@@ -159,7 +148,7 @@ class _NavigationShellState extends ConsumerState<NavigationShell> {
       context: context,
       barrierDismissible: true,
       builder: (context) => AlertDialog(
-        backgroundColor: AppColors.of(context).secondaryBackground,
+        backgroundColor: AppColors.of(context).backgroundSecondary,
         title: const Text('UPDATE AVAILABLE', style: TextStyle(letterSpacing: 2, fontWeight: FontWeight.bold)),
         content: Column(
           mainAxisSize: MainAxisSize.min,
@@ -172,33 +161,51 @@ class _NavigationShellState extends ConsumerState<NavigationShell> {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('LATER', style: TextStyle(color: Colors.white38)),
-          ),
-          ElevatedButton(
             onPressed: () {
-              // Construct the exact release tag URL: {repo}/releases/tag/v{version}
-              String baseUrl = manifest.releaseUrl.isNotEmpty 
-                ? manifest.releaseUrl.trim() 
-                : 'https://github.com/Sugarcube08/GhostRoom/releases';
-              if (baseUrl.endsWith('/releases')) {
-                baseUrl = baseUrl.substring(0, baseUrl.length - '/releases'.length);
-              }
-              if (baseUrl.endsWith('/')) {
-                baseUrl = baseUrl.substring(0, baseUrl.length - 1);
-              }
-              var cleanVersion = manifest.version.trim();
-              if (cleanVersion.startsWith('v') || cleanVersion.startsWith('V')) {
-                cleanVersion = cleanVersion.substring(1);
-              }
-              final url = '$baseUrl/releases/tag/v$cleanVersion';
-              
-              launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+              Hive.box('sync_metadata').put('dismissed_update_version', manifest.version);
               Navigator.pop(context);
             },
+            child: Text('LATER', style: TextStyle(color: AppColors.of(context).textMuted)),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              var version = manifest.version.trim();
+              if (!version.toLowerCase().startsWith('v')) {
+                version = 'v$version';
+              }
+              final url = 'https://github.com/Sugarcube08/GhostRoom/releases/tag/$version';
+              
+              // ignore: avoid_print
+              // ignore: avoid_print
+              try {
+                final success = await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+                if (success) {
+                  // ignore: avoid_print
+                } else {
+                  // ignore: avoid_print
+                  // ignore: avoid_print
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Failed to open the update link automatically. Please visit github.com/Sugarcube08/GhostRoom to update.')),
+                    );
+                  }
+                }
+              } catch (e) {
+                // ignore: avoid_print
+                // ignore: avoid_print
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Could not launch browser: $e')),
+                  );
+                }
+              }
+              if (context.mounted) {
+                Navigator.pop(context);
+              }
+            },
             style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.of(context).ghostAccent,
-              foregroundColor: Colors.black,
+              backgroundColor: AppColors.of(context).accent,
+              foregroundColor: AppColors.of(context).backgroundPrimary,
             ),
             child: const Text('UPDATE NOW'),
           ),

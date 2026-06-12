@@ -52,7 +52,6 @@ class StorageDirectoryHelper {
       final newHiveDir = await getHiveDirectory();
       final newIdentitiesDir = await getIdentitiesDirectory();
 
-      debugPrint('GHOST_LOG: Checking storage migration from ${oldDocsDir.path} to ${newBaseDir.path}');
 
       // List of Hive boxes we need to migrate if they exist
       final hiveBoxes = [
@@ -68,8 +67,6 @@ class StorageDirectoryHelper {
         'media_cache_index',
       ];
 
-      bool migratedAny = false;
-
       // 1. Migrate Hive boxes (.hive and .lock files)
       for (final boxName in hiveBoxes) {
         final oldHiveFile = File(p.join(oldDocsDir.path, '$boxName.hive'));
@@ -78,14 +75,11 @@ class StorageDirectoryHelper {
         if (await oldHiveFile.exists()) {
           final newHiveFile = File(p.join(newHiveDir.path, '$boxName.hive'));
           await _moveFile(oldHiveFile, newHiveFile);
-          migratedAny = true;
-          debugPrint('GHOST_LOG: Migrated Hive box: $boxName.hive');
         }
 
         if (await oldLockFile.exists()) {
           final newLockFile = File(p.join(newHiveDir.path, '$boxName.lock'));
           await _moveFile(oldLockFile, newLockFile);
-          debugPrint('GHOST_LOG: Migrated Hive lock: $boxName.lock');
         }
       }
 
@@ -94,8 +88,6 @@ class StorageDirectoryHelper {
       if (await oldFlagFile.exists()) {
         final newFlagFile = File(p.join(newIdentitiesDir.path, 'identity_exists.flag'));
         await _moveFile(oldFlagFile, newFlagFile);
-        migratedAny = true;
-        debugPrint('GHOST_LOG: Migrated identity_exists.flag');
       }
 
       // 3. Migrate media directory
@@ -103,18 +95,10 @@ class StorageDirectoryHelper {
       if (await oldMediaDir.exists()) {
         final newMediaDir = Directory(p.join(newBaseDir.path, 'media'));
         await _moveDirectory(oldMediaDir, newMediaDir);
-        migratedAny = true;
-        debugPrint('GHOST_LOG: Migrated media directory');
       }
 
-      if (migratedAny) {
-        debugPrint('GHOST_LOG: Storage migration completed successfully.');
-      } else {
-        debugPrint('GHOST_LOG: No migration needed.');
-      }
-    } catch (e, stack) {
-      debugPrint('GHOST_LOG: Error during storage migration: $e');
-      debugPrint(stack.toString());
+    } catch (_) {
+      // Ignore
     }
   }
 

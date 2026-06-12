@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/providers.dart';
 import '../../core/network/relay_manager.dart';
+import '../../design_system/colors.dart';
 import 'package:uuid/uuid.dart';
 
 class RelaySettingsScreen extends ConsumerStatefulWidget {
@@ -17,7 +18,7 @@ class _RelaySettingsScreenState extends ConsumerState<RelaySettingsScreen> {
     final relaysAsync = ref.watch(relayProfilesProvider);
     final activeRelayAsync = ref.watch(activeRelayProvider);
     
-    debugPrint('GHOST_LOG: RelaySettingsScreen building. Relays: ${relaysAsync.isLoading ? "loading" : relaysAsync.hasError ? "error" : "data(${relaysAsync.value?.length})"}, Active: ${activeRelayAsync.value?.label ?? "none"}');
+    final colors = AppColors.of(context);
 
     return Scaffold(
       appBar: AppBar(
@@ -43,9 +44,9 @@ class _RelaySettingsScreenState extends ConsumerState<RelaySettingsScreen> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   if (isActive)
-                    const Icon(Icons.check_circle, color: Colors.white),
+                    Icon(Icons.check_circle, color: colors.success),
                   IconButton(
-                    icon: const Icon(Icons.delete, color: Colors.redAccent, size: 20),
+                    icon: Icon(Icons.delete, color: colors.error, size: 20),
                     onPressed: () => _showDeleteConfirm(context, relay),
                   ),
                 ],
@@ -141,27 +142,34 @@ class _RelaySettingsScreenState extends ConsumerState<RelaySettingsScreen> {
   void _showDeleteConfirm(BuildContext context, RelayProfile relay) {
      showDialog(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Delete Relay?'),
-        content: Text('Remove ${relay.label} from your profiles?'),
-        actions: [
-           TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Cancel')),
-           TextButton(
-            onPressed: () async {
-              final manager = ref.read(relayManagerProvider);
-              await manager.deleteRelay(relay.id);
-              
-              if (!dialogContext.mounted) return;
+      builder: (dialogContext) {
+        final dialogColors = AppColors.of(dialogContext);
+        return AlertDialog(
+          backgroundColor: dialogColors.backgroundSecondary,
+          title: const Text('Delete Relay?'),
+          content: Text('Remove ${relay.label} from your profiles?'),
+          actions: [
+             TextButton(
+               onPressed: () => Navigator.pop(dialogContext), 
+               child: Text('Cancel', style: TextStyle(color: dialogColors.textMuted))
+             ),
+             TextButton(
+              onPressed: () async {
+                final manager = ref.read(relayManagerProvider);
+                await manager.deleteRelay(relay.id);
+                
+                if (!dialogContext.mounted) return;
 
-              ref.invalidate(relayProfilesProvider);
-              ref.invalidate(activeRelayProvider);
-              
-              Navigator.pop(dialogContext);
-            },
-            child: const Text('Delete', style: TextStyle(color: Colors.red)),
-          ),
-        ],
-      ),
+                ref.invalidate(relayProfilesProvider);
+                ref.invalidate(activeRelayProvider);
+                
+                Navigator.pop(dialogContext);
+              },
+              child: Text('Delete', style: TextStyle(color: dialogColors.error)),
+            ),
+          ],
+        );
+      },
      );
   }
 }

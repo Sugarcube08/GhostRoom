@@ -1,5 +1,5 @@
 {
-  "version": "2.1.1",
+  "version": "2.2.1",
   "release_url": "https://github.com/Sugarcube08/GhostRoom/releases",
-  "changelog": "GhostRoom V2.1.1: Storage directory isolation, database/media migration, and critical FCM background wakeup reliability fixes."
+  "changelog": "GhostRoom V2.2.1: Semantic color theme system, update-redirection stabilization, and critical pre-release refinements."
 }

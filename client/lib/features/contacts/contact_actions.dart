@@ -9,12 +9,11 @@ import 'dart:io';
 import '../../core/providers.dart';
 import '../contacts/contact.dart';
 import '../../core/crypto/identity_service.dart';
+import '../../design_system/colors.dart';
 
 mixin ContactActions<T extends ConsumerStatefulWidget> on ConsumerState<T> {
   void openScanner(BuildContext context) async {
-    debugPrint('GHOST_LOG: CAMERA_PERMISSION_STATUS status=checking');
     final status = await Permission.camera.request();
-    debugPrint('GHOST_LOG: CAMERA_PERMISSION_STATUS status=$status');
     if (!context.mounted) return;
 
     if (status.isGranted) {
@@ -26,7 +25,6 @@ mixin ContactActions<T extends ConsumerStatefulWidget> on ConsumerState<T> {
         processScannedData(context, result);
       }
     } else {
-      debugPrint('GHOST_LOG: QR_SCAN_FAILURE error=CameraPermissionDenied');
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Camera permission is required to scan QR codes.'))
       );
@@ -36,7 +34,7 @@ mixin ContactActions<T extends ConsumerStatefulWidget> on ConsumerState<T> {
   void showAddOptions(BuildContext context) {
     showModalBottomSheet(
       context: context,
-      backgroundColor: const Color(0xFF121212),
+      backgroundColor: AppColors.of(context).backgroundSecondary,
       builder: (context) => Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -102,28 +100,34 @@ mixin ContactActions<T extends ConsumerStatefulWidget> on ConsumerState<T> {
     final controller = TextEditingController();
     showDialog(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('MANUAL ENTRY'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'IMPORTANT: Manual entry only works for V1 Ephemeral Spaces. To send E2EE Direct Messages, you MUST scan the recipient\'s Identity Package QR code.', 
-              style: TextStyle(fontSize: 11, color: Colors.orangeAccent, fontWeight: FontWeight.bold)
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: controller,
-              decoration: const InputDecoration(
-                hintText: 'Enter Public ID...',
-                helperText: 'e.g. ABCD-EFGH...',
+      builder: (dialogContext) {
+        final dialogColors = AppColors.of(dialogContext);
+        return AlertDialog(
+          backgroundColor: dialogColors.backgroundSecondary,
+          title: const Text('MANUAL ENTRY'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'IMPORTANT: Manual entry only works for V1 Ephemeral Spaces. To send E2EE Direct Messages, you MUST scan the recipient\'s Identity Package QR code.', 
+                style: TextStyle(fontSize: 11, color: dialogColors.warning, fontWeight: FontWeight.bold)
               ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: controller,
+                decoration: const InputDecoration(
+                  hintText: 'Enter Public ID...',
+                  helperText: 'e.g. ABCD-EFGH...',
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext), 
+              child: Text('CANCEL', style: TextStyle(color: dialogColors.textMuted))
             ),
-          ],
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('CANCEL')),
           TextButton(
             onPressed: () async {
               final id = controller.text.trim();
@@ -146,7 +150,8 @@ mixin ContactActions<T extends ConsumerStatefulWidget> on ConsumerState<T> {
             child: const Text('ADD')
           ),
         ],
-      ),
+      );
+     },
     );
   }
 
@@ -155,7 +160,7 @@ mixin ContactActions<T extends ConsumerStatefulWidget> on ConsumerState<T> {
     showDialog(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        backgroundColor: const Color(0xFF121212),
+        backgroundColor: AppColors.of(dialogContext).backgroundSecondary,
         title: const Text('IMPORT PACKAGE'),
         content: TextField(
           controller: controller,
@@ -236,13 +241,10 @@ class _QRScannerScreenState extends State<QRScannerScreen> with WidgetsBindingOb
     super.initState();
     WidgetsBinding.instance.addObserver(this);
 
-    debugPrint('GHOST_LOG: QR_SCAN_STARTED');
 
     // On Linux or other unsupported platforms, fail gracefully immediately
     if (!kIsWeb && Platform.isLinux) {
       _hasError = true;
-      debugPrint('GHOST_LOG: Scanner not supported on Linux');
-      debugPrint('GHOST_LOG: QR_SCAN_FAILURE error=PlatformNotSupported');
       return;
     }
 
@@ -267,14 +269,10 @@ class _QRScannerScreenState extends State<QRScannerScreen> with WidgetsBindingOb
     if (c == null || _isStarting || _isStarted || _isStopping || !mounted) return;
     _isStarting = true;
     try {
-      debugPrint('GHOST_LOG: CAMERA_INITIALIZATION_START');
       await c.start();
       _isStarted = true;
-      debugPrint('GHOST_LOG: CAMERA_INITIALIZATION_SUCCESS');
       if (mounted) setState(() => _hasError = false);
     } catch (e) {
-      debugPrint('GHOST_LOG: CAMERA_INITIALIZATION_FAILURE error=$e');
-      debugPrint('GHOST_LOG: QR_SCAN_FAILURE error=$e');
       if (mounted) setState(() => _hasError = true);
     } finally {
       _isStarting = false;
@@ -288,8 +286,8 @@ class _QRScannerScreenState extends State<QRScannerScreen> with WidgetsBindingOb
     try {
       await c.stop();
       _isStarted = false;
-    } catch (e) {
-      debugPrint('GHOST_ERROR: MobileScanner failed to stop: $e');
+    } catch (_) {
+      // Ignore
     } finally {
       _isStopping = false;
     }
@@ -313,14 +311,16 @@ class _QRScannerScreenState extends State<QRScannerScreen> with WidgetsBindingOb
 
   @override
   Widget build(BuildContext context) {
+    final colors = AppColors.of(context);
     if (_hasError || controller == null) {
       return Scaffold(
+        backgroundColor: colors.backgroundPrimary,
         appBar: AppBar(title: const Text('SCAN ERROR')),
         body: Center(
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const Icon(Icons.error_outline, color: Colors.redAccent, size: 48),
+              Icon(Icons.error_outline, color: colors.error, size: 48),
               const SizedBox(height: 16),
               const Text('Camera failed to initialize.'),
               TextButton(onPressed: () => Navigator.pop(context), child: const Text('CLOSE')),
@@ -337,7 +337,7 @@ class _QRScannerScreenState extends State<QRScannerScreen> with WidgetsBindingOb
         await _stopAndPop(result as String?);
       },
       child: Scaffold(
-        backgroundColor: Colors.black,
+        backgroundColor: colors.backgroundPrimary,
         appBar: AppBar(
           title: const Text('SCAN PASSPORT'),
           backgroundColor: Colors.transparent,
@@ -353,15 +353,12 @@ class _QRScannerScreenState extends State<QRScannerScreen> with WidgetsBindingOb
               onDetect: (capture) async {
                 final List<Barcode> barcodes = capture.barcodes;
                 if (barcodes.isEmpty) {
-                  debugPrint('GHOST_LOG: QR_SCAN_FAILURE error=EmptyBarcodeCaptured');
                 }
                 for (final barcode in barcodes) {
                   if (barcode.rawValue != null) {
-                    debugPrint('GHOST_LOG: QR_SCAN_SUCCESS raw_value=${barcode.rawValue}');
                     await _stopAndPop(barcode.rawValue);
                     break;
                   } else {
-                    debugPrint('GHOST_LOG: QR_SCAN_FAILURE error=NullRawValue');
                   }
                 }
               },
@@ -372,7 +369,7 @@ class _QRScannerScreenState extends State<QRScannerScreen> with WidgetsBindingOb
                 width: 250,
                 height: 250,
                 decoration: BoxDecoration(
-                  border: Border.all(color: Colors.blueAccent.withAlpha(100), width: 2),
+                  border: Border.all(color: colors.info.withAlpha(100), width: 2),
                   borderRadius: BorderRadius.circular(24),
                 ),
               ),

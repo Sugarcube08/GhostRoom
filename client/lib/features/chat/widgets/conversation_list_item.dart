@@ -78,7 +78,7 @@ class ConversationListItem extends StatelessWidget {
                       GhostBadge(
                         label: conversation.unreadCount > 9 ? '9+' : conversation.unreadCount.toString(),
                         color: colors.ghostAccent,
-                        textColor: Colors.white,
+                        textColor: Theme.of(context).colorScheme.onPrimary,
                       ),
                     ],
                   ],

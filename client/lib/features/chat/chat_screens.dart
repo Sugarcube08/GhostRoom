@@ -163,8 +163,8 @@ class _ChatsScreenState extends ConsumerState<ChatsScreen> with ContactActions {
                 ),
                 child: Text(
                   count > 9 ? '9+' : count.toString(),
-                  style: const TextStyle(
-                    color: Colors.black,
+                  style: TextStyle(
+                    color: colors.backgroundPrimary,
                     fontSize: 8,
                     fontWeight: FontWeight.bold,
                   ),

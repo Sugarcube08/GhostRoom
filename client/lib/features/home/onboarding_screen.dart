@@ -4,6 +4,7 @@ import 'package:file_picker/file_picker.dart';
 import '../../core/providers.dart';
 
 import '../../core/widgets/navigation_shell.dart';
+import '../../design_system/colors.dart';
 import 'dart:io';
 
 class OnboardingScreen extends ConsumerStatefulWidget {
@@ -159,10 +160,11 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
 
   void _restoreFromSeed() {
     final controller = TextEditingController();
+    final colors = AppColors.of(context);
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: const Color(0xFF121212),
+      backgroundColor: colors.backgroundSecondary,
       builder: (sheetContext) => Padding(
         padding: EdgeInsets.only(bottom: MediaQuery.of(sheetContext).viewInsets.bottom, left: 24, right: 24, top: 32),
         child: Column(
@@ -297,7 +299,16 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             const SizedBox(height: 24),
-            Image.asset('assets/images/banner.png', height: 100),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+              decoration: BoxDecoration(
+                color: Theme.of(context).brightness == Brightness.light
+                    ? const Color(0xFF0A0A0A)
+                    : Colors.transparent,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Image.asset('assets/images/banner.png', height: 100),
+            ),
             const SizedBox(height: 48),
             const Text(
               'GhostRoom',

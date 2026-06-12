@@ -135,7 +135,7 @@ class RequestsScreen extends ConsumerWidget {
                               GhostBadge(
                                 label: req.unreadCount.toString(),
                                 color: colors.ghostAccent,
-                                textColor: Colors.white,
+                                textColor: Theme.of(context).colorScheme.onPrimary,
                               ),
                             const SizedBox(width: AppSpacing.s),
                             Icon(Icons.chevron_right, size: 16, color: colors.secondaryText.withAlpha(50)),

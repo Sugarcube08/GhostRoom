@@ -55,6 +55,7 @@ class DMService {
     required String recipientPublicId,
     required Uint8List recipientXid,
     required Identity senderIdentity,
+    String? messageId,
   }) async {
     // 1. Generate Message Key
     final messageKey = sodium.crypto.aeadXChaCha20Poly1305IETF.keygen();
@@ -74,7 +75,7 @@ class DMService {
     );
 
     // 4. Generate ID (UUID v7) and Timestamp
-    final messageId = _uuid.v7();
+    final actualMessageId = messageId ?? _uuid.v7();
     final timestamp = DateTime.now().millisecondsSinceEpoch;
 
     // 5. Sign (v + id + t + recipient_id + k + n + c)
@@ -83,7 +84,7 @@ class DMService {
     final cBase64 = base64Encode(ciphertext);
     
     final signMaterial = utf8.encode(
-      '2$messageId$timestamp$recipientPublicId$kBase64$nBase64$cBase64'
+      '2$actualMessageId$timestamp$recipientPublicId$kBase64$nBase64$cBase64'
     );
     
     final signature = sodium.crypto.sign.detached(
@@ -92,7 +93,7 @@ class DMService {
     );
 
     return DMEnvelope(
-      id: messageId,
+      id: actualMessageId,
       encryptedKey: kBase64,
       nonce: nBase64,
       ciphertext: cBase64,

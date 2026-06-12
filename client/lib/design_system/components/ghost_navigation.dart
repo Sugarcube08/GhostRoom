@@ -92,8 +92,8 @@ class GhostNavigationBar extends StatelessWidget {
                     right: -8,
                     child: Container(
                       padding: const EdgeInsets.all(4),
-                      decoration: const BoxDecoration(
-                        color: Colors.redAccent,
+                      decoration: BoxDecoration(
+                        color: colors.error,
                         shape: BoxShape.circle,
                       ),
                       constraints: const BoxConstraints(
@@ -102,8 +102,8 @@ class GhostNavigationBar extends StatelessWidget {
                       ),
                       child: Text(
                         item.badgeCount > 9 ? '9+' : item.badgeCount.toString(),
-                        style: const TextStyle(
-                          color: Colors.white,
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.onError,
                           fontSize: 8,
                           fontWeight: FontWeight.bold,
                         ),
@@ -227,8 +227,8 @@ class GhostNavigationRail extends StatelessWidget {
                   right: -4,
                   child: Container(
                     padding: const EdgeInsets.all(4),
-                    decoration: const BoxDecoration(
-                      color: Colors.redAccent,
+                    decoration: BoxDecoration(
+                      color: colors.error,
                       shape: BoxShape.circle,
                     ),
                     constraints: const BoxConstraints(
@@ -237,8 +237,8 @@ class GhostNavigationRail extends StatelessWidget {
                     ),
                     child: Text(
                       item.badgeCount > 9 ? '9+' : item.badgeCount.toString(),
-                      style: const TextStyle(
-                        color: Colors.white,
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.onError,
                         fontSize: 8,
                         fontWeight: FontWeight.bold,
                       ),

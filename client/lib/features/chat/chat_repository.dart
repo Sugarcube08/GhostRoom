@@ -11,18 +11,15 @@ import 'conversation_state.dart';
 import '../../core/crypto/identity_service.dart';
 import '../../core/network/websocket_service.dart';
 import '../../core/notification_service.dart';
-import '../../core/storage/storage_directory_helper.dart';
 import '../contacts/contact_service.dart';
-import '../contacts/contact.dart';
 import 'dart:convert';
 import 'dart:async';
 import 'dart:io';
-import 'package:logger/logger.dart';
+import 'package:uuid/uuid.dart';
 import '../media/media_manager.dart';
 import '../media/media_service.dart';
 import '../media/attachment_envelope.dart';
 import '../../core/network/relay_manager.dart';
-import '../../core/stability_tracker.dart';
 import '../../core/providers.dart';
 
 class ChatRepository with WidgetsBindingObserver {
@@ -47,18 +44,6 @@ class ChatRepository with WidgetsBindingObserver {
 
   String? _activeConversationId;
   AppLifecycleState _lifecycleState = AppLifecycleState.resumed;
-  String? _hiveDbPath;
-  final Logger _logger = Logger(
-    level: kReleaseMode ? Level.warning : Level.info,
-    printer: PrettyPrinter(
-      methodCount: 0, 
-      errorMethodCount: 5, 
-      lineLength: 50, 
-      colors: true, 
-      printEmojis: true, 
-      dateTimeFormat: DateTimeFormat.onlyTimeAndSinceStart,
-    ),
-  );
 
   static const String _msgBoxName = 'messages';
   static const String _syncBoxName = 'sync_metadata';
@@ -86,12 +71,10 @@ class ChatRepository with WidgetsBindingObserver {
       _mediaManagerField = mediaManager,
       _mediaServiceField = mediaService,
       _relayManagerField = relayManager {
-    _logger.i('GHOST_LOG: ChatRepository constructor invoked (Singleton verification)');
     WidgetsBinding.instance.addObserver(this);
   }
 
   ChatRepository.lazy(Ref ref) : _ref = ref {
-    _logger.i('GHOST_LOG: ChatRepository lazy constructor invoked (Singleton verification)');
     WidgetsBinding.instance.addObserver(this);
   }
 
@@ -102,15 +85,12 @@ class ChatRepository with WidgetsBindingObserver {
   void didChangeAppLifecycleState(AppLifecycleState state) {
     _lifecycleState = state;
     if (state == AppLifecycleState.resumed) {
-      _logger.i('GHOST_LOG: App resumed. Triggering sync.');
       sync();
     }
   }
 
   Future<void> sync() async {
     // ignore: avoid_print
-    print("SYNC_INBOX_START");
-    _logger.i('GHOST_LOG: Sync requested.');
     final relay = await _relayManager.getActiveRelay();
     if (relay != null) {
       await _relayManager.wakeUpRelay(relay);
@@ -123,7 +103,6 @@ class ChatRepository with WidgetsBindingObserver {
       }
     }
     // ignore: avoid_print
-    print("SYNC_INBOX_SUCCESS");
   }
 
   Future<void> syncInbox() async {
@@ -132,10 +111,8 @@ class ChatRepository with WidgetsBindingObserver {
 
   Future<bool> sendDeliveryReceipt(String messageId) async {
     // ignore: avoid_print
-    print("REPOSITORY_SEND_DELIVERY_RECEIPT_START");
     final result = await _wsService.sendDeliveryReceipt(messageId);
     // ignore: avoid_print
-    print("REPOSITORY_SEND_DELIVERY_RECEIPT_SUCCESS");
     return result;
   }
 
@@ -153,9 +130,8 @@ class ChatRepository with WidgetsBindingObserver {
       try {
         PaintingBinding.instance.imageCache.clear();
         PaintingBinding.instance.imageCache.clearLiveImages();
-        _logger.i('GHOST_LOG: ImageCache cleared on navigation');
-      } catch (e) {
-        _logger.e('GHOST_ERROR: Failed to clear ImageCache on navigation: $e');
+      } catch (_) {
+        // Ignore
       }
     }
   }
@@ -166,18 +142,8 @@ class ChatRepository with WidgetsBindingObserver {
     if (_isInitialized) return;
     _isInitialized = true;
     
-    final sw = Stopwatch()..start();
-    _logger.i('GHOST_LOG: ChatRepository.init() profile start...');
+    // Hive db path initialization is handled in main.dart
     
-    try {
-      final dir = await StorageDirectoryHelper.getHiveDirectory();
-      _hiveDbPath = dir.path;
-    } catch (_) {}
-    _logger.i('GHOST_LOG: profile [getApplicationDocumentsDirectory] took: ${sw.elapsedMilliseconds}ms');
-    
-    StabilityTracker.logMemory('ChatRepo_Init_Start');
-    
-    final adapterSw = Stopwatch()..start();
     if (!Hive.isAdapterRegistered(MessageTypeAdapter().typeId)) {
       Hive.registerAdapter(MessageTypeAdapter());
     }
@@ -190,62 +156,42 @@ class ChatRepository with WidgetsBindingObserver {
     if (!Hive.isAdapterRegistered(ConversationStateAdapter().typeId)) {
       Hive.registerAdapter(ConversationStateAdapter());
     }
-    _logger.i('GHOST_LOG: profile [Hive Adapters registration] took: ${adapterSw.elapsedMilliseconds}ms');
     
-    final boxSw = Stopwatch()..start();
     if (!Hive.isBoxOpen(_msgBoxName)) {
       await Hive.openBox<Message>(_msgBoxName);
-      StabilityTracker.logResource('HiveBox', 'Opened_$_msgBoxName');
     }
     if (!Hive.isBoxOpen('conversation_states')) {
       await Hive.openBox<ConversationState>('conversation_states');
-      StabilityTracker.logResource('HiveBox', 'Opened_conversation_states');
     }
     if (!Hive.isBoxOpen(_syncBoxName)) {
       await Hive.openBox(_syncBoxName);
-      StabilityTracker.logResource('HiveBox', 'Opened_$_syncBoxName');
     }
     if (!Hive.isBoxOpen(_processedBoxName)) {
       await Hive.openBox(_processedBoxName);
-      StabilityTracker.logResource('HiveBox', 'Opened_$_processedBoxName');
     }
     if (!Hive.isBoxOpen(_offlineQueueBoxName)) {
       await Hive.openBox<Map>(_offlineQueueBoxName);
-      StabilityTracker.logResource('HiveBox', 'Opened_$_offlineQueueBoxName');
     }
     if (!Hive.isBoxOpen(_pendingDeletionsBoxName)) {
       await Hive.openBox<bool>(_pendingDeletionsBoxName);
-      StabilityTracker.logResource('HiveBox', 'Opened_$_pendingDeletionsBoxName');
     }
-    _logger.i('GHOST_LOG: profile [Opening Hive boxes] took: ${boxSw.elapsedMilliseconds}ms');
 
-    final wsSw = Stopwatch()..start();
     // Register WebSocket Callbacks
     _wsService.onIdentityVerified(_handleIdentityVerified);
     _wsService.onMessage(_handleNewMessage);
     _wsService.onInboxMessages(_handleInboxMessages);
     _wsService.onStatusUpdate(_handleMessageStatusUpdate);
-    _logger.i('GHOST_LOG: profile [WebSocket register] took: ${wsSw.elapsedMilliseconds}ms');
     
-    final flushSw = Stopwatch()..start();
     // Global Cleanup
     await flushAllGhosts();
-    _logger.i('GHOST_LOG: profile [flushAllGhosts] took: ${flushSw.elapsedMilliseconds}ms');
 
-    final queueSw = Stopwatch()..start();
     // Process offline queue on startup
     unawaited(processOfflineQueue());
     unawaited(syncPendingDeletions());
-    _logger.i('GHOST_LOG: profile [Process offline queue startup triggers] took: ${queueSw.elapsedMilliseconds}ms');
-
-    _logger.i('GHOST_LOG: ChatRepository initialized and listeners registered. Total init took: ${sw.elapsedMilliseconds}ms');
-    StabilityTracker.logMemory('ChatRepo_Init_End');
   }
 
   void _handleIdentityVerified(dynamic data) {
-    _logger.i('GHOST_LOG: Identity verified. Triggering inbox sync...');
     // ignore: avoid_print
-    print("SYNC_START");
     _wsService.fetchInbox(since: lastSyncTimestamp);
 
     // Register FCM token on mobile platforms only
@@ -265,22 +211,18 @@ class ChatRepository with WidgetsBindingObserver {
   Future<void> registerDeviceToken(String fcmToken) async {
     final identity = _idService.currentIdentity;
     if (identity == null) {
-      _logger.i('GHOST_LOG: Identity not initialized. Postponing token registration.');
       return;
     }
     final relay = await _relayManager.getActiveRelay();
     if (relay == null) {
-      _logger.w('GHOST_LOG: Active relay not found. Postponing token registration.');
       return;
     }
 
     final String platform = kIsWeb ? 'web' : (Platform.isIOS ? 'ios' : 'android');
     final url = '${relay.apiUrl}/device/register';
-    _logger.i('GHOST_LOG: FCM_TOKEN_REGISTRATION: START url=$url');
-    final stopwatch = Stopwatch()..start();
     
     try {
-      final response = await http.post(
+      await http.post(
         Uri.parse(url),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
@@ -289,29 +231,16 @@ class ChatRepository with WidgetsBindingObserver {
           'fcmToken': fcmToken,
         }),
       );
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        debugPrint('GHOST_LOG: TOKEN_REGISTERED');
-        _logger.i('GHOST_LOG: FCM_TOKEN_REGISTRATION: SUCCESS (latency: ${stopwatch.elapsedMilliseconds}ms)');
-        _logger.i('GHOST_LOG: Device token successfully registered on relay.');
-      } else {
-        debugPrint('GHOST_LOG: TOKEN_REGISTRATION_FAILED status=${response.statusCode}');
-        _logger.e('GHOST_LOG: FCM_TOKEN_REGISTRATION: FAILURE status=${response.statusCode} (latency: ${stopwatch.elapsedMilliseconds}ms)');
-        _logger.w('GHOST_LOG: Device token registration failed with status ${response.statusCode}');
-      }
-    } catch (e) {
-      debugPrint('GHOST_LOG: TOKEN_REGISTRATION_FAILED error=$e');
-      _logger.e('GHOST_LOG: FCM_TOKEN_REGISTRATION: FAILURE error=$e (latency: ${stopwatch.elapsedMilliseconds}ms)');
-      _logger.e('GHOST_LOG: Error registering device token: $e');
+    } catch (_) {
+      // Ignore
     }
   }
 
   void _handleNewMessage(dynamic data) {
-    _logger.i('GHOST_LOG: Real-time message received via WebSocket.');
     processEnvelopes([data], enableNotification: true);
   }
 
   void _handleInboxMessages(List<dynamic> messages) {
-    _logger.i('GHOST_LOG: Inbox batch received. Count: ${messages.length}');
     processEnvelopes(messages, enableNotification: false);
   }
 
@@ -324,17 +253,12 @@ class ChatRepository with WidgetsBindingObserver {
 
   void _handleMessageStatusUpdate(dynamic data) async {
     // ignore: avoid_print
-    print('STATUS_UPDATE_RECEIVED=$data');
     final String messageId = data['message_id'];
     final String status = data['status'];
     final int timestamp = data['timestamp'];
 
     final message = _msgBox?.get(messageId);
     if (message != null) {
-      final oldStatus = _getMessageStatusString(message);
-      // ignore: avoid_print
-      print('MESSAGE_STATUS_UPDATE_START message_id=$messageId old_status=$oldStatus new_status=$status');
-
       if (status == 'DELIVERED' && message.deliveredAt == null) {
         message.deliveredAt = DateTime.fromMillisecondsSinceEpoch(timestamp);
       } else if (status == 'SEEN' && message.seenAt == null) {
@@ -342,18 +266,6 @@ class ChatRepository with WidgetsBindingObserver {
         message.seenAt = DateTime.fromMillisecondsSinceEpoch(timestamp);
       }
       await message.save();
-      
-      final newStatus = _getMessageStatusString(message);
-      // ignore: avoid_print
-      print('MESSAGE_STATUS_UPDATE_DB_SUCCESS message_id=$messageId old_status=$oldStatus new_status=$newStatus');
-      
-      // ignore: avoid_print
-      print('MESSAGE_STATUS_UPDATE_STREAM_EMIT message_id=$messageId old_status=$oldStatus new_status=$newStatus');
-      
-      // ignore: avoid_print
-      print('MESSAGE_STATUS_UPDATE_UI_NOTIFY message_id=$messageId old_status=$oldStatus new_status=$newStatus');
-
-      _logger.d('GHOST_LOG: Updated status for message $messageId to $status');
     }
   }
 
@@ -363,7 +275,6 @@ class ChatRepository with WidgetsBindingObserver {
       message.isRead = true;
       await message.save();
       _wsService.sendSeen(messageId);
-      _logger.d('GHOST_LOG: Marked message $messageId as seen locally and sent update');
     }
   }
 
@@ -407,7 +318,6 @@ class ChatRepository with WidgetsBindingObserver {
     for (final data in envelopes) {
       try {
         final envelope = DMEnvelope.fromJson(data);
-        _logger.i('GHOST_LOG: MESSAGE_RECEIVED id: ${envelope.id}');
         
         if (isProcessed(envelope.id)) {
           await sendDeliveryReceipt(envelope.id);
@@ -420,8 +330,6 @@ class ChatRepository with WidgetsBindingObserver {
         String plaintext;
         Uint8List senderEid;
 
-        _logger.i('GHOST_LOG: DECRYPT_START');
-        _logger.i("MESSAGE_DECRYPT_START");
         // Try Signature-First (Known Contacts)
         final knownEid = _getSenderEid(envelope);
         if (knownEid != null) {
@@ -467,9 +375,6 @@ class ChatRepository with WidgetsBindingObserver {
             throw Exception('Cryptographic signature verification failed');
           }
         }
-        _logger.i('GHOST_LOG: DECRYPT_SUCCESS');
-        _logger.i("MESSAGE_DECRYPT_SUCCESS");
-        _logger.i("MESSAGE_DECRYPTED");
         
         final payload = jsonDecode(plaintext);
         final senderId = _idService.derivePublicId(senderEid);
@@ -477,7 +382,6 @@ class ChatRepository with WidgetsBindingObserver {
         final type = _mapType(payload['type']);
 
         if (type == MessageType.image || type == MessageType.video) {
-          _logger.i('GHOST_LOG: MEDIA_RECEIVED id: ${envelope.id}');
         }
 
         // TRUST LAYER ENFORCEMENT
@@ -485,7 +389,6 @@ class ChatRepository with WidgetsBindingObserver {
         final isBlocked = _contactService.isBlocked(senderId);
 
         if (isBlocked) {
-          _logger.i('Auto-rejected message from blocked sender: $senderId');
           await sendDeliveryReceipt(envelope.id);
           continue;
         }
@@ -493,7 +396,6 @@ class ChatRepository with WidgetsBindingObserver {
         bool isRequest = false;
         if (!isKnownContact) {
           if (type != MessageType.text) {
-            _logger.w('Dropped media attachment from unknown sender: $senderId');
             await sendDeliveryReceipt(envelope.id);
             continue;
           }
@@ -526,7 +428,6 @@ class ChatRepository with WidgetsBindingObserver {
               if (targetMsg != null) {
                 targetMsg.metadata?['consumed'] = true;
                 await targetMsg.save();
-                _logger.i('Message $targetId marked as consumed by receipt.');
               }
             }
           } else if (systemType == 'mode_change') {
@@ -543,9 +444,6 @@ class ChatRepository with WidgetsBindingObserver {
               state.lastChangedBy = senderId;
               state.lastChangedAt = DateTime.now();
               await _stateBox?.put(senderId, state);
-              _logger.i('Conversation mode for $senderId changed to ${newMode.name} by partner.');
-              _logger.i('GHOST_LOG: MODE_CHANGE_RECEIVED');
-              _logger.i('GHOST_LOG: MODE_CHANGE_APPLIED');
             }
           }
           // Do not save system messages to the box
@@ -570,7 +468,6 @@ class ChatRepository with WidgetsBindingObserver {
             state.mode = ConversationMode.normal;
             state.lastChangedBy = 'system';
             state.lastChangedAt = DateTime.now();
-            _logger.i('Conversation mode for $senderId reset to normal due to inactivity.');
           }
           state.lastActivityAt = DateTime.now();
           if (!isCurrentlyActive) {
@@ -612,16 +509,10 @@ class ChatRepository with WidgetsBindingObserver {
           }
         }
 
-        _logger.i("MESSAGE_SAVED_LOCAL");
-        _logger.i('GHOST_LOG: MESSAGE_RENDERED');
-        _logger.i("MESSAGE_RENDERED_UI");
-        _logger.i("MESSAGE_RENDERED");
         await _markProcessed(message.id, actualTimestamp);
         await sendDeliveryReceipt(message.id);
         
       } catch (e) {
-        _logger.e("MESSAGE_DECRYPT_FAILED");
-        _logger.e('Error processing envelope: $e');
         // Acknowledge anyway to prevent infinite retry loop for broken envelopes
         if (data['id'] != null) {
           await sendDeliveryReceipt(data['id']);
@@ -724,9 +615,8 @@ class ChatRepository with WidgetsBindingObserver {
     Map<String, dynamic>? metadata,
     String? existingId,
   }) async {
-    _logger.i('GHOST_LOG: SEND_START for recipient: $recipientId');
     
-    final messageId = existingId ?? 'pending_${DateTime.now().microsecondsSinceEpoch}';
+    final messageId = existingId ?? const Uuid().v7();
     final identity = _idService.currentIdentity;
     
     if (existingId == null && type != MessageType.system) {
@@ -766,6 +656,10 @@ class ChatRepository with WidgetsBindingObserver {
   Future<void> _updateMessageStatus(String messageId, String status, {String? error}) async {
     final message = _msgBox?.get(messageId);
     if (message != null) {
+      // Don't downgrade status if it is already DELIVERED or SEEN
+      if (message.seenAt != null) return;
+      if (message.deliveredAt != null && (status == 'SENT' || status == 'SENDING' || status == 'PENDING')) return;
+
       final newMetadata = Map<String, dynamic>.from(message.metadata ?? {});
       newMetadata['status'] = status;
       if (error != null) {
@@ -798,7 +692,6 @@ class ChatRepository with WidgetsBindingObserver {
 
         // Ensure we are connected and authenticated
         if (!_wsService.isConnected || !_wsService.isAuthenticated) {
-          _logger.d('GHOST_LOG: Queue processing paused - offline or unauthenticated');
           break;
         }
 
@@ -838,32 +731,27 @@ class ChatRepository with WidgetsBindingObserver {
       final String? filePath = item['filePath'] as String?;
       String status = item['status'] as String;
 
-      _logger.i('GHOST_LOG: Processing queue item $id (type: ${type.name}, status: $status)');
 
       // Step 1: Media Upload if pending
       if (status == 'pending_upload' && filePath != null) {
         final file = File(filePath);
         if (!file.existsSync()) {
-          _logger.e('GHOST_LOG: Media file not found for queue item $id: $filePath');
           await _updateMessageStatus(id, 'FAILED', error: 'Local file missing');
           await box.delete(id);
           _currentlySendingIds.remove(id);
           return true; // Proceed to next item
         }
 
-        _logger.i('GHOST_LOG: Uploading media for offline queue item $id');
         await _updateMessageStatus(id, 'UPLOADING');
 
         final activeRelay = await _relayManager.getActiveRelay();
         if (activeRelay == null) {
-          _logger.w('GHOST_LOG: No active relay for upload. Halting queue.');
           _currentlySendingIds.remove(id);
           return false; // Halt queue
         }
 
         final contact = _contactService.getContact(recipientId);
         if (contact == null) {
-          _logger.e('GHOST_LOG: Contact $recipientId not found for queue item $id');
           await _updateMessageStatus(id, 'FAILED', error: 'Contact not found');
           await box.delete(id);
           _currentlySendingIds.remove(id);
@@ -907,7 +795,6 @@ class ChatRepository with WidgetsBindingObserver {
         // Update local variables for Step 2
         status = 'pending_send';
         metadata.addAll(newMetadata);
-        _logger.i('GHOST_LOG: Media upload complete for queue item $id');
       }
 
       // Step 2: Encrypt and Send Envelope
@@ -937,6 +824,7 @@ class ChatRepository with WidgetsBindingObserver {
           recipientPublicId: recipientId,
           recipientXid: base64Decode(recipientXidBase64),
           senderIdentity: identity,
+          messageId: id,
         );
 
         List<Map<String, dynamic>> targets = [];
@@ -957,7 +845,6 @@ class ChatRepository with WidgetsBindingObserver {
             }
           }
         } catch (e) {
-          _logger.w('GHOST_LOG: Fan-out lookup failed: $e. Using fallback single target.');
           targets.add({'device_id': null});
         }
 
@@ -971,7 +858,6 @@ class ChatRepository with WidgetsBindingObserver {
           if (type == MessageType.image || type == MessageType.video || type == MessageType.voice) {
             if (metadata['media_id'] != null) {
               msgPayload['media_id'] = metadata['media_id'];
-              _logger.i('GHOST_LOG: MEDIA_MESSAGE_CREATED messageId: $id mediaId: ${metadata['media_id']} mediaKind: ${type.name} url: ${msgPayload['relay_url'] ?? "active_relay"}');
             }
           }
 
@@ -980,12 +866,10 @@ class ChatRepository with WidgetsBindingObserver {
             if (response != null && response['status'] == 'ok') {
               if (type == MessageType.image || type == MessageType.video || type == MessageType.voice) {
                  if (metadata['media_id'] != null) {
-                   _logger.i('GHOST_LOG: MEDIA_MESSAGE_SENT messageId: $id mediaId: ${metadata['media_id']} mediaKind: ${type.name} url: ${msgPayload['relay_url'] ?? "active_relay"}');
                  }
               }
               completer.complete(true);
             } else {
-              _logger.w('GHOST_LOG: Server rejected message emit: $response');
               completer.complete(false);
             }
           });
@@ -993,7 +877,6 @@ class ChatRepository with WidgetsBindingObserver {
           final success = await completer.future.timeout(
             const Duration(seconds: 10),
             onTimeout: () {
-              _logger.w('GHOST_LOG: Timeout waiting for message send acknowledgment');
               return false;
             },
           );
@@ -1019,17 +902,23 @@ class ChatRepository with WidgetsBindingObserver {
           await _stateBox?.put(recipientId, state);
 
           if (type != MessageType.system) {
+            final existingMessage = _msgBox?.get(envelope.id);
+            // If the message was already marked DELIVERED or SEEN by real-time status update, preserve it!
+            final currentStatus = existingMessage != null ? _getMessageStatusString(existingMessage) : 'SENT';
+
             final message = Message(
               id: envelope.id,
               senderId: identity.publicId,
               recipientId: recipientId,
               plaintext: text,
-              timestamp: DateTime.now(),
+              timestamp: existingMessage?.timestamp ?? DateTime.now(),
+              deliveredAt: existingMessage?.deliveredAt,
+              seenAt: existingMessage?.seenAt,
               isRead: true,
               type: type,
               metadata: {
                 ...metadata,
-                'status': 'SENT',
+                'status': currentStatus,
               },
             );
             
@@ -1039,30 +928,17 @@ class ChatRepository with WidgetsBindingObserver {
             await _msgBox?.put(message.id, message);
           }
 
-          if (type == MessageType.image || type == MessageType.video) {
-            final mediaId = metadata['media_id'] ?? '';
-            final relayUrl = metadata['relay_url'] ?? '';
-            final mediaKind = type == MessageType.image ? 'image' : 'video';
-            _logger.i('GHOST_LOG: MEDIA_MESSAGE_SENT messageId: ${envelope.id} mediaId: $mediaId mediaKind: $mediaKind url: $relayUrl');
-            _logger.i('GHOST_LOG: MEDIA_ENVELOPE_SENT id: $mediaId');
-          } else if (type == MessageType.voice) {
-            final mediaId = metadata['media_id'] ?? '';
-            _logger.i('GHOST_LOG: VOICE_ENVELOPE_SENT id: $mediaId');
-          }
 
           // Remove from queue
           await box.delete(id);
-          _logger.i('GHOST_LOG: Message $id successfully sent and removed from queue');
           _currentlySendingIds.remove(id);
           return true; // Success
         } else {
-          _logger.w('GHOST_LOG: Send failed for item $id. Halting queue.');
           _currentlySendingIds.remove(id);
           return false; // Transient failure, halt
         }
       }
     } catch (e) {
-      _logger.e('GHOST_LOG: Error processing queue item $id: $e');
       final errStr = e.toString();
       final isPermanent = errStr.contains('Missing recipient public key') ||
           errStr.contains('Contact not found') ||
@@ -1139,7 +1015,6 @@ class ChatRepository with WidgetsBindingObserver {
       }
     }
     if (deletedIds.isNotEmpty) {
-      _logger.i('GHOST_LOG: Local ghost messages flushed for $contactId: $deletedIds');
       final delBox = Hive.box<bool>(_pendingDeletionsBoxName);
       for (final id in deletedIds) {
         await delBox.put(id, true);
@@ -1152,7 +1027,6 @@ class ChatRepository with WidgetsBindingObserver {
   }
 
   Future<void> flushAllGhosts() async {
-    _logger.i('GHOST_LOG: Global ghost flush starting...');
     final List<String> deletedIds = [];
     final messages = _msgBox?.values ?? [];
     for (final msg in messages) {
@@ -1169,7 +1043,6 @@ class ChatRepository with WidgetsBindingObserver {
     }
     if (deletedIds.isNotEmpty) {
       await _msgBox?.deleteAll(deletedIds);
-      _logger.i('GHOST_LOG: Global ghost flush complete. Pruned ${deletedIds.length} messages.');
       final delBox = Hive.box<bool>(_pendingDeletionsBoxName);
       final Map<String, bool> delEntries = {for (var id in deletedIds) id: true};
       await delBox.putAll(delEntries);
@@ -1196,7 +1069,6 @@ class ChatRepository with WidgetsBindingObserver {
       }
 
       final ids = delBox.keys.cast<String>().toList();
-      _logger.i('GHOST_LOG: Syncing ${ids.length} pending deletions to relay...');
 
       final completer = Completer<bool>();
       _wsService.socket?.emitWithAck('message.delete', {
@@ -1205,7 +1077,6 @@ class ChatRepository with WidgetsBindingObserver {
         if (response != null && (response['status'] == 'success' || response['status'] == 'ok')) {
           completer.complete(true);
         } else {
-          _logger.w('GHOST_LOG: Relay rejected delete sync: $response');
           completer.complete(false);
         }
       });
@@ -1217,10 +1088,9 @@ class ChatRepository with WidgetsBindingObserver {
 
       if (success) {
         await delBox.clear();
-        _logger.i('GHOST_LOG: Successfully synced deletions to relay.');
       }
     } catch (e) {
-      _logger.e('GHOST_LOG: Error syncing deletions: $e');
+      // Ignore
     } finally {
       _isSyncingDeletions = false;
     }
@@ -1241,7 +1111,6 @@ class ChatRepository with WidgetsBindingObserver {
       _wsService.sendSeen(m.id);
     }
     
-    _logger.i('Conversation with $contactId marked as read and seen events sent.');
   }
 
   Future<void> sendConsumptionReceipt(String recipientId, String messageId) async {
@@ -1255,9 +1124,8 @@ class ChatRepository with WidgetsBindingObserver {
           'target_id': messageId,
         },
       );
-      _logger.i('Sent consumption receipt for message $messageId to $recipientId');
-    } catch (e) {
-      _logger.w('Failed to send consumption receipt: $e');
+    } catch (_) {
+      // Ignore
     }
   }
 
@@ -1295,54 +1163,6 @@ class ChatRepository with WidgetsBindingObserver {
   Future<void> dangerouslyClearAll() async {
     await _msgBox?.clear();
     await _syncBox?.clear();
-  }
-
-  void logMemoryUsage() {
-    int messagesBoxSize = 0;
-    int contactsBoxSize = 0;
-    int statesBoxSize = 0;
-    int mediaBoxSize = 0;
-
-    final path = _hiveDbPath;
-    if (path != null) {
-      messagesBoxSize = _getBoxSizeOnDisk(path, _msgBoxName);
-      contactsBoxSize = _getBoxSizeOnDisk(path, 'contacts');
-      statesBoxSize = _getBoxSizeOnDisk(path, 'conversation_states');
-      mediaBoxSize = _getBoxSizeOnDisk(path, 'media_cache_index');
-    }
-
-    final stats = {
-      'initialized': _isInitialized,
-      'activeConversationId': _activeConversationId,
-      'messagesBoxCount': _msgBox?.length ?? 0,
-      'messagesBoxSize': messagesBoxSize,
-      'contactsBoxCount': Hive.isBoxOpen('contacts') ? Hive.box<Contact>('contacts').length : 0,
-      'contactsBoxSize': contactsBoxSize,
-      'statesBoxCount': _stateBox?.length ?? 0,
-      'statesBoxSize': statesBoxSize,
-      'mediaBoxCount': Hive.isBoxOpen('media_cache_index') ? Hive.box<dynamic>('media_cache_index').length : 0,
-      'mediaBoxSize': mediaBoxSize,
-      'syncBoxCount': _syncBox?.length ?? 0,
-      'processedBoxCount': _processedBox?.length ?? 0,
-      'offlineQueueBoxCount': _queueBox?.length ?? 0,
-      'pendingDeletionsBoxCount': Hive.isBoxOpen(_pendingDeletionsBoxName) ? Hive.box<bool>(_pendingDeletionsBoxName).length : 0,
-    };
-    StabilityTracker.logComponentDiagnostics('ChatRepository', stats);
-  }
-
-  int _getBoxSizeOnDisk(String path, String boxName) {
-    int total = 0;
-    try {
-      final hiveFile = File('$path/$boxName.hive');
-      final logFile = File('$path/$boxName.log');
-      if (hiveFile.existsSync()) {
-        total += hiveFile.lengthSync();
-      }
-      if (logFile.existsSync()) {
-        total += logFile.lengthSync();
-      }
-    } catch (_) {}
-    return total;
   }
 }
 

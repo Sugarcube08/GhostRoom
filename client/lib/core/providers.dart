@@ -1,5 +1,4 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter/foundation.dart';
 import 'package:sodium/sodium_sumo.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'crypto/identity_service.dart';
@@ -44,7 +43,6 @@ final dmServiceProvider = Provider<DMService>((ref) {
 });
 
 final contactServiceProvider = Provider<ContactService>((ref) {
-  debugPrint('GHOST_LOG: CREATE: ContactService');
   final service = ContactService(ref.watch(secureStorageProvider));
   service.init();
   return service;
@@ -55,7 +53,6 @@ final contactResolverProvider = Provider<ContactResolver>((ref) {
 });
 
 final chatRepositoryProvider = Provider<ChatRepository>((ref) {
-  debugPrint('GHOST_LOG: CREATE: ChatRepository');
   final repo = ChatRepository.lazy(ref);
   repo.init();
   return repo;
@@ -79,7 +76,6 @@ final mediaServiceProvider = Provider<MediaService>((ref) {
 });
 
 final mediaManagerProvider = Provider<MediaManager>((ref) {
-  debugPrint('GHOST_LOG: CREATE: MediaManager');
   final manager = MediaManager(
     ref.watch(sodiumProvider),
     ref.watch(mediaServiceProvider),
@@ -116,14 +112,12 @@ final relayManagerProvider = Provider<RelayManager>((ref) {
 });
 
 final notificationServiceProvider = Provider<NotificationService>((ref) {
-  debugPrint('GHOST_LOG: CREATE: NotificationService');
   final service = NotificationService();
   service.init();
   return service;
 });
 
 final webSocketServiceProvider = Provider<WebSocketService>((ref) {
-  debugPrint('GHOST_LOG: CREATE: WebSocketService');
   return WebSocketService(ref);
 });
 

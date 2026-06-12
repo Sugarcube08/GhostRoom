@@ -4,6 +4,7 @@ import '../../core/providers.dart';
 import '../../core/network/websocket_service.dart';
 import '../spaces/space_service.dart';
 import '../invite/invite_screen.dart';
+import '../../design_system/colors.dart';
 import 'dart:convert';
 
 class Message {
@@ -32,10 +33,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   @override
   void initState() {
     super.initState();
-    debugPrint('GHOST_LOG: ChatScreen initState starting');
     _webSocketService = ref.read(webSocketServiceProvider);
     _setupListeners();
-    debugPrint('GHOST_LOG: ChatScreen initState completed');
   }
 
   @override
@@ -46,30 +45,24 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   }
 
   void _setupListeners() {
-    debugPrint('GHOST_LOG: ChatScreen _setupListeners starting');
     final ws = ref.read(webSocketServiceProvider);
     final crypto = ref.read(cryptoServiceProvider);
     
-    debugPrint('GHOST_LOG: ChatScreen ws provider ready');
     
     // Get device ID for sender-aware history filtering
     crypto.getDeviceId().then((deviceId) {
       if (deviceId != null) {
         ws.joinSpace(widget.config.roomId, deviceId);
-        debugPrint('GHOST_LOG: ChatScreen joinSpace called with DeviceID');
       } else {
-        debugPrint('GHOST_LOG: ChatScreen Error: No DeviceID found');
         ws.joinSpace(widget.config.roomId, 'unknown_device');
       }
     });
     
     ws.onMessage((data) {
-      debugPrint('GHOST_LOG: ChatScreen onMessage received: $data');
       _processMessage(data, isMe: false);
     });
 
     ws.onHistory((data) {
-      debugPrint('GHOST_LOG: ChatScreen onHistory received. Messages: ${data['messages']?.length}');
       final List<dynamic> messages = data['messages'] ?? [];
       for (final msg in messages) {
         _processMessage(msg, isMe: false);
@@ -79,7 +72,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     _socketErrorListener();
 
     ws.onSpaceExpired((_) {
-      debugPrint('GHOST_LOG: ChatScreen space expired');
       if (mounted) _showExpiredDialog();
     });
   }
@@ -88,7 +80,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     if (!mounted) return;
     final ciphertext = data['ciphertext'];
     if (ciphertext == null) {
-      debugPrint('GHOST_LOG: ChatScreen Error: Received message with no ciphertext');
       return;
     }
     
@@ -97,7 +88,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         base64Decode(ciphertext),
         widget.config.roomKey,
       );
-      debugPrint('GHOST_LOG: ChatScreen message decrypted successfully');
 
       setState(() {
         _messages.insert(0, Message(
@@ -107,9 +97,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
           timestamp: DateTime.now(),
         ));
       });
-    } catch (e) {
-      debugPrint('GHOST_LOG: ChatScreen Decryption Error: $e');
-      debugPrint('GHOST_LOG: Ciphertext was: $ciphertext');
+    } catch (_) {
+      // Ignore
     }
   }
 
@@ -168,6 +157,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final colors = AppColors.of(context);
     return Scaffold(
       appBar: AppBar(
         title: Column(
@@ -175,7 +165,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
             const Text('ENCRYPTED SPACE'),
             Text(
               widget.config.roomId.substring(0, 8),
-              style: const TextStyle(fontSize: 10, color: Colors.white30),
+              style: TextStyle(fontSize: 10, color: colors.textMuted),
             ),
           ],
         ),
@@ -213,19 +203,21 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   }
 
   Widget _buildMessageBubble(Message msg) {
+    final colors = AppColors.of(context);
     return Align(
       alignment: msg.isMe ? Alignment.centerRight : Alignment.centerLeft,
       child: Container(
         margin: const EdgeInsets.symmetric(vertical: 4),
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
         decoration: BoxDecoration(
-          color: msg.isMe ? Colors.white : Colors.grey[900],
+          color: msg.isMe ? colors.ghostAccent.withAlpha(40) : colors.elevatedSurface,
           borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: colors.hairline, width: 0.5),
         ),
         child: Text(
           msg.text,
           style: TextStyle(
-            color: msg.isMe ? Colors.black : Colors.white70,
+            color: colors.textPrimary,
           ),
         ),
       ),

@@ -67,7 +67,7 @@ class RequestsCard extends StatelessWidget {
             GhostBadge(
               label: count.toString(),
               color: colors.warning,
-              textColor: Colors.black,
+              textColor: Theme.of(context).colorScheme.brightness == Brightness.dark ? Colors.black : Colors.white,
             ),
           const SizedBox(width: AppSpacing.s),
           Icon(Icons.chevron_right, color: colors.secondaryText.withAlpha(50)),

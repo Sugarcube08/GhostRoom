@@ -135,14 +135,14 @@ class _IdentityVaultScreenState extends ConsumerState<IdentityVaultScreen> with 
                         ]),
                       ),
                     ),
-                    const SliverToBoxAdapter(
+                    SliverToBoxAdapter(
                       child: Padding(
-                        padding: EdgeInsets.symmetric(vertical: 48),
+                        padding: const EdgeInsets.symmetric(vertical: 48),
                         child: Center(
                           child: Text(
                             'GHOSTROOM V3.0 PREMIUM\nZERO-KNOWLEDGE ARCHITECTURE',
                             textAlign: TextAlign.center,
-                            style: TextStyle(color: Colors.white10, fontSize: 10, letterSpacing: 2),
+                            style: TextStyle(color: AppColors.of(context).textMuted.withAlpha(50), fontSize: 10, letterSpacing: 2),
                           ),
                         ),
                       ),
@@ -169,7 +169,7 @@ class _IdentityVaultScreenState extends ConsumerState<IdentityVaultScreen> with 
           const SizedBox(width: 8),
           _buildStatusChip(context, 'BACKED UP', colors.ghostAccent, Icons.cloud_done),
           const SizedBox(width: 8),
-          _buildStatusChip(context, 'RECOVERABLE', Colors.amber, Icons.sync_problem),
+          _buildStatusChip(context, 'RECOVERABLE', colors.warning, Icons.sync_problem),
         ],
       ),
     );
@@ -376,9 +376,9 @@ class _IdentityVaultScreenState extends ConsumerState<IdentityVaultScreen> with 
           children: [
             Text('SYSTEM DIAGNOSTICS', style: AppTypography.section(context).copyWith(fontWeight: FontWeight.bold, letterSpacing: 2)),
             const SizedBox(height: 32),
-            _buildDiagRow(label: 'Identity Status', value: ref.read(identityServiceProvider).hasIdentity ? 'Active' : 'Missing', color: colors.success),
-            _buildDiagRow(label: 'WebSocket Connection', value: ref.read(webSocketServiceProvider).isConnected ? 'Connected' : 'Disconnected', color: colors.ghostAccent),
-            _buildDiagRow(label: 'Auth Status', value: ref.read(webSocketServiceProvider).isAuthenticated ? 'Authenticated' : 'Pending', color: Colors.amber),
+             _buildDiagRow(context, label: 'Identity Status', value: ref.read(identityServiceProvider).hasIdentity ? 'Active' : 'Missing', color: colors.success),
+            _buildDiagRow(context, label: 'WebSocket Connection', value: ref.read(webSocketServiceProvider).isConnected ? 'Connected' : 'Disconnected', color: colors.ghostAccent),
+            _buildDiagRow(context, label: 'Auth Status', value: ref.read(webSocketServiceProvider).isAuthenticated ? 'Authenticated' : 'Pending', color: colors.warning),
             const SizedBox(height: 32),
             GhostButton(
               label: 'CLOSE',
@@ -484,13 +484,14 @@ class _IdentityVaultScreenState extends ConsumerState<IdentityVaultScreen> with 
       ),
     );
   }
-  Widget _buildDiagRow({required String label, required String value, required Color color}) {
+   Widget _buildDiagRow(BuildContext context, {required String label, required String value, required Color color}) {
+    final colors = AppColors.of(context);
     return Padding(
       padding: const EdgeInsets.only(bottom: 12.0),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(label, style: const TextStyle(color: Colors.white70, fontSize: 13)),
+          Text(label, style: TextStyle(color: colors.textSecondary, fontSize: 13)),
           Text(value, style: TextStyle(color: color, fontSize: 13, fontWeight: FontWeight.bold)),
         ],
       ),

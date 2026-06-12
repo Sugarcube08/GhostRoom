@@ -61,7 +61,6 @@ class _VoiceRecorderState extends State<VoiceRecorder> {
         });
       }
     } catch (e) {
-      debugPrint('GHOST_LOG: Recording error: $e');
       widget.onCancel();
     }
   }
@@ -138,7 +137,7 @@ class _VoiceRecorderState extends State<VoiceRecorder> {
                 color: colors.ghostAccent,
                 shape: BoxShape.circle,
               ),
-              child: const Icon(Icons.send_rounded, color: Colors.black, size: 20),
+              child: Icon(Icons.send_rounded, color: Theme.of(context).colorScheme.onPrimary, size: 20),
             ),
           ),
         ],

@@ -201,7 +201,7 @@ class AnonymousRoomsScreen extends ConsumerWidget {
     final colors = AppColors.of(context);
     return recentAsync.when(
       data: (rooms) {
-        if (rooms.isEmpty) return const SliverToBoxAdapter(child: Center(child: Padding(padding: EdgeInsets.symmetric(vertical: 48), child: Text('No recent spaces found', style: TextStyle(color: Colors.white10, fontSize: 12)))));
+        if (rooms.isEmpty) return SliverToBoxAdapter(child: Center(child: Padding(padding: const EdgeInsets.symmetric(vertical: 48), child: Text('No recent spaces found', style: TextStyle(color: colors.textMuted, fontSize: 12)))));
         return SliverList(
           delegate: SliverChildBuilderDelegate(
             (context, index) {
