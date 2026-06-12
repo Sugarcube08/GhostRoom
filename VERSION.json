@@ -1,5 +1,5 @@
 {
-  "version": "2.2.1",
+  "version": "2.2.2",
   "release_url": "https://github.com/Sugarcube08/GhostRoom/releases",
-  "changelog": "GhostRoom V2.2.1: Semantic color theme system, update-redirection stabilization, and critical pre-release refinements."
+  "changelog": "GhostRoom V2.2.2: Robust identity package & invite link parsing, and fixed manual contact addition dialog exit flow."
 }

@@ -290,12 +290,30 @@ class AnonymousRoomsScreen extends ConsumerWidget {
     );
   }
 
+  String? _extractRoomLink(String input) {
+    final trimmed = input.trim();
+    if (trimmed.startsWith('ghost://room/')) {
+      return trimmed;
+    }
+    final regex = RegExp(r'ghost://room/[^\s?]+(?:\?[^\s]+)?');
+    final match = regex.firstMatch(trimmed);
+    if (match != null) {
+      return match.group(0);
+    }
+    return null;
+  }
+
   void _joinSpace(BuildContext context, WidgetRef ref) async {
     final status = await Permission.camera.request();
     if (!status.isGranted) return;
     if (!context.mounted) return;
     final code = await Navigator.push<String>(context, MaterialPageRoute(builder: (_) => const QRScannerScreen()));
-    if (code != null && code.startsWith('ghost://room/') && context.mounted) await _handleInviteLink(context, ref, code);
+    if (code != null) {
+      final link = _extractRoomLink(code);
+      if (link != null && context.mounted) {
+        await _handleInviteLink(context, ref, link);
+      }
+    }
   }
 
   void _joinFromGallery(BuildContext context, WidgetRef ref) async {
@@ -307,7 +325,12 @@ class AnonymousRoomsScreen extends ConsumerWidget {
       final capture = await scanner.analyzeImage(image.path);
       if (capture != null && capture.barcodes.isNotEmpty) {
         final code = capture.barcodes.first.rawValue;
-        if (code != null && code.startsWith('ghost://room/') && context.mounted) await _handleInviteLink(context, ref, code);
+        if (code != null) {
+          final link = _extractRoomLink(code);
+          if (link != null && context.mounted) {
+            await _handleInviteLink(context, ref, link);
+          }
+        }
       }
     } catch (_) {} finally { scanner.dispose(); }
   }
@@ -323,7 +346,17 @@ class AnonymousRoomsScreen extends ConsumerWidget {
         content: GhostInput(controller: controller, hintText: 'Paste ghost://room/... link'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Cancel')),
-          TextButton(onPressed: () async { final link = controller.text; if (link.startsWith('ghost://room/')) { Navigator.pop(dialogContext); await _handleInviteLink(context, ref, link); } }, child: const Text('Join')),
+          TextButton(
+            onPressed: () async {
+              final text = controller.text;
+              final link = _extractRoomLink(text);
+              if (link != null) {
+                Navigator.pop(dialogContext);
+                await _handleInviteLink(context, ref, link);
+              }
+            },
+            child: const Text('Join'),
+          ),
         ],
       ),
     );

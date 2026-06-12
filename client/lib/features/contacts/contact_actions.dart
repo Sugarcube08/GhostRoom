@@ -35,7 +35,7 @@ mixin ContactActions<T extends ConsumerStatefulWidget> on ConsumerState<T> {
     showModalBottomSheet(
       context: context,
       backgroundColor: AppColors.of(context).backgroundSecondary,
-      builder: (context) => Column(
+      builder: (sheetContext) => Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           const SizedBox(height: 16),
@@ -43,7 +43,7 @@ mixin ContactActions<T extends ConsumerStatefulWidget> on ConsumerState<T> {
             leading: const Icon(Icons.qr_code_scanner),
             title: const Text('SCAN PASSPORT'),
             onTap: () {
-              Navigator.pop(context);
+              Navigator.pop(sheetContext);
               openScanner(context);
             },
           ),
@@ -51,20 +51,25 @@ mixin ContactActions<T extends ConsumerStatefulWidget> on ConsumerState<T> {
             leading: const Icon(Icons.photo_library_outlined),
             title: const Text('IMPORT FROM GALLERY'),
             onTap: () async {
-              Navigator.pop(context);
+              Navigator.pop(sheetContext);
               final picker = ImagePicker();
               final image = await picker.pickImage(source: ImageSource.gallery);
               if (image == null) return;
               
               final scanner = MobileScannerController();
-              final capture = await scanner.analyzeImage(image.path);
-              
-              if (capture != null && capture.barcodes.isNotEmpty) {
-                final result = capture.barcodes.first.rawValue;
-                if (result != null && context.mounted) {
-                  processScannedData(context, result);
-                  return;
+              try {
+                final capture = await scanner.analyzeImage(image.path);
+                if (capture != null && capture.barcodes.isNotEmpty) {
+                  final result = capture.barcodes.first.rawValue;
+                  if (result != null && context.mounted) {
+                    processScannedData(context, result);
+                    return;
+                  }
                 }
+              } catch (e) {
+                debugPrint('Gallery scan error: $e');
+              } finally {
+                scanner.dispose();
               }
 
               if (context.mounted) {
@@ -78,7 +83,7 @@ mixin ContactActions<T extends ConsumerStatefulWidget> on ConsumerState<T> {
             leading: const Icon(Icons.paste),
             title: const Text('PASTE IDENTITY PACKAGE'),
             onTap: () {
-              Navigator.pop(context);
+              Navigator.pop(sheetContext);
               showManualImport(context);
             },
           ),
@@ -86,7 +91,7 @@ mixin ContactActions<T extends ConsumerStatefulWidget> on ConsumerState<T> {
             leading: const Icon(Icons.input),
             title: const Text('ENTER PUBLIC ID MANUALLY'),
             onTap: () {
-              Navigator.pop(context);
+              Navigator.pop(sheetContext);
               showManualIdEntry(context);
             },
           ),
@@ -128,30 +133,33 @@ mixin ContactActions<T extends ConsumerStatefulWidget> on ConsumerState<T> {
               onPressed: () => Navigator.pop(dialogContext), 
               child: Text('CANCEL', style: TextStyle(color: dialogColors.textMuted))
             ),
-          TextButton(
-            onPressed: () async {
-              final id = controller.text.trim();
-              if (id.isEmpty) return;
-              
-              final contact = Contact(
-                publicId: id,
-                alias: 'Manual Contact',
-                eid: '', 
-                xid: '', 
-                fingerprint: 'Unverified',
-                createdAt: DateTime.now(),
-              );
-              await ref.read(contactServiceProvider).saveContact(contact);
-              if (!context.mounted) return;
-              
-              Navigator.pop(dialogContext);
-              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Contact Added')));
-            }, 
-            child: const Text('ADD')
-          ),
-        ],
-      );
-     },
+            TextButton(
+              onPressed: () async {
+                final id = controller.text.trim();
+                if (id.isEmpty) return;
+                
+                final contact = Contact(
+                  publicId: id,
+                  alias: 'Manual Contact',
+                  eid: '', 
+                  xid: '', 
+                  fingerprint: 'Unverified',
+                  createdAt: DateTime.now(),
+                );
+                await ref.read(contactServiceProvider).saveContact(contact);
+                
+                if (dialogContext.mounted) {
+                  Navigator.pop(dialogContext);
+                }
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Contact Added')));
+                }
+              }, 
+              child: const Text('ADD')
+            ),
+          ],
+        );
+      },
     );
   }
 

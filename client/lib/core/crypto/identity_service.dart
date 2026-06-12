@@ -45,7 +45,31 @@ class IdentityPackage {
   String toEncodedString() => base64UrlEncode(utf8.encode(jsonEncode(toJson())));
 
   factory IdentityPackage.fromEncodedString(String encoded) {
-    final decoded = utf8.decode(base64Url.decode(encoded));
+    var clean = encoded.trim();
+    if (clean.contains('ghostroom://identity/')) {
+      clean = clean.split('ghostroom://identity/').last;
+    } else if (clean.contains('/i/')) {
+      clean = clean.split('/i/').last;
+    }
+    
+    // Split by common delimiters in case there is trailing content in the line
+    clean = clean.split('?').first;
+    clean = clean.split(' ').first;
+    clean = clean.split('\n').first;
+    clean = clean.split('\r').first;
+    clean = clean.trim();
+
+    try {
+      clean = Uri.decodeComponent(clean);
+    } catch (_) {}
+
+    // Ensure proper base64url padding
+    final remainder = clean.length % 4;
+    if (remainder > 0) {
+      clean = clean + '=' * (4 - remainder);
+    }
+
+    final decoded = utf8.decode(base64Url.decode(clean));
     return IdentityPackage.fromJson(jsonDecode(decoded));
   }
 }
