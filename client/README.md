@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/brand/ghostroom_lockup_horizontal.svg" alt="GhostRoom Client" width="420">
+</p>
+
 # GhostRoom Client
 
 The official Flutter client for the GhostRoom ephemeral communication platform.

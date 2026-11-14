@@ -62,6 +62,7 @@ class NotificationService {
         channelDescription: 'Notifications for new messages',
         importance: Importance.max,
         priority: Priority.high,
+        icon: 'ic_stat_ghostroom',
         showWhen: true,
         playSound: true,
         enableVibration: true,

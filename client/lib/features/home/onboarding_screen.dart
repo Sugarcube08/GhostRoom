@@ -4,6 +4,7 @@ import 'package:file_picker/file_picker.dart';
 import '../../core/providers.dart';
 
 import '../../core/widgets/navigation_shell.dart';
+import '../../core/theme/brand_assets.dart';
 import '../../design_system/colors.dart';
 import 'dart:io';
 
@@ -299,21 +300,9 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             const SizedBox(height: 24),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-              decoration: BoxDecoration(
-                color: Theme.of(context).brightness == Brightness.light
-                    ? const Color(0xFF0A0A0A)
-                    : Colors.transparent,
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Image.asset('assets/images/banner.png', height: 100),
-            ),
-            const SizedBox(height: 48),
-            const Text(
-              'GhostRoom',
-              style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold, letterSpacing: 2),
-            ),
+            const GhostRoomMark(size: 96),
+            const SizedBox(height: 24),
+            const GhostRoomWordmark(height: 28),
             const SizedBox(height: 24),
             const Text(
               'No phone number.\nNo email.\nTotal privacy.',

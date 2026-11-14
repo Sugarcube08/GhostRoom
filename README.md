@@ -1,6 +1,10 @@
-# GhostRoom
+<p align="center">
+  <img src="assets/brand/ghostroom_lockup_horizontal.svg" alt="GhostRoom" width="480">
+</p>
 
-**Private messaging without accounts, phone numbers, or email addresses.**
+<p align="center">
+  <strong>Private messaging without accounts, phone numbers, or email addresses.</strong>
+</p>
 
 GhostRoom V2.1.1 is a premium, identity-based communication network designed for absolute privacy and long-term durability. It combines a sovereign identity system with a durable encrypted mailbox network.
 

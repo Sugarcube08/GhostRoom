@@ -5,3 +5,4 @@ export 'ghost_avatar.dart';
 export 'ghost_badge.dart';
 export 'ghost_input.dart';
 export 'ghost_navigation.dart';
+export '../../core/theme/brand_assets.dart';

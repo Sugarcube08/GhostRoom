@@ -149,6 +149,7 @@ class _NavigationShellState extends ConsumerState<NavigationShell> {
       barrierDismissible: true,
       builder: (context) => AlertDialog(
         backgroundColor: AppColors.of(context).backgroundSecondary,
+        icon: const GhostRoomMark(size: 36),
         title: const Text('UPDATE AVAILABLE', style: TextStyle(letterSpacing: 2, fontWeight: FontWeight.bold)),
         content: Column(
           mainAxisSize: MainAxisSize.min,

@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="../assets/brand/ghostroom_lockup_horizontal.svg" alt="GhostRoom Relay" width="420">
+</p>
+
 # GhostRoom Relay (Backend)
 
 The high-performance, stateless relay server for the GhostRoom communication platform.

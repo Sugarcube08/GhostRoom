@@ -4,6 +4,7 @@ import '../typography.dart';
 import '../animations.dart';
 import '../haptics.dart';
 import '../glass.dart';
+import '../../core/theme/brand_assets.dart';
 
 class GhostNavItem {
   final IconData outlineIcon;
@@ -156,16 +157,16 @@ class GhostNavigationRail extends StatelessWidget {
         child: Column(
           children: [
             const SizedBox(height: 24),
-            // Logo placeholder
+            // Brand Logo
             Container(
-              width: 40,
-              height: 40,
+              width: 44,
+              height: 44,
               decoration: BoxDecoration(
-                color: colors.ghostAccent.withAlpha(30),
+                color: colors.ghostAccent.withAlpha(20),
                 borderRadius: BorderRadius.circular(12),
               ),
-              child: Center(
-                child: Icon(Icons.shield_rounded, color: colors.ghostAccent, size: 24),
+              child: const Center(
+                child: GhostRoomMark(size: 26),
               ),
             ),
             const SizedBox(height: 40),

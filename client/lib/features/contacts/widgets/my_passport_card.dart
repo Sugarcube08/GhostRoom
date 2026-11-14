@@ -52,13 +52,19 @@ class MyPassportCard extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      'MY PASSPORT',
-                      style: AppTypography.caption(context).copyWith(
-                        fontWeight: FontWeight.w900,
-                        color: colors.ghostAccent,
-                        letterSpacing: 1.5,
-                      ),
+                    Row(
+                      children: [
+                        Text(
+                          'MY PASSPORT',
+                          style: AppTypography.caption(context).copyWith(
+                            fontWeight: FontWeight.w900,
+                            color: colors.ghostAccent,
+                            letterSpacing: 1.5,
+                          ),
+                        ),
+                        const Spacer(),
+                        GhostRoomMark(size: 16, color: colors.ghostAccent.withAlpha(140)),
+                      ],
                     ),
                     const SizedBox(height: 8),
                     Text(

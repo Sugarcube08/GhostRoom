@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sodium/sodium_sumo.dart';
 import 'core/theme/ghost_theme.dart';
+import 'core/theme/brand_assets.dart';
 import 'core/providers.dart';
 import 'design_system/colors.dart';
 
@@ -734,16 +735,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-              decoration: BoxDecoration(
-                color: Theme.of(context).brightness == Brightness.light
-                    ? const Color(0xFF0A0A0A)
-                    : Colors.transparent,
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: Image.asset('assets/images/banner.png', height: 120, fit: BoxFit.contain),
-            ),
+            const GhostRoomLogo(height: 72, fit: BoxFit.contain),
             const SizedBox(height: 64),
             CircularProgressIndicator(color: colors.textMuted.withAlpha(50), strokeWidth: 1),
           ],

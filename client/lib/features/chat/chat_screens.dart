@@ -14,6 +14,7 @@ import 'widgets/conversation_list_item.dart';
 import '../../design_system/colors.dart';
 import '../../design_system/spacing.dart';
 import '../../design_system/typography.dart';
+import '../../core/theme/brand_assets.dart';
 
 class ChatsScreen extends ConsumerStatefulWidget {
   const ChatsScreen({super.key});
@@ -188,7 +189,7 @@ class _ChatsScreenState extends ConsumerState<ChatsScreen> with ContactActions {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.chat_bubble_outline, size: 64, color: colors.secondaryText.withAlpha(10)),
+            GhostRoomMark(size: 72, color: colors.secondaryText.withAlpha(20)),
             const SizedBox(height: 24),
             Text(
               'Select a conversation to start messaging',
@@ -208,7 +209,7 @@ class _ChatsScreenState extends ConsumerState<ChatsScreen> with ContactActions {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.chat_bubble_outline, size: 64, color: colors.secondaryText.withAlpha(20)),
+          GhostRoomMark(size: 72, color: colors.secondaryText.withAlpha(25)),
           const SizedBox(height: 24),
           Text(
             'Secure channel established.',
