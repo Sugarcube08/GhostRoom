@@ -2,7 +2,6 @@ import { Module } from "@nestjs/common";
 import { ConfigModule, ConfigService } from "@nestjs/config";
 import { TypeOrmModule } from "@nestjs/typeorm";
 import { RedisModule } from "./redis/redis.module";
-import { RoomsModule } from "./rooms/rooms.module";
 import { RelayModule } from "./relay/relay.module";
 import { InboxModule } from "./inbox/inbox.module";
 import { MediaModule } from "./media/media.module";
@@ -45,7 +44,6 @@ import { ThrottlerModule } from "@nestjs/throttler";
       },
     ]),
     RedisModule,
-    RoomsModule,
     RelayModule,
     InboxModule,
     MediaModule,

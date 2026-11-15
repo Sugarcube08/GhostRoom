@@ -345,39 +345,32 @@ export class InboxService implements OnModuleInit {
       const allDeliveries = await this.deliveryRepo.find({
         where: { message_id: messageId },
       });
-      const allAcked = allDeliveries.every((d) => d.status === "ACKNOWLEDGED");
+      const allAcked =
+        allDeliveries.length > 0 &&
+        allDeliveries.every((d) => d.status === "ACKNOWLEDGED");
 
-      if (allAcked) {
+      // Pure store-and-forward: delete message from server DB immediately upon full acknowledgment
+      if (allAcked || allDeliveries.length === 0) {
         const message = await this.messageRepo.findOne({
           where: { id: messageId },
         });
 
         if (message) {
-          if (message.retention_mode === "VIEW_ONCE") {
-            if (message.media_id) {
-              try {
-                await this.mediaService.decrementReferenceCount(message.media_id);
-              } catch (e: any) {
-                this.logger.error(
-                  `Failed to decrement media refcount for VIEW_ONCE message: ${e?.message}`,
-                );
-              }
-            }
-            await this.messageRepo.delete(messageId);
-            await this.deliveryRepo.delete({ message_id: messageId });
-          } else {
-            // Mark as delivered globally
-            if (!message.delivered_at) {
-              message.delivered_at = new Date();
-              if (message.retention_mode === "EPHEMERAL") {
-                message.expires_at = new Date(
-                  Date.now() + 30 * 24 * 60 * 60 * 1000,
-                );
-              }
-              await this.messageRepo.save(message);
+          if (message.media_id) {
+            try {
+              await this.mediaService.decrementReferenceCount(message.media_id);
+            } catch (e: any) {
+              this.logger.error(
+                `Failed to decrement media refcount for message ${messageId}: ${e?.message}`,
+              );
             }
           }
+          await this.messageRepo.delete(messageId);
         }
+        await this.deliveryRepo.delete({ message_id: messageId });
+        this.logger.log(
+          `STORE_AND_FORWARD: Message ${messageId} and delivery records purged from database upon acknowledgment.`,
+        );
       }
     } catch (e: any) {
       this.logger.error(`Failed to ACK message in Postgres: ${e?.message}`);

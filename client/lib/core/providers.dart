@@ -8,7 +8,6 @@ import 'notification_service.dart';
 
 import '../features/chat/message.dart';
 
-import '../features/spaces/space_service.dart';
 import '../features/contacts/contact_service.dart';
 import '../features/contacts/contact_resolver.dart';
 import '../features/chat/dm_service.dart';
@@ -97,14 +96,6 @@ final backupServiceProvider = Provider<BackupService>((ref) {
     ref.watch(contactServiceProvider),
     ref.watch(relayManagerProvider),
   );
-});
-
-// Alias for V1 backward compatibility
-final cryptoServiceProvider = identityServiceProvider;
-
-final spaceServiceProvider = Provider<SpaceService>((ref) {
-  final sodium = ref.watch(sodiumProvider);
-  return SpaceService(sodium);
 });
 
 final relayManagerProvider = Provider<RelayManager>((ref) {

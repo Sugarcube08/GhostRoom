@@ -133,21 +133,25 @@ describe("InboxService", () => {
   });
 
   describe("acknowledgeMessage", () => {
-    it("should update delivered_at for PERSISTENT messages", async () => {
+    it("should purge message from database once all deliveries are acknowledged (store-and-forward)", async () => {
+      mockMessageRepo.findOne.mockResolvedValue({
+        id: "msg-id",
+        retention_mode: "PERSISTENT",
+      });
       mockDeliveryRepo.find.mockResolvedValue([
         { status: "ACKNOWLEDGED" }
       ]);
       await service.acknowledgeMessage("test-id", "msg-id");
 
       expect(mockMessageRepo.findOne).toHaveBeenCalled();
-      expect(mockMessageRepo.save).toHaveBeenCalled(); // Since it's PERSISTENT in mock
-      expect(mockDeliveryRepo.save).toHaveBeenCalled();
+      expect(mockMessageRepo.delete).toHaveBeenCalledWith("msg-id");
+      expect(mockDeliveryRepo.delete).toHaveBeenCalledWith({ message_id: "msg-id" });
     });
 
-    it("should delete VIEW_ONCE messages", async () => {
+    it("should decrement media refcount if message has media_id upon deletion", async () => {
       mockMessageRepo.findOne.mockResolvedValue({
         id: "msg-id",
-        retention_mode: "VIEW_ONCE",
+        media_id: "media-123",
       });
       mockDeliveryRepo.find.mockResolvedValue([
         { status: "ACKNOWLEDGED" }
@@ -155,6 +159,7 @@ describe("InboxService", () => {
       await service.acknowledgeMessage("test-id", "msg-id");
 
       expect(mockMessageRepo.delete).toHaveBeenCalledWith("msg-id");
+      expect(mockDeliveryRepo.delete).toHaveBeenCalledWith({ message_id: "msg-id" });
     });
   });
 });

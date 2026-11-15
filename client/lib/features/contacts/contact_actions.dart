@@ -115,7 +115,7 @@ mixin ContactActions<T extends ConsumerStatefulWidget> on ConsumerState<T> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'IMPORTANT: Manual entry only works for V1 Ephemeral Spaces. To send E2EE Direct Messages, you MUST scan the recipient\'s Identity Package QR code.', 
+                'IMPORTANT: Direct Messages require cryptographic identity exchange. To send E2EE messages, please scan the recipient\'s Passport QR code.', 
                 style: TextStyle(fontSize: 11, color: dialogColors.warning, fontWeight: FontWeight.bold)
               ),
               const SizedBox(height: 16),

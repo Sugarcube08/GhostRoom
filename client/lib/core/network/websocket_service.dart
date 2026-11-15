@@ -170,20 +170,6 @@ class WebSocketService {
       }
     });
 
-    _socket!.on('space.history', (data) {
-      final callback = _callbacks['space.history'];
-      if (callback != null) {
-        callback(data);
-      }
-    });
-
-    _socket!.on('space.expired', (data) {
-      final callback = _callbacks['space.expired'];
-      if (callback != null) {
-        callback(data);
-      }
-    });
-
     _socket!.onDisconnect((reason) {
       _isAuthenticated = false;
     });
@@ -196,15 +182,8 @@ class WebSocketService {
       // ignore: avoid_print
     });
 
-    _socket!.on('space.joined', (data) {
-    });
-
     _socket!.on('error', (data) {
     });
-  }
-
-  void joinSpace(String roomId, String deviceId) {
-    _socket?.emit('space.join', {'roomId': roomId, 'deviceId': deviceId});
   }
 
   void fetchInbox({int since = 0}) {
@@ -311,12 +290,10 @@ class WebSocketService {
   void sendMessage(
     String targetId,
     Map<String, dynamic> payload, {
-    int version = 1,
     Function(dynamic)? ack,
   }) {
     final Map<String, dynamic> data = {
       'target_id': targetId,
-      'v': version,
       ...payload,
     };
     if (ack != null) {
@@ -348,19 +325,9 @@ class WebSocketService {
     _callbacks['message.status_update'] = callback;
   }
 
-  void onHistory(Function(dynamic) callback) {
-    _callbacks['space.history'] = callback;
-  }
-
-  void onSpaceExpired(Function(dynamic) callback) {
-    _callbacks['space.expired'] = callback;
-  }
-
   void clearRoomCallbacks() {
     _callbacks.remove('message.receive');
     _callbacks.remove('message.status_update');
-    _callbacks.remove('space.history');
-    _callbacks.remove('space.expired');
   }
 
   void disconnect() {

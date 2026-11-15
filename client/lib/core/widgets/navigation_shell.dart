@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../features/chat/chat_screens.dart';
-import '../../features/spaces/anonymous_rooms_screen.dart';
 import '../../features/settings/identity_vault_screen.dart';
 import '../../features/contacts/contact_list_screen.dart';
 import '../../design_system/colors.dart';
@@ -234,11 +233,6 @@ class _NavigationShellState extends ConsumerState<NavigationShell> {
         label: 'Contacts',
       ),
       const GhostNavItem(
-        outlineIcon: Icons.blur_on_outlined,
-        solidIcon: Icons.blur_on,
-        label: 'Spaces',
-      ),
-      const GhostNavItem(
         outlineIcon: Icons.shield_outlined,
         solidIcon: Icons.shield,
         label: 'Vault',
@@ -248,7 +242,6 @@ class _NavigationShellState extends ConsumerState<NavigationShell> {
     final List<Widget> screens = [
       const ChatsScreen(),
       const ContactListScreen(),
-      const AnonymousRoomsScreen(),
       const IdentityVaultScreen(),
     ];
 

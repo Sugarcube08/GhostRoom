@@ -862,7 +862,7 @@ class ChatRepository with WidgetsBindingObserver {
           }
 
           final completer = Completer<bool>();
-          _wsService.sendMessage(recipientId, msgPayload, version: 2, ack: (response) {
+          _wsService.sendMessage(recipientId, msgPayload, ack: (response) {
             if (response != null && response['status'] == 'ok') {
               if (type == MessageType.image || type == MessageType.video || type == MessageType.voice) {
                  if (metadata['media_id'] != null) {

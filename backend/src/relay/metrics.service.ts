@@ -18,7 +18,6 @@ export class MetricsService {
     this.messagesSent = new promClient.Counter({
       name: "ghostroom_messages_sent_total",
       help: "Total number of messages sent",
-      labelNames: ["version"],
     });
 
     this.messagesAcked = new promClient.Counter({

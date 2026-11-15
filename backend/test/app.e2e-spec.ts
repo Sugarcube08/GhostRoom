@@ -17,6 +17,7 @@ import { MessageEntity } from "../src/inbox/entities/message.entity";
 import { DeliveryEntity } from "../src/inbox/entities/delivery.entity";
 import { MediaEntity } from "../src/media/entities/media.entity";
 import { MediaService } from "../src/media/media.service";
+import { FirebaseService } from "../src/inbox/firebase.service";
 
 describe("RelayGateway (Dual-Mode E2E)", () => {
   let app: INestApplication;
@@ -83,6 +84,13 @@ describe("RelayGateway (Dual-Mode E2E)", () => {
         .useValue(mockRepo)
         .overrideProvider(MediaService)
         .useValue(mockMediaService)
+        .overrideProvider(FirebaseService)
+        .useValue({
+          getFcmEnabled: () => false,
+          getApp: () => null,
+          sendWakeup: (jest.fn() as any).mockResolvedValue("mock-fcm-id"),
+          registerFcmDeliveryCallback: jest.fn(),
+        })
         .compile();
 
       app = moduleFixture.createNestApplication();
@@ -102,34 +110,6 @@ describe("RelayGateway (Dual-Mode E2E)", () => {
   afterEach(() => {
     if (clientV1) clientV1.disconnect();
     if (clientV2) clientV2.disconnect();
-  });
-
-  it("should handle V1 Space flow (Broadcast)", (done) => {
-    if (!app) return done();
-    const url = `http://localhost:${port}`;
-    clientV1 = io(url);
-    clientV2 = io(url);
-
-    const roomId = "test-room-v1";
-    mockRedis.get.mockResolvedValue(JSON.stringify({ id: roomId }));
-
-    clientV1.emit("space.join", { roomId });
-    clientV1.on("space.joined", () => {
-      clientV2.emit("space.join", { roomId });
-    });
-
-    clientV2.on("space.joined", () => {
-      clientV1.emit("message.send", {
-        target_id: roomId,
-        ciphertext: "hello-v1",
-        v: 1,
-      });
-    });
-
-    clientV2.on("message.receive", (payload) => {
-      expect(payload.ciphertext).toBe("hello-v1");
-      done();
-    });
   });
 
   it("should receive challenge upon connection", (done) => {
