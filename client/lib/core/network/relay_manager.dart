@@ -56,7 +56,6 @@ class RelayManager {
   final FlutterSecureStorage _storage;
   static const String _relaysKey = 'saved_relays';
   static const String _activeRelayIdKey = 'active_relay_id';
-  static const String _recentRoomsKey = 'recent_rooms';
 
   RelayManager(this._storage);
 
@@ -181,38 +180,5 @@ class RelayManager {
 
   Future<void> panicWipe() async {
     await _storage.deleteAll();
-  }
-
-  // Recent Rooms
-  Future<List<Map<String, dynamic>>> getRecentRooms() async {
-    final data = await _storage.read(key: _recentRoomsKey);
-    if (data == null) return [];
-    return List<Map<String, dynamic>>.from(jsonDecode(data));
-  }
-
-  Future<void> addRecentRoom(
-    String roomId,
-    String keyBase64,
-    String relayLabel,
-  ) async {
-    final rooms = await getRecentRooms();
-    // Remove if already exists
-    rooms.removeWhere((r) => r['roomId'] == roomId);
-
-    rooms.insert(0, {
-      'roomId': roomId,
-      'key': keyBase64,
-      'relayLabel': relayLabel,
-      'timestamp': DateTime.now().toIso8601String(),
-    });
-
-    // Keep only last 10
-    if (rooms.length > 10) rooms.removeLast();
-
-    await _storage.write(key: _recentRoomsKey, value: jsonEncode(rooms));
-  }
-
-  Future<void> clearRecentRooms() async {
-    await _storage.delete(key: _recentRoomsKey);
   }
 }

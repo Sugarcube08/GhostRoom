@@ -325,11 +325,6 @@ class WebSocketService {
     _callbacks['message.status_update'] = callback;
   }
 
-  void clearRoomCallbacks() {
-    _callbacks.remove('message.receive');
-    _callbacks.remove('message.status_update');
-  }
-
   void disconnect() {
     _socket?.disconnect();
     _socket?.dispose();

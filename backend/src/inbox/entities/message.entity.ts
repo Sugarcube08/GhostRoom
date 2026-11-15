@@ -36,12 +36,6 @@ export class MessageEntity {
     type: process.env.NODE_ENV === "test" ? "datetime" : "timestamp",
     nullable: true,
   })
-  deleted_at: Date | null;
-
-  @Column({
-    type: process.env.NODE_ENV === "test" ? "datetime" : "timestamp",
-    nullable: true,
-  })
   expires_at: Date | null;
 
   @Column("varchar", { nullable: true })

@@ -31,9 +31,7 @@ dependencies:
   flutter:
     sdk: flutter
 
-  cupertino_icons: ^1.0.6
   flutter_riverpod: ^2.4.9
-  go_router: ^17.3.0
   flutter_secure_storage: ^10.3.1
   sodium: ^4.0.2
   sodium_libs: ^4.0.0
@@ -44,7 +42,6 @@ dependencies:
   uuid: ^4.2.2
   intl: ^0.20.2
   path_provider: ^2.1.2
-  logger: ^2.0.2+1
   share_plus: ^13.1.0
   app_links: ^7.0.0
   http: ^1.2.1

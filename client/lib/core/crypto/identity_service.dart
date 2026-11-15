@@ -80,7 +80,7 @@ class Identity {
   final KeyPair x25519KeyPair;
   final String publicId;
   final String fingerprint;
-  final String deviceId; // V1 compat
+  final String deviceId; // Multi-device identifier
 
   Identity({
     required this.mnemonic,

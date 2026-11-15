@@ -81,40 +81,7 @@ import Redis from "ioredis";
       },
       inject: [ConfigService],
     },
-    {
-      provide: "REDIS_SUBSCRIBER",
-      useFactory: (configService: ConfigService) => {
-        const finalUrl =
-          process.env.REDIS_INTERNAL_URL ||
-          process.env.REDIS_URL ||
-          configService.get<string>("REDIS_URL") ||
-          "redis://invalid-host:6379";
-
-        const options: any = {
-          maxRetriesPerRequest: null,
-          retryStrategy: (times) => {
-            if (finalUrl?.includes("invalid-host")) return null;
-            return Math.min(times * 500, 5000);
-          },
-        };
-
-        if (finalUrl.startsWith("rediss://")) {
-          options.tls = { rejectUnauthorized: false };
-        }
-
-        const client = new Redis(finalUrl, options);
-        client.on("error", (err) =>
-          console.error("❌ [Redis Subscriber Error]", err.message),
-        );
-        client.on("connect", () =>
-          console.log("✅ [Redis Subscriber] Connected"),
-        );
-
-        return client;
-      },
-      inject: [ConfigService],
-    },
   ],
-  exports: ["REDIS_CLIENT", "REDIS_SUBSCRIBER"],
+  exports: ["REDIS_CLIENT"],
 })
 export class RedisModule {}

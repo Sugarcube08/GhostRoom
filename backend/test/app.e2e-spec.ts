@@ -74,8 +74,6 @@ describe("RelayGateway (Dual-Mode E2E)", () => {
       })
         .overrideProvider("REDIS_CLIENT")
         .useValue(mockRedis)
-        .overrideProvider("REDIS_SUBSCRIBER")
-        .useValue(mockRedis)
         .overrideProvider(getRepositoryToken(MessageEntity))
         .useValue(mockRepo)
         .overrideProvider(getRepositoryToken(DeliveryEntity))

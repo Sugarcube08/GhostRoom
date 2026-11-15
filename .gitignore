@@ -40,6 +40,8 @@ temp/
 temp_*/
 *.tmp
 temp_sodium/
+*.log
+appimagetool*
 
 # Secrets
 .env

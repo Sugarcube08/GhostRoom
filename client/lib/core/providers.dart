@@ -122,10 +122,6 @@ final activeRelayProvider = FutureProvider<RelayProfile?>((ref) async {
   return relays.where((r) => r.id == activeId).firstOrNull ?? (relays.isNotEmpty ? relays.first : null);
 });
 
-final recentRoomsProvider = FutureProvider<List<Map<String, dynamic>>>((ref) async {
-  return ref.watch(relayManagerProvider).getRecentRooms();
-});
-
 final requestCountProvider = Provider<int>((ref) {
   // Watch messages box for changes
   ref.watch(messageBoxListenableProvider);

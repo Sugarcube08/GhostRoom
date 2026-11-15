@@ -12,7 +12,6 @@ import { AuditService } from "../audit/audit.service";
 import { MetricsService } from "./metrics.service";
 import { CryptoUtils } from "../inbox/crypto-utils.service";
 import { FederationService } from "../federation/federation.service";
-import { GroupsService } from "../groups/groups.service";
 import { Inject, Logger, OnModuleInit } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import Redis from "ioredis";
@@ -43,7 +42,6 @@ export class RelayGateway implements OnGatewayConnection, OnGatewayDisconnect, O
     private readonly cryptoUtils: CryptoUtils,
     private readonly configService: ConfigService,
     private readonly federationService: FederationService,
-    private readonly groupsService: GroupsService,
     @Inject("REDIS_CLIENT") private readonly redis: Redis,
   ) {
     this.RATE_LIMIT_HOUR = parseInt(
@@ -151,82 +149,6 @@ export class RelayGateway implements OnGatewayConnection, OnGatewayDisconnect, O
     await this.inboxService.deleteChallenge(client.id);
   }
 
-  @SubscribeMessage("group.create")
-  async handleGroupCreate(client: Socket, payload: { members: string[] }) {
-    const creatorId = client.data.publicId;
-    if (!creatorId) return { status: "error", error: "Unauthenticated" };
-
-    const groupId = await this.groupsService.createGroup(
-      creatorId,
-      payload.members,
-    );
-    return { status: "ok", groupId };
-  }
-
-  @SubscribeMessage("group.send")
-  async handleGroupMessage(
-    client: Socket,
-    payload: {
-      group_id: string;
-      ciphertext: string;
-      nonce: string;
-      v: number;
-    },
-  ) {
-    const senderId = client.data.publicId;
-    if (!senderId) return { status: "error", error: "Unauthenticated" };
-
-    const members = await this.groupsService.getMembers(payload.group_id);
-    if (!members.includes(senderId)) {
-      return { status: "error", error: "Not a group member" };
-    }
-
-    this.logger.log(
-      `Group message to ${payload.group_id} from ${senderId}. Fanning out to ${members.length} members.`,
-    );
-
-    for (const memberId of members) {
-      if (memberId === senderId) continue;
-
-      try {
-        // Find member's devices for fan-out
-        const devices = await this.federationService.getActiveDevices(memberId);
-
-        for (const deviceId of devices.length > 0 ? devices : [undefined]) {
-          const envelope = await this.inboxService.queueMessage(
-            memberId,
-            {
-              id: uuidv4(),
-              t: Date.now(),
-              v: payload.v || 2,
-              n: payload.nonce,
-              c: payload.ciphertext,
-              retention: "PERSISTENT",
-              group_id: payload.group_id,
-            },
-            senderId,
-            deviceId as string,
-          );
-
-          const targetRoom = deviceId
-            ? `inbox:${memberId}:${deviceId}`
-            : `inbox:${memberId}`;
-
-          this.server.to(targetRoom).emit("message.receive", {
-            ...envelope,
-            group_id: payload.group_id,
-          });
-        }
-      } catch (e: any) {
-        this.logger.error(
-          `Failed to deliver group message to ${memberId}: ${e.message}`,
-        );
-      }
-    }
-
-    return { status: "ok" };
-  }
-
   @SubscribeMessage("identity.devices")
   async handleGetDevices(client: Socket, payload: { public_id: string }) {
     const devices = await this.federationService.getActiveDevices(
@@ -330,21 +252,6 @@ export class RelayGateway implements OnGatewayConnection, OnGatewayDisconnect, O
     );
     await this.inboxService.deleteMessages(publicId, payload.message_ids);
     return { status: "success" };
-  }
-
-  @SubscribeMessage("media.viewed")
-  async handleMediaViewed(client: Socket, payload: { media_id: string }) {
-    const publicId = client.data.publicId;
-    if (!publicId) return;
-
-    await this.mediaService.deleteMedia(payload.media_id);
-    this.logger.log(
-      `Media ${payload.media_id} deleted after view by ${publicId}`,
-    );
-    await this.auditService.log("media_viewed", {
-      media_id: payload.media_id,
-      viewer: publicId,
-    });
   }
 
   @SubscribeMessage("message.send")
