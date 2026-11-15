@@ -18,7 +18,7 @@ GhostRoom operates on a **zero-knowledge store-and-forward relay model** (simila
 
 * **Identity Without Accounts**: Cryptographic identities are derived deterministically from a 24-word BIP39 mnemonic seed using Libsodium (Ed25519 for signing, X25519 for key exchange).
 * **Device-First Storage**: Decrypted message history and media exist strictly on the user's local device (Hive/SQLite).
-* **Transient Relays**: The server holds **zero permanent message logs**. Messages are held in PostgreSQL/Redis only while in transit (`PENDING`). Once delivered and acknowledged (`message.ack`), they are **immediately and permanently purged** from the server.
+* **Transient Relays**: The server holds **zero permanent message logs**. Messages are held in PostgreSQL only while in transit (`PENDING`). Once delivered and acknowledged (`message.ack`), they are **immediately and permanently purged** from the server.
 * **Blind Media Storage**: Images, voice notes, and videos are encrypted client-side with random symmetric keys before upload to S3/R2 storage. The relay is blind to media contents and thumbnails.
 
 ---
@@ -40,8 +40,7 @@ GhostRoom operates on a **zero-knowledge store-and-forward relay model** (simila
 
 * **Client**: Flutter (Dart 3.x), Riverpod, Libsodium (`sodium_libs`), Hive
 * **Relay**: NestJS (TypeScript), Socket.IO, TypeORM, Prometheus Metrics
-* **Database**: PostgreSQL 15/16 (Transient Inboxes & Deliveries)
-* **In-Memory Cache**: Redis 7 (Rate Limiting, Ephemeral Auth Challenges, Quotas)
+* **Database**: PostgreSQL 15/16 (Transient Inboxes & Store-and-Forward Deliveries)
 * **Object Storage**: Cloudflare R2 / AWS S3 / MinIO (Encrypted Media)
 
 ---

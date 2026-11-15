@@ -1,6 +1,6 @@
 # GhostRoom Relay Deployment Guide
 
-This guide covers deploying the GhostRoom relay backend using Docker Compose, PostgreSQL, Redis, and Cloudflare R2 (or self-hosted MinIO).
+This guide covers deploying the GhostRoom relay backend using Docker Compose, PostgreSQL, and Cloudflare R2 (or self-hosted MinIO).
 
 ---
 
@@ -39,11 +39,10 @@ docker compose up -d
 | `NODE_ENV` | `development` | Set to `production` in live environments. |
 | `RELAY_URL` | `http://localhost:4000` | Publicly reachable HTTP/WS base URL of this relay. |
 
-### Database & Cache
+### Database
 | Variable | Example | Description |
 | :--- | :--- | :--- |
 | `DATABASE_URL` | `postgresql://user:pass@postgres:5432/ghostroom` | PostgreSQL connection string. |
-| `REDIS_URL` | `redis://localhost:6379` | Redis connection URL for rate-limiting, nonces, and fast caching. |
 
 ### Object Storage (Cloudflare R2 / S3 / MinIO)
 | Variable | Description |
@@ -75,4 +74,4 @@ docker compose up -d
    NODE_ENV=production
    ```
 4. **Health Check**:
-   Verify system health via `GET /health`. It validates database connectivity, Redis ping, storage bucket access, and FCM status.
+   Verify system health via `GET /health`. It validates database connectivity, storage bucket access, cryptographic relay integrity, and FCM status.

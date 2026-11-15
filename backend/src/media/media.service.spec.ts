@@ -12,21 +12,10 @@ jest.mock("@aws-sdk/client-s3");
 
 describe("MediaService", () => {
   let service: MediaService;
-  let mockRedis: any;
   let mockMediaRepo: any;
   let mockAuditService: any;
 
   beforeEach(async () => {
-    mockRedis = {
-      pipeline: jest.fn().mockReturnValue({
-        incrby: jest.fn().mockReturnThis(),
-        incr: jest.fn().mockReturnThis(),
-        expire: jest.fn().mockReturnThis(),
-        exec: (jest.fn() as any).mockResolvedValue([]),
-      }),
-      get: (jest.fn() as any).mockResolvedValue(null),
-    };
-
     mockMediaRepo = {
       create: jest.fn().mockImplementation((entity) => entity),
       save: (jest.fn() as any).mockResolvedValue({}),
@@ -53,10 +42,6 @@ describe("MediaService", () => {
               return null;
             }),
           },
-        },
-        {
-          provide: "REDIS_CLIENT",
-          useValue: mockRedis,
         },
         {
           provide: getRepositoryToken(MediaEntity),

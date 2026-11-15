@@ -1,6 +1,5 @@
-import { Injectable, Inject, Logger, OnModuleInit } from "@nestjs/common";
+import { Injectable, Logger, OnModuleInit } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import Redis from "ioredis";
 import * as nacl from "tweetnacl";
 import bs58 from "bs58";
 import { blake2b } from "blakejs";
@@ -14,10 +13,20 @@ export class FederationService implements OnModuleInit {
   private relayKeyPair: nacl.SignKeyPair;
   private relayPublicId: string;
 
-  constructor(
-    private readonly configService: ConfigService,
-    @Inject("REDIS_CLIENT") private readonly redis: Redis,
-  ) {}
+  private readonly homeRelays = new Map<
+    string,
+    { relayUrl: string; expiresAt: number }
+  >();
+  private readonly devices = new Map<
+    string,
+    { deviceIds: Set<string>; expiresAt: number }
+  >();
+  private readonly deviceRelays = new Map<
+    string,
+    { relayUrl: string; expiresAt: number }
+  >();
+
+  constructor(private readonly configService: ConfigService) {}
 
   async onModuleInit() {
     const federationEnabled = this.configService.get<string>("FEDERATION_ENABLED") === "true";
@@ -91,22 +100,18 @@ export class FederationService implements OnModuleInit {
     relayUrl: string,
     deviceId: string,
   ): Promise<void> {
-    const registryKey = `registry:home:${publicId}`;
-    const deviceKey = `registry:devices:${publicId}`;
+    const expiresAt = Date.now() + 7 * 86400 * 1000;
+    this.homeRelays.set(publicId, { relayUrl, expiresAt });
 
-    // Store home relay for the public ID (primary lookup)
-    await this.redis.setex(registryKey, 86400 * 7, relayUrl);
+    const existingDevices = this.devices.get(publicId);
+    if (!existingDevices || Date.now() > existingDevices.expiresAt) {
+      this.devices.set(publicId, { deviceIds: new Set([deviceId]), expiresAt });
+    } else {
+      existingDevices.deviceIds.add(deviceId);
+      existingDevices.expiresAt = expiresAt;
+    }
 
-    // Track active devices for fan-out
-    await this.redis.sadd(deviceKey, deviceId);
-    await this.redis.expire(deviceKey, 86400 * 7);
-
-    // Map device to its specific home relay if needed (for roaming devices)
-    await this.redis.setex(
-      `registry:device_relay:${publicId}:${deviceId}`,
-      86400 * 7,
-      relayUrl,
-    );
+    this.deviceRelays.set(`${publicId}:${deviceId}`, { relayUrl, expiresAt });
 
     this.logger.debug(
       `Registered device ${deviceId} for ${publicId} on ${relayUrl}`,
@@ -114,22 +119,37 @@ export class FederationService implements OnModuleInit {
   }
 
   async getHomeRelay(publicId: string): Promise<string | null> {
-    const key = `registry:home:${publicId}`;
-    return await this.redis.get(key);
+    const entry = this.homeRelays.get(publicId);
+    if (!entry) return null;
+    if (Date.now() > entry.expiresAt) {
+      this.homeRelays.delete(publicId);
+      return null;
+    }
+    return entry.relayUrl;
   }
 
   async getActiveDevices(publicId: string): Promise<string[]> {
-    const key = `registry:devices:${publicId}`;
-    return await this.redis.smembers(key);
+    const entry = this.devices.get(publicId);
+    if (!entry) return [];
+    if (Date.now() > entry.expiresAt) {
+      this.devices.delete(publicId);
+      return [];
+    }
+    return Array.from(entry.deviceIds);
   }
 
   async getDeviceRelay(
     publicId: string,
     deviceId: string,
   ): Promise<string | null> {
-    return await this.redis.get(
-      `registry:device_relay:${publicId}:${deviceId}`,
-    );
+    const key = `${publicId}:${deviceId}`;
+    const entry = this.deviceRelays.get(key);
+    if (!entry) return null;
+    if (Date.now() > entry.expiresAt) {
+      this.deviceRelays.delete(key);
+      return null;
+    }
+    return entry.relayUrl;
   }
 
   // Signing for S2S

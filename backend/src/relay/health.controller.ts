@@ -1,6 +1,5 @@
-import { Controller, Get, Post, Body, Inject, HttpException, HttpStatus } from "@nestjs/common";
+import { Controller, Get, Post, Body, HttpException, HttpStatus } from "@nestjs/common";
 import { MetricsService } from "./metrics.service";
-import Redis from "ioredis";
 import { InjectDataSource } from "@nestjs/typeorm";
 import { DataSource } from "typeorm";
 import { MediaService } from "../media/media.service";
@@ -20,14 +19,12 @@ export class HealthController {
     private readonly relayGateway: RelayGateway,
     private readonly firebaseService: FirebaseService,
     private readonly cryptoUtils: CryptoUtils,
-    @Inject("REDIS_CLIENT") private readonly redis: Redis,
     @InjectDataSource() private readonly dataSource: DataSource,
   ) {}
 
   @Get("health")
   async getHealth() {
     let databaseStatus = "ok";
-    let redisStatus = "ok";
     let fcmStatus = "ok";
     let storageStatus = "ok";
     let relayStatus = "ok";
@@ -38,13 +35,6 @@ export class HealthController {
       await this.dataSource.query("SELECT 1");
     } catch {
       databaseStatus = "error";
-      overallStatus = "degraded";
-    }
-
-    try {
-      await this.redis.ping();
-    } catch {
-      redisStatus = "error";
       overallStatus = "degraded";
     }
 
@@ -94,7 +84,6 @@ export class HealthController {
     const response = {
       status: overallStatus,
       postgres: databaseStatus,
-      redis: redisStatus,
       fcm: fcmStatus,
       storage: storageStatus,
       relay: relayStatus,

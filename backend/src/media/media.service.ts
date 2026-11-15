@@ -10,7 +10,6 @@ import {
   HeadObjectCommand,
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
-import Redis from "ioredis";
 import { v4 as uuidv4 } from "uuid";
 import { MediaEntity } from "./entities/media.entity";
 import { AuditService } from "../audit/audit.service";
@@ -20,13 +19,16 @@ export class MediaService {
   private readonly s3Client: S3Client;
   private readonly bucketName: string;
   private readonly logger = new Logger(MediaService.name);
+  private readonly quotas = new Map<
+    string,
+    { bytes: number; count: number; resetAt: number }
+  >();
 
   private readonly BYTES_LIMIT: number;
   private readonly COUNT_LIMIT: number;
 
   constructor(
     private readonly configService: ConfigService,
-    @Inject("REDIS_CLIENT") private readonly redis: Redis,
     @InjectRepository(MediaEntity)
     private readonly mediaRepo: Repository<MediaEntity>,
     private readonly auditService: AuditService,
@@ -92,19 +94,17 @@ export class MediaService {
   }
 
   async checkQuotas(ownerId: string, size: number) {
-    const bytesKey = `quota:bytes:${ownerId}`;
-    const countKey = `quota:count:${ownerId}`;
+    const now = Date.now();
+    const current = this.quotas.get(ownerId);
+    if (!current || now > current.resetAt) {
+      return;
+    }
 
-    const [currentBytes, currentCount] = await Promise.all([
-      this.redis.get(bytesKey),
-      this.redis.get(countKey),
-    ]);
-
-    if (parseInt(currentCount || "0") >= this.COUNT_LIMIT) {
+    if (current.count >= this.COUNT_LIMIT) {
       throw new Error("Daily upload count limit reached");
     }
 
-    if (parseInt(currentBytes || "0") + size > this.BYTES_LIMIT) {
+    if (current.bytes + size > this.BYTES_LIMIT) {
       throw new Error("Daily upload size limit reached");
     }
   }
@@ -194,16 +194,19 @@ export class MediaService {
       throw e;
     }
 
-    // Increment Quotas in Redis
-    const bytesKey = `quota:bytes:${ownerId}`;
-    const countKey = `quota:count:${ownerId}`;
-
-    const pipeline = this.redis.pipeline();
-    pipeline.incrby(bytesKey, size);
-    pipeline.incr(countKey);
-    pipeline.expire(bytesKey, 86400); // 24h
-    pipeline.expire(countKey, 86400);
-    await pipeline.exec();
+    // Increment Quotas in Memory
+    const now = Date.now();
+    const current = this.quotas.get(ownerId);
+    if (!current || now > current.resetAt) {
+      this.quotas.set(ownerId, {
+        bytes: size,
+        count: 1,
+        resetAt: now + 86400 * 1000,
+      });
+    } else {
+      current.bytes += size;
+      current.count += 1;
+    }
 
     return {
       mediaId,

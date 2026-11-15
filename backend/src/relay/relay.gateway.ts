@@ -14,7 +14,6 @@ import { CryptoUtils } from "../inbox/crypto-utils.service";
 import { FederationService } from "../federation/federation.service";
 import { Inject, Logger, OnModuleInit } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import Redis from "ioredis";
 import { randomBytes } from "crypto";
 import { v4 as uuidv4 } from "uuid";
 import { io, Socket as ClientSocket } from "socket.io-client";
@@ -33,6 +32,10 @@ export class RelayGateway implements OnGatewayConnection, OnGatewayDisconnect, O
   private readonly RATE_LIMIT_HOUR: number;
   private readonly RATE_LIMIT_DAY: number;
   private readonly remoteRelays = new Map<string, ClientSocket>();
+  private readonly rateLimits = new Map<
+    string,
+    { hourlyCount: number; dailyCount: number; hourlyReset: number; dailyReset: number }
+  >();
 
   constructor(
     private readonly inboxService: InboxService,
@@ -42,7 +45,6 @@ export class RelayGateway implements OnGatewayConnection, OnGatewayDisconnect, O
     private readonly cryptoUtils: CryptoUtils,
     private readonly configService: ConfigService,
     private readonly federationService: FederationService,
-    @Inject("REDIS_CLIENT") private readonly redis: Redis,
   ) {
     this.RATE_LIMIT_HOUR = parseInt(
       this.configService.get<string>("RATE_LIMIT_HOUR") || "50",
@@ -50,6 +52,41 @@ export class RelayGateway implements OnGatewayConnection, OnGatewayDisconnect, O
     this.RATE_LIMIT_DAY = parseInt(
       this.configService.get<string>("RATE_LIMIT_DAY") || "500",
     );
+  }
+
+  private checkAndIncrementRateLimit(senderPublicId: string): boolean {
+    const now = Date.now();
+    let record = this.rateLimits.get(senderPublicId);
+
+    if (!record) {
+      record = {
+        hourlyCount: 0,
+        dailyCount: 0,
+        hourlyReset: now + 3600 * 1000,
+        dailyReset: now + 86400 * 1000,
+      };
+      this.rateLimits.set(senderPublicId, record);
+    }
+
+    if (now > record.hourlyReset) {
+      record.hourlyCount = 0;
+      record.hourlyReset = now + 3600 * 1000;
+    }
+    if (now > record.dailyReset) {
+      record.dailyCount = 0;
+      record.dailyReset = now + 86400 * 1000;
+    }
+
+    if (
+      record.hourlyCount >= this.RATE_LIMIT_HOUR ||
+      record.dailyCount >= this.RATE_LIMIT_DAY
+    ) {
+      return false;
+    }
+
+    record.hourlyCount++;
+    record.dailyCount++;
+    return true;
   }
 
   onModuleInit() {
@@ -297,19 +334,8 @@ export class RelayGateway implements OnGatewayConnection, OnGatewayDisconnect, O
       };
     }
 
-    // Rate Limiting (Redis)
-    const hourlyKey = `rate:msg:hr:${senderPublicId}`;
-    const dailyKey = `rate:msg:day:${senderPublicId}`;
-
-    const [hourlyCount, dailyCount] = await Promise.all([
-      this.redis.get(hourlyKey),
-      this.redis.get(dailyKey),
-    ]);
-
-    if (
-      parseInt(hourlyCount || "0") >= this.RATE_LIMIT_HOUR ||
-      parseInt(dailyCount || "0") >= this.RATE_LIMIT_DAY
-    ) {
+    // Rate Limiting (In-Memory Atomic Sliding Windows)
+    if (!this.checkAndIncrementRateLimit(senderPublicId)) {
       client.emit("error", { message: "Rate limit exceeded" });
       await this.auditService.log("rate_limit_exceeded", {
         public_id: senderPublicId,
@@ -317,13 +343,6 @@ export class RelayGateway implements OnGatewayConnection, OnGatewayDisconnect, O
       this.metricsService.rateLimitHits.inc();
       return { status: "error", error: "Rate limit exceeded" };
     }
-
-    const pipeline = this.redis.pipeline();
-    pipeline.incr(hourlyKey);
-    pipeline.expire(hourlyKey, 3600);
-    pipeline.incr(dailyKey);
-    pipeline.expire(dailyKey, 86400);
-    await pipeline.exec();
 
     this.logger.log(
       `Direct message to ${payload.target_id} from ${senderPublicId}`,

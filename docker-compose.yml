@@ -11,7 +11,6 @@ services:
       - "4000:4000"
     environment:
       - NODE_ENV=${NODE_ENV:-development}
-      - REDIS_URL=${REDIS_URL:-redis://redis:6379}
       - DATABASE_URL=${DATABASE_URL:-postgresql://postgres:postgres@postgres:5432/ghostroom}
       - POSTGRES_HOST=${POSTGRES_HOST:-postgres}
       - POSTGRES_PORT=${POSTGRES_PORT:-5432}
@@ -26,17 +25,8 @@ services:
       - R2_PUBLIC_ENDPOINT=${R2_PUBLIC_ENDPOINT:-http://localhost:9000}
     command: npm run start:dev
     depends_on:
-      - redis
       - postgres
       - minio
-    networks:
-      - ghostroom_net
-
-  redis:
-    image: redis:7-alpine
-    ports:
-      - "6379:6379"
-    command: [ "redis-server", "--appendonly", "yes", "--notify-keyspace-events", "Ex" ]
     networks:
       - ghostroom_net
 

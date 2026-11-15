@@ -11,29 +11,10 @@ import { describe, expect, it, jest, beforeEach } from "@jest/globals";
 
 describe("InboxService", () => {
   let service: InboxService;
-  let mockRedis: any;
   let mockMessageRepo: any;
   let mockDeliveryRepo: any;
 
   beforeEach(async () => {
-    mockRedis = {
-      pipeline: jest.fn().mockReturnValue({
-        setex: jest.fn().mockReturnThis(),
-        zadd: jest.fn().mockReturnThis(),
-        zremrangebyrank: jest.fn().mockReturnThis(),
-        expire: jest.fn().mockReturnThis(),
-        zrem: jest.fn().mockReturnThis(),
-        del: jest.fn().mockReturnThis(),
-        exec: (jest.fn() as any).mockResolvedValue([]),
-      }),
-      zrangebyscore: (jest.fn() as any).mockResolvedValue([]),
-      mget: (jest.fn() as any).mockResolvedValue([]),
-      zrem: (jest.fn() as any).mockResolvedValue(0),
-      setex: (jest.fn() as any).mockResolvedValue("OK"),
-      get: (jest.fn() as any).mockResolvedValue(null),
-      del: (jest.fn() as any).mockResolvedValue(1),
-    };
-
     mockMessageRepo = {
       create: jest.fn().mockImplementation((entity) => entity),
       save: (jest.fn() as any).mockResolvedValue({}),
@@ -78,10 +59,6 @@ describe("InboxService", () => {
           },
         },
         {
-          provide: "REDIS_CLIENT",
-          useValue: mockRedis,
-        },
-        {
           provide: getRepositoryToken(MessageEntity),
           useValue: mockMessageRepo,
         },
@@ -118,7 +95,7 @@ describe("InboxService", () => {
   });
 
   describe("queueMessage", () => {
-    it("should store message in Postgres and Redis", async () => {
+    it("should store message in Postgres", async () => {
       mockMessageRepo.findOne.mockResolvedValue(null);
       const publicId = "test-id";
       const payload = { id: "msg-id", n: "nonce", c: "ciphertext" };
@@ -128,7 +105,6 @@ describe("InboxService", () => {
       expect(envelope).toBeDefined();
       expect(mockMessageRepo.create).toHaveBeenCalled();
       expect(mockMessageRepo.save).toHaveBeenCalled();
-      expect(mockRedis.pipeline).toHaveBeenCalled();
     });
   });
 

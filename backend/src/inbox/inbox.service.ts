@@ -4,7 +4,6 @@ import { Repository, MoreThan, IsNull, LessThan, In } from "typeorm";
 import { Cron, CronExpression } from "@nestjs/schedule";
 import { ConfigService } from "@nestjs/config";
 import * as crypto from "crypto";
-import Redis from "ioredis";
 import { v4 as uuidv4 } from "uuid";
 import { MessageEntity } from "./entities/message.entity";
 import { DeliveryEntity } from "./entities/delivery.entity";
@@ -27,7 +26,7 @@ export interface MessageEnvelope {
 @Injectable()
 export class InboxService implements OnModuleInit {
   private readonly logger = new Logger(InboxService.name);
-  private readonly INBOX_TTL = 14 * 24 * 60 * 60; // 14 days for cache
+  private readonly challenges = new Map<string, { nonce: string; expiresAt: number }>();
 
   private readonly INBOX_MAX_MESSAGES: number;
   private readonly PAIR_PENDING_MAX: number;
@@ -45,7 +44,6 @@ export class InboxService implements OnModuleInit {
   constructor(
     private readonly configService: ConfigService,
     private readonly firebaseService: FirebaseService,
-    @Inject("REDIS_CLIENT") private readonly redis: Redis,
     @InjectRepository(MessageEntity)
     private readonly messageRepo: Repository<MessageEntity>,
     @InjectRepository(DeliveryEntity)
@@ -154,19 +152,6 @@ export class InboxService implements OnModuleInit {
         );
       }
       
-      // Still cache in Redis (in case client disconnected and needs fast path)
-      const inboxKey = recipientDeviceId
-        ? `inbox:${publicId}:${recipientDeviceId}`
-        : `inbox:${publicId}`;
-      const msgKey = `msg:${messageId}`;
-
-      const pipeline = this.redis.pipeline();
-      pipeline.setex(msgKey, this.INBOX_TTL, JSON.stringify(envelope));
-      pipeline.zadd(inboxKey, timestamp, messageId);
-      pipeline.zremrangebyrank(inboxKey, 0, -(this.INBOX_MAX_MESSAGES + 1));
-      pipeline.expire(inboxKey, this.INBOX_TTL);
-      await pipeline.exec();
-
       return envelope;
     }
 
@@ -226,19 +211,6 @@ export class InboxService implements OnModuleInit {
         throw e;
       }
     }
-
-    // Cache in Redis (Device Specific)
-    const inboxKey = recipientDeviceId
-      ? `inbox:${publicId}:${recipientDeviceId}`
-      : `inbox:${publicId}`;
-    const msgKey = `msg:${messageId}`;
-
-    const pipeline = this.redis.pipeline();
-    pipeline.setex(msgKey, this.INBOX_TTL, JSON.stringify(envelope));
-    pipeline.zadd(inboxKey, timestamp, messageId);
-    pipeline.zremrangebyrank(inboxKey, 0, -(this.INBOX_MAX_MESSAGES + 1));
-    pipeline.expire(inboxKey, this.INBOX_TTL);
-    await pipeline.exec();
 
     // Lookup recipient FCM Token and send FCM wake-up
     this.logger.log(`MESSAGE_RECEIVED recipient_identity=${publicId}`);
@@ -376,17 +348,6 @@ export class InboxService implements OnModuleInit {
       this.logger.error(`Failed to ACK message in Postgres: ${e?.message}`);
     }
 
-    // Remove from Redis cache
-    const inboxKey = deviceId
-      ? `inbox:${publicId}:${deviceId}`
-      : `inbox:${publicId}`;
-    const msgKey = `msg:${messageId}`;
-
-    const pipeline = this.redis.pipeline();
-    pipeline.zrem(inboxKey, messageId);
-    pipeline.del(msgKey);
-    await pipeline.exec();
-
     return senderId ? { senderId } : null;
   }
 
@@ -416,17 +377,26 @@ export class InboxService implements OnModuleInit {
       return null;
     }
   }
-  // Authentication Helpers
+  // Authentication Helpers (In-Memory Challenge Store)
   async storeChallenge(socketId: string, nonce: string): Promise<void> {
-    await this.redis.setex(`challenge:${socketId}`, 60, nonce);
+    this.challenges.set(socketId, {
+      nonce,
+      expiresAt: Date.now() + 60000, // 60 seconds TTL
+    });
   }
 
   async getChallenge(socketId: string): Promise<string | null> {
-    return await this.redis.get(`challenge:${socketId}`);
+    const entry = this.challenges.get(socketId);
+    if (!entry) return null;
+    if (Date.now() > entry.expiresAt) {
+      this.challenges.delete(socketId);
+      return null;
+    }
+    return entry.nonce;
   }
 
   async deleteChallenge(socketId: string): Promise<void> {
-    await this.redis.del(`challenge:${socketId}`);
+    this.challenges.delete(socketId);
   }
 
   @Cron(CronExpression.EVERY_HOUR)
@@ -456,6 +426,14 @@ export class InboxService implements OnModuleInit {
           this.logger.log(`Pruned ${result.affected} expired messages.`);
         }
       }
+
+      // Cleanup expired challenge nonces
+      const nowMs = Date.now();
+      for (const [key, value] of this.challenges.entries()) {
+        if (nowMs > value.expiresAt) {
+          this.challenges.delete(key);
+        }
+      }
     } catch (e: any) {
       this.logger.error(`Failed to prune expired messages: ${e?.message}`);
     }
@@ -483,12 +461,6 @@ export class InboxService implements OnModuleInit {
 
           await this.messageRepo.delete(msg.id);
           await this.deliveryRepo.delete({ message_id: msg.id });
-
-          // Also remove from Redis cache for recipient
-          const pipeline = this.redis.pipeline();
-          pipeline.zrem(`inbox:${msg.recipient_id}`, msg.id);
-          pipeline.del(`msg:${msg.id}`);
-          await pipeline.exec();
 
           this.logger.log(
             `GHOST_LOG: Message ${msg.id} deleted by recipient ${publicId}`,

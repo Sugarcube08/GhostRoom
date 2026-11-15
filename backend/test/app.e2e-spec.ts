@@ -19,42 +19,13 @@ import { MediaEntity } from "../src/media/entities/media.entity";
 import { MediaService } from "../src/media/media.service";
 import { FirebaseService } from "../src/inbox/firebase.service";
 
-describe("RelayGateway (Dual-Mode E2E)", () => {
+describe("RelayGateway E2E", () => {
   let app: INestApplication;
   let clientV1: Socket;
   let clientV2: Socket;
-  let mockRedis: any;
   let port: number;
 
   beforeAll(async () => {
-    mockRedis = {
-      pipeline: jest.fn().mockReturnValue({
-        setex: jest.fn().mockReturnThis(),
-        zadd: jest.fn().mockReturnThis(),
-        zremrangebyrank: jest.fn().mockReturnThis(),
-        expire: jest.fn().mockReturnThis(),
-        zrem: jest.fn().mockReturnThis(),
-        del: jest.fn().mockReturnThis(),
-        exec: (jest.fn() as any).mockResolvedValue([]),
-      }),
-      multi: jest.fn().mockReturnValue({
-        lrange: jest.fn().mockReturnThis(),
-        del: jest.fn().mockReturnThis(),
-        exec: (jest.fn() as any).mockResolvedValue([[], []]),
-      }),
-      zrangebyscore: (jest.fn() as any).mockResolvedValue([]),
-      mget: (jest.fn() as any).mockResolvedValue([]),
-      zrem: (jest.fn() as any).mockResolvedValue(0),
-      setex: (jest.fn() as any).mockResolvedValue("OK"),
-      get: (jest.fn() as any).mockResolvedValue(null),
-      del: (jest.fn() as any).mockResolvedValue(1),
-      lpush: (jest.fn() as any).mockResolvedValue(1),
-      ltrim: (jest.fn() as any).mockResolvedValue("OK"),
-      expire: (jest.fn() as any).mockResolvedValue(1),
-      on: jest.fn(),
-      subscribe: jest.fn(),
-    };
-
     const mockRepo = {
       create: (jest.fn() as any).mockImplementation((e: any) => e),
       save: (jest.fn() as any).mockResolvedValue({}),
@@ -72,8 +43,6 @@ describe("RelayGateway (Dual-Mode E2E)", () => {
       const moduleFixture: TestingModule = await Test.createTestingModule({
         imports: [AppModule],
       })
-        .overrideProvider("REDIS_CLIENT")
-        .useValue(mockRedis)
         .overrideProvider(getRepositoryToken(MessageEntity))
         .useValue(mockRepo)
         .overrideProvider(getRepositoryToken(DeliveryEntity))

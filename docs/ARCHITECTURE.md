@@ -28,25 +28,24 @@ GhostRoom is a sovereign, end-to-end encrypted (E2EE), zero-knowledge messaging 
 │                   GhostRoom Relay                      │
 │                 (NestJS / TypeScript)                  │
 │  - Gateway: Real-Time WebSocket Connection & Routing   │
-│  - Anti-Replay: Ephemeral Nonce Challenge Handshake    │
+│  - Anti-Replay: Ephemeral In-Memory Nonce Challenges    │
 │  - In-Flight Mailbox: Store-and-Forward Queue          │
-│  - Rate Limiter: Per-Identity Sliding Window Counters  │
+│  - Rate Limiter: Per-Identity In-Memory Sliding Window │
 │  - FCM Push Dispatcher: Instant Background Wakeups     │
-└──────────────┬───────────────────────────┬─────────────┘
-               │                           │
-     SQL Query │                           │ Key-Value Fast Path
-               ▼                           ▼
-┌────────────────────────────┐  ┌────────────────────────┐
-│     PostgreSQL 15/16       │  │      Redis 7 / KV      │
-│     (System of Record)     │  │  (Ephemeral In-Memory) │
-│ - `messages` (In-flight)   │  │ - Auth Nonce Challenges│
-│ - `message_delivery`       │  │ - Rate Limit Counters  │
-│ - `devices` (FCM tokens)   │  │ - Daily Upload Quotas  │
-│ - `media_metadata`         │  │ - Fast Inbox ZSET Cache│
-└────────────────────────────┘  └────────────────────────┘
+└──────────────┬─────────────────────────────────────────┘
                │
-               │ S3 / Presigned URLs
+     SQL Query │
                ▼
+┌────────────────────────────────────────────────────────┐
+│     PostgreSQL 15/16 (Single Persistence Store)        │
+│  - `messages` (In-flight transient payloads)           │
+│  - `message_delivery` (Per-device delivery status)     │
+│  - `devices` (FCM tokens & active registrations)       │
+│  - `media_metadata` (Reference counting & cleanup)     │
+└──────────────────────────────┬─────────────────────────┘
+                               │
+            S3 / Presigned URLs│
+                               ▼
 ┌────────────────────────────────────────────────────────┐
 │           Cloudflare R2 / MinIO (Blob Store)           │
 │  - Encrypted Media Payloads & Blurred Thumbnails       │
@@ -113,4 +112,4 @@ sequenceDiagram
 * **Public ID (`public_id`)**: Base58 encoded Blake2b-160 digest of the Ed25519 public key.
 * **Message Encryption**: Hybrid X25519 Key Exchange + XChaCha20-Poly1305 symmetric authenticated encryption.
 * **Anti-Replay**: WebSockets require cryptographic signature verification against a random 32-byte nonce (`identity.prove`) with a 60-second TTL.
-* **Anti-Abuse**: Per-identity hourly and daily sliding-window rate limits enforced in-memory / Redis.
+* **Anti-Abuse**: Per-identity hourly and daily sliding-window rate limits enforced in-memory.

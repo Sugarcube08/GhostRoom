@@ -92,7 +92,6 @@ When the recipient's client receives a message, decrypts it, and saves it into l
    * **Hard deletes** the message from `messages`.
    * **Hard deletes** deliveries from `message_delivery`.
    * Decrements attachment media refcount (if `media_id` is present).
-   * Evicts message from Redis inbox cache.
 3. Emits `message.status_update` to the original sender's inbox:
    ```json
    {

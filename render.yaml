@@ -5,14 +5,4 @@ services:
     dockerContext: .
     dockerfilePath: backend/Dockerfile
     plan: free
-    envVars:
-      - key: REDIS_URL
-        fromService:
-          type: redis
-          name: ghostroom-redis
-          property: connectionString
 
-  - type: redis
-    name: ghostroom-redis
-    plan: free
-    ipAllowList: [] # Only allow internal connections

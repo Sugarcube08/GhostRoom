@@ -109,4 +109,4 @@ sequenceDiagram
 | **Voice Notes** | 10 MB | 100 MB | 50 files |
 | **Attachments** | 50 MB | 100 MB | 50 files |
 
-Limits are tracked atomically per public ID in Redis with 24-hour TTL expiration.
+Limits are tracked atomically per public ID in-memory with 24-hour TTL expiration.

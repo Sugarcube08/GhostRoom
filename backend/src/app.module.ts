@@ -1,7 +1,6 @@
 import { Module } from "@nestjs/common";
 import { ConfigModule, ConfigService } from "@nestjs/config";
 import { TypeOrmModule } from "@nestjs/typeorm";
-import { RedisModule } from "./redis/redis.module";
 import { RelayModule } from "./relay/relay.module";
 import { InboxModule } from "./inbox/inbox.module";
 import { MediaModule } from "./media/media.module";
@@ -42,7 +41,6 @@ import { ThrottlerModule } from "@nestjs/throttler";
         limit: 10,
       },
     ]),
-    RedisModule,
     RelayModule,
     InboxModule,
     MediaModule,
