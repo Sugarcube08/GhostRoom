@@ -83,6 +83,43 @@ jobs:
           path: artifacts
           merge-multiple: true
 
+      - name: Generate Checksums & version.json
+        shell: bash
+        run: |
+          cd artifacts
+          rm -f SHA256SUMS version.json
+          sha256sum ghostroom-* > SHA256SUMS || true
+          TAG="${{ github.ref_name }}"
+          VERSION="${TAG#v}"
+          cat <<EOF > version.json
+          {
+            "version": "${VERSION}",
+            "release_date": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "release_url": "https://github.com/Sugarcube08/GhostRoom/releases/tag/${TAG}",
+            "changelog": "GhostRoom ${TAG}: Automated release build with verified SHA-256 integrity.",
+            "platforms": {
+              "android": {
+                "url": "https://github.com/Sugarcube08/GhostRoom/releases/download/${TAG}/ghostroom-android.apk",
+                "filename": "ghostroom-android.apk",
+                "sha256": "$(sha256sum ghostroom-android.apk 2>/dev/null | cut -d' ' -f1 || echo '')",
+                "size_bytes": $(wc -c < ghostroom-android.apk 2>/dev/null || echo 0)
+              },
+              "linux": {
+                "url": "https://github.com/Sugarcube08/GhostRoom/releases/download/${TAG}/ghostroom-linux-x86_64.tar.gz",
+                "filename": "ghostroom-linux-x86_64.tar.gz",
+                "sha256": "$(sha256sum ghostroom-linux-x86_64.tar.gz 2>/dev/null | cut -d' ' -f1 || echo '')",
+                "size_bytes": $(wc -c < ghostroom-linux-x86_64.tar.gz 2>/dev/null || echo 0)
+              },
+              "web": {
+                "url": "https://github.com/Sugarcube08/GhostRoom/releases/download/${TAG}/ghostroom-web.zip",
+                "filename": "ghostroom-web.zip",
+                "sha256": "$(sha256sum ghostroom-web.zip 2>/dev/null | cut -d' ' -f1 || echo '')",
+                "size_bytes": $(wc -c < ghostroom-web.zip 2>/dev/null || echo 0)
+              }
+            }
+          }
+          EOF
+
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:

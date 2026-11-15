@@ -69,3 +69,6 @@ dist/
 appimagetool
 appimagetool*
 .antigravitycli
+
+*.txt
+release/

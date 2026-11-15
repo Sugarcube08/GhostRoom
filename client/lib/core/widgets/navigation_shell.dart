@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:url_launcher/url_launcher.dart';
 import '../../features/chat/chat_screens.dart';
 import '../../features/settings/identity_vault_screen.dart';
 import '../../features/contacts/contact_list_screen.dart';
@@ -8,6 +7,7 @@ import '../../design_system/colors.dart';
 import '../../design_system/components/components.dart';
 import '../providers.dart';
 import '../network/update_service.dart';
+import 'update_dialog.dart';
 import '../../features/chat/conversation_screen.dart';
 import '../../features/chat/requests_screen.dart';
 import '../../features/chat/conversation_service.dart';
@@ -143,74 +143,11 @@ class _NavigationShellState extends ConsumerState<NavigationShell> {
   }
 
   void _showUpdateDialog(UpdateManifest manifest) {
-    showDialog(
-      context: context,
-      barrierDismissible: true,
-      builder: (context) => AlertDialog(
-        backgroundColor: AppColors.of(context).backgroundSecondary,
-        icon: const GhostRoomMark(size: 36),
-        title: const Text('UPDATE AVAILABLE', style: TextStyle(letterSpacing: 2, fontWeight: FontWeight.bold)),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('A new version of GhostRoom (${manifest.version}) is ready.'),
-            const SizedBox(height: 16),
-            const Text('Download the latest release from GitHub to continue with optimized performance and security.'),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () {
-              Hive.box('sync_metadata').put('dismissed_update_version', manifest.version);
-              Navigator.pop(context);
-            },
-            child: Text('LATER', style: TextStyle(color: AppColors.of(context).textMuted)),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              var version = manifest.version.trim();
-              if (!version.toLowerCase().startsWith('v')) {
-                version = 'v$version';
-              }
-              final url = 'https://github.com/Sugarcube08/GhostRoom/releases/tag/$version';
-              
-              // ignore: avoid_print
-              // ignore: avoid_print
-              try {
-                final success = await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
-                if (success) {
-                  // ignore: avoid_print
-                } else {
-                  // ignore: avoid_print
-                  // ignore: avoid_print
-                  if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Failed to open the update link automatically. Please visit github.com/Sugarcube08/GhostRoom to update.')),
-                    );
-                  }
-                }
-              } catch (e) {
-                // ignore: avoid_print
-                // ignore: avoid_print
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Could not launch browser: $e')),
-                  );
-                }
-              }
-              if (context.mounted) {
-                Navigator.pop(context);
-              }
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.of(context).accent,
-              foregroundColor: AppColors.of(context).backgroundPrimary,
-            ),
-            child: const Text('UPDATE NOW'),
-          ),
-        ],
-      ),
+    final updateService = ref.read(updateServiceProvider);
+    UpdateDialog.show(
+      context,
+      manifest: manifest,
+      updateService: updateService,
     );
   }
 

@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import '../../core/providers.dart';
+import '../../core/network/update_service.dart';
+import '../../core/widgets/update_dialog.dart';
 
 import 'relay_settings_screen.dart';
 import 'identity_actions.dart';
@@ -116,6 +118,12 @@ class _IdentityVaultScreenState extends ConsumerState<IdentityVaultScreen> with 
                                 title: 'Diagnostics',
                                 subtitle: 'System health check',
                                 onTap: () => _showDiagnostics(context, ref),
+                              ),
+                              VaultAction(
+                                icon: Icons.system_update_alt_outlined,
+                                title: 'Check for Updates',
+                                subtitle: 'Auto-update with SHA-256 integrity',
+                                onTap: () => _manualCheckForUpdates(context, ref),
                               ),
                             ],
                           ),
@@ -496,6 +504,34 @@ class _IdentityVaultScreenState extends ConsumerState<IdentityVaultScreen> with 
         ],
       ),
     );
+  }
+
+  void _manualCheckForUpdates(BuildContext context, WidgetRef ref) async {
+    final updateService = ref.read(updateServiceProvider);
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Checking for latest GhostRoom release...'),
+        duration: Duration(seconds: 2),
+      ),
+    );
+
+    final manifest = await updateService.checkForUpdate();
+    if (!context.mounted) return;
+
+    if (manifest != null) {
+      UpdateDialog.show(
+        context,
+        manifest: manifest,
+        updateService: updateService,
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('GhostRoom is up to date!'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+    }
   }
 }
 
