@@ -106,8 +106,8 @@ class RelayManager {
         relays[i] = RelayProfile(
           id: r.id,
           label: r.label,
-          websocketUrl: 'https://ghostroom-vdd6.onrender.com',
-          apiUrl: 'https://ghostroom-vdd6.onrender.com',
+          websocketUrl: 'https://ghost-room-chi.vercel.app/',
+          apiUrl: 'https://ghost-room-chi.vercel.app/',
           token: r.token,
         );
         migrated = true;
@@ -125,8 +125,8 @@ class RelayManager {
       final defaultRelay = RelayProfile(
         id: 'ghostroom-global',
         label: 'GhostRoom Global',
-        websocketUrl: 'https://ghostroom-vdd6.onrender.com',
-        apiUrl: 'https://ghostroom-vdd6.onrender.com',
+        websocketUrl: 'https://ghost-room-chi.vercel.app/',
+        apiUrl: 'https://ghost-room-chi.vercel.app/',
       );
       relays.add(defaultRelay);
     }

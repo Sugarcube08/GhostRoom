@@ -49,13 +49,15 @@ void main() {
       }
     });
 
-    test('strips leading v from version tag', () {
+    test('strips leading v from version tag and parses build_number', () {
       final json = {
         'version': 'v2.3.0',
+        'build_number': 12,
         'release_url': 'https://example.com',
       };
       final manifest = UpdateManifest.fromJson(json);
       expect(manifest.version, '2.3.0');
+      expect(manifest.buildNumber, 12);
     });
   });
 
@@ -98,6 +100,29 @@ void main() {
           reason: 'Expected ${pair[0]} NOT to be newer than ${pair[1]}',
         );
       }
+    });
+
+    test('correctly compares build numbers when semver versions match', () {
+      expect(
+        service.isNewerVersion('2.2.3', '2.2.3', remoteBuild: 5, localBuild: 4),
+        isTrue,
+      );
+      expect(
+        service.isNewerVersion('2.2.3+5', '2.2.3+4'),
+        isTrue,
+      );
+      expect(
+        service.isNewerVersion('2.2.3', '2.2.3', remoteBuild: 4, localBuild: 5),
+        isFalse,
+      );
+      expect(
+        service.isNewerVersion('2.2.3+4', '2.2.3+5'),
+        isFalse,
+      );
+      expect(
+        service.isNewerVersion('2.2.3', '2.2.3', remoteBuild: 4, localBuild: 4),
+        isFalse,
+      );
     });
   });
 

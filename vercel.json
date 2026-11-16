@@ -1,0 +1,10 @@
+{
+  "version": 2,
+  "buildCommand": "cd backend && npm run build",
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": "/api"
+    }
+  ]
+}

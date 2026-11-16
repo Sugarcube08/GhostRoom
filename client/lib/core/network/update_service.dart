@@ -44,6 +44,7 @@ class PlatformAsset {
 
 class UpdateManifest {
   final String version;
+  final int? buildNumber;
   final String releaseUrl;
   final String? changelog;
   final String? releaseDate;
@@ -51,6 +52,7 @@ class UpdateManifest {
 
   UpdateManifest({
     required this.version,
+    this.buildNumber,
     required this.releaseUrl,
     this.changelog,
     this.releaseDate,
@@ -70,9 +72,13 @@ class UpdateManifest {
 
     final rawVersion = json['version'] as String? ?? '1.0.0';
     final cleanVersion = rawVersion.trim().replaceAll(RegExp(r'^v'), '');
+    final rawBuild = json['build_number'];
+    final buildNum =
+        rawBuild is int ? rawBuild : int.tryParse(rawBuild?.toString() ?? '');
 
     return UpdateManifest(
       version: cleanVersion,
+      buildNumber: buildNum,
       releaseUrl: json['release_url'] as String? ??
           'https://github.com/Sugarcube08/GhostRoom/releases/tag/v$cleanVersion',
       changelog: json['changelog'] as String?,
@@ -150,41 +156,31 @@ class UpdateManifest {
 }
 
 class UpdateService {
-  static const String manifestPrimaryUrl =
+  static const String manifestUrl =
       'https://raw.githubusercontent.com/Sugarcube08/GhostRoom/main/version.json';
-  static const String manifestSecondaryUrl =
-      'https://raw.githubusercontent.com/Sugarcube08/GhostRoom/main/VERSION.json';
 
   /// Checks if a newer version is published in version.json
   Future<UpdateManifest?> checkForUpdate() async {
     try {
       final packageInfo = await PackageInfo.fromPlatform();
       final currentVersion = packageInfo.version;
+      final currentBuild = int.tryParse(packageInfo.buildNumber);
 
-      String? body;
-      try {
-        final res = await http
-            .get(Uri.parse(manifestPrimaryUrl))
-            .timeout(const Duration(seconds: 8));
-        if (res.statusCode == 200) {
-          body = res.body;
-        }
-      } catch (_) {}
-
-      if (body == null) {
-        final res = await http
-            .get(Uri.parse(manifestSecondaryUrl))
-            .timeout(const Duration(seconds: 8));
-        if (res.statusCode == 200) {
-          body = res.body;
-        }
+      final res = await http
+          .get(Uri.parse(manifestUrl))
+          .timeout(const Duration(seconds: 8));
+      if (res.statusCode != 200) {
+        return null;
       }
 
-      if (body == null) return null;
+      final manifest = UpdateManifest.fromJson(jsonDecode(res.body));
 
-      final manifest = UpdateManifest.fromJson(jsonDecode(body));
-
-      if (isNewerVersion(manifest.version, currentVersion)) {
+      if (isNewerVersion(
+        manifest.version,
+        currentVersion,
+        remoteBuild: manifest.buildNumber,
+        localBuild: currentBuild,
+      )) {
         return manifest;
       }
 
@@ -339,12 +335,20 @@ class UpdateService {
   }
 
   /// Compares two semver version strings and returns true if remote is newer than local
-  bool isNewerVersion(String remote, String local) {
+  bool isNewerVersion(
+    String remote,
+    String local, {
+    int? remoteBuild,
+    int? localBuild,
+  }) {
     try {
       Map<String, dynamic> parseVersion(String ver) {
         var clean = ver.trim();
         if (clean.toLowerCase().startsWith('v')) {
           clean = clean.substring(1);
+        }
+        if (clean.contains('+')) {
+          clean = clean.split('+').first;
         }
 
         String releasePart = clean;
@@ -395,7 +399,17 @@ class UpdateService {
         return false;
       }
       if (remotePre.isNotEmpty && localPre.isNotEmpty) {
-        return remotePre.compareTo(localPre) > 0;
+        final cmp = remotePre.compareTo(localPre);
+        if (cmp != 0) return cmp > 0;
+      }
+
+      // If semantic versions match, compare build numbers if available
+      final rBuild = remoteBuild ??
+          (remote.contains('+') ? int.tryParse(remote.split('+')[1]) : null);
+      final lBuild = localBuild ??
+          (local.contains('+') ? int.tryParse(local.split('+')[1]) : null);
+      if (rBuild != null && lBuild != null) {
+        return rBuild > lBuild;
       }
 
       return false;

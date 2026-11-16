@@ -1,9 +1,20 @@
-import { Controller, Post, Body } from "@nestjs/common";
+import { Controller, Get, Post, Body } from "@nestjs/common";
 import { InboxService } from "./inbox/inbox.service";
 
 @Controller()
 export class AppController {
   constructor(private readonly inboxService: InboxService) {}
+
+  @Get()
+  getRoot() {
+    return {
+      status: "online",
+      service: "GhostRoom Relay",
+      version: "2.2.1",
+      protocol: "store-and-forward",
+      timestamp: new Date().toISOString(),
+    };
+  }
 
   @Post("device/register")
   async registerDevice(

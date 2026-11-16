@@ -18,6 +18,7 @@ import { ThrottlerModule } from "@nestjs/throttler";
     TypeOrmModule.forRootAsync({
       inject: [ConfigService],
       useFactory: (configService: ConfigService) => {
+        const dbUrl = configService.get<string>("DATABASE_URL");
         if (process.env.NODE_ENV === "test") {
           return {
             type: "better-sqlite3",
@@ -27,11 +28,30 @@ import { ThrottlerModule } from "@nestjs/throttler";
             dropSchema: true,
           } as any;
         }
+
+        if (!dbUrl) {
+          console.warn(
+            "⚠️ DATABASE_URL is not configured! Defaulting to local in-memory SQLite store.",
+          );
+          return {
+            type: "better-sqlite3",
+            database: ":memory:",
+            autoLoadEntities: true,
+            synchronize: true,
+          } as any;
+        }
+
+        const isSsl =
+          dbUrl.includes("sslmode=require") ||
+          process.env.DATABASE_SSL === "true" ||
+          process.env.NODE_ENV === "production";
+
         return {
           type: "postgres",
-          url: configService.get<string>("DATABASE_URL"),
+          url: dbUrl,
           autoLoadEntities: true,
           synchronize: true,
+          extra: isSsl ? { ssl: { rejectUnauthorized: false } } : undefined,
         } as any;
       },
     }),
