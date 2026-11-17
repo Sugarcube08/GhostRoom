@@ -4,7 +4,7 @@ import { Repository, MoreThan, IsNull, LessThan, In } from "typeorm";
 import { Cron, CronExpression } from "@nestjs/schedule";
 import { ConfigService } from "@nestjs/config";
 import * as crypto from "crypto";
-import { v4 as uuidv4 } from "uuid";
+const uuidv4 = crypto.randomUUID;
 import { MessageEntity } from "./entities/message.entity";
 import { DeliveryEntity } from "./entities/delivery.entity";
 import { DeviceEntity } from "./entities/device.entity";

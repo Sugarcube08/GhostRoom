@@ -46,8 +46,7 @@
     "socket.io-client": "^4.8.3",
     "sqlite3": "^6.0.1",
     "tweetnacl": "^1.0.3",
-    "typeorm": "^1.0.0",
-    "uuid": "^14.0.0"
+    "typeorm": "^1.0.0"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
@@ -59,7 +58,6 @@
     "@types/jest": "^30.0.0",
     "@types/node": "^25.8.0",
     "@types/supertest": "^7.2.0",
-    "@types/uuid": "^10.0.0",
     "@typescript-eslint/eslint-plugin": "^8.59.3",
     "@typescript-eslint/parser": "^8.59.3",
     "eslint": "^10.3.0",
@@ -91,9 +89,6 @@
       "**/*.(t|j)s"
     ],
     "coverageDirectory": "../coverage",
-    "testEnvironment": "node",
-    "transformIgnorePatterns": [
-      "node_modules/(?!(uuid)/)"
-    ]
+    "testEnvironment": "node"
   }
 }

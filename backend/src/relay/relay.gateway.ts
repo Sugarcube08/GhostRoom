@@ -15,7 +15,6 @@ import { FederationService } from "../federation/federation.service";
 import { Inject, Logger, OnModuleInit } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { randomBytes } from "crypto";
-import { v4 as uuidv4 } from "uuid";
 import { io, Socket as ClientSocket } from "socket.io-client";
 
 @WebSocketGateway({
