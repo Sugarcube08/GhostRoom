@@ -16,6 +16,6 @@ export class AuditEntity {
   @CreateDateColumn()
   created_at: Date;
 
-  @Column("jsonb", { nullable: true })
+  @Column(process.env.DATABASE_URL ? "jsonb" : "simple-json", { nullable: true })
   metadata: Record<string, any>;
 }

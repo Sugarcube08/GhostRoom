@@ -30,6 +30,11 @@ export class AllExceptionsFilter implements ExceptionFilter {
         ? exception.getStatus()
         : HttpStatus.INTERNAL_SERVER_ERROR;
 
+    const exceptionResponse =
+      exception instanceof HttpException
+        ? exception.getResponse()
+        : null;
+
     const message =
       exception instanceof Error
         ? exception.message
@@ -40,18 +45,24 @@ export class AllExceptionsFilter implements ExceptionFilter {
         ? exception.stack
         : "";
 
-    this.logger.error(
-      `GHOST_LOG: BACKEND_CRASH: status=${status} path=${request.url} method=${request.method} error="${message}"`,
-    );
-    if (stack) {
-      this.logger.error(stack);
+    if (status >= HttpStatus.INTERNAL_SERVER_ERROR && status !== HttpStatus.SERVICE_UNAVAILABLE) {
+      this.logger.error(
+        `GHOST_LOG: BACKEND_CRASH: status=${status} path=${request.url} method=${request.method} error="${message}"`,
+      );
+      if (stack) {
+        this.logger.error(stack);
+      }
     }
 
-    response.status(status).json({
-      statusCode: status,
-      timestamp: new Date().toISOString(),
-      path: request.url,
-      message: status === HttpStatus.INTERNAL_SERVER_ERROR ? "Internal server error" : message,
-    });
+    if (exceptionResponse && typeof exceptionResponse === "object") {
+      response.status(status).json(exceptionResponse);
+    } else {
+      response.status(status).json({
+        statusCode: status,
+        timestamp: new Date().toISOString(),
+        path: request.url,
+        message: status === HttpStatus.INTERNAL_SERVER_ERROR ? "Internal server error" : message,
+      });
+    }
   }
 }

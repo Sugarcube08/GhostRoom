@@ -11,7 +11,7 @@ export class MessageEntity {
   @Column("varchar", { nullable: true })
   recipient_device_id: string | null;
 
-  @Column("jsonb")
+  @Column(process.env.DATABASE_URL ? "jsonb" : "simple-json")
   envelope: Record<string, any>;
 
   @Column("varchar", { default: "PERSISTENT" })
@@ -20,22 +20,13 @@ export class MessageEntity {
   @CreateDateColumn()
   created_at: Date;
 
-  @Column({
-    type: process.env.NODE_ENV === "test" ? "datetime" : "timestamp",
-    nullable: true,
-  })
+  @Column({ nullable: true })
   delivered_at: Date | null;
 
-  @Column({
-    type: process.env.NODE_ENV === "test" ? "datetime" : "timestamp",
-    nullable: true,
-  })
+  @Column({ nullable: true })
   viewed_at: Date | null;
 
-  @Column({
-    type: process.env.NODE_ENV === "test" ? "datetime" : "timestamp",
-    nullable: true,
-  })
+  @Column({ nullable: true })
   expires_at: Date | null;
 
   @Column("varchar", { nullable: true })

@@ -64,7 +64,7 @@ appimagetool*
 
 # Test Outputs
 coverage/
-
+node_modules/
 dist/
 appimagetool
 appimagetool*

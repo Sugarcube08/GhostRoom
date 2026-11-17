@@ -72,9 +72,14 @@ export class FederationService implements OnModuleInit {
       }
       this.relayKeyPair = nacl.sign.keyPair.fromSeed(seed);
     } catch (e: any) {
-      const errorMsg = `Invalid RELAY_PRIVATE_KEY configuration: ${e.message}`;
-      this.logger.error(errorMsg);
-      throw new Error(errorMsg);
+      if (federationEnabled) {
+        const errorMsg = `Invalid RELAY_PRIVATE_KEY configuration: ${e.message}`;
+        this.logger.error(errorMsg);
+        throw new Error(errorMsg);
+      }
+      this.logger.warn(`Invalid RELAY_PRIVATE_KEY (${e.message}). Falling back to ephemeral key.`);
+      const ephemeralSeed = crypto.randomBytes(32);
+      this.relayKeyPair = nacl.sign.keyPair.fromSeed(ephemeralSeed);
     }
 
     this.relayPublicId = this.derivePublicId(this.relayKeyPair.publicKey);

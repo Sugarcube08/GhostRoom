@@ -23,10 +23,7 @@ export class MediaEntity {
   @CreateDateColumn()
   created_at: Date;
 
-  @Column({
-    type: process.env.NODE_ENV === "test" ? "datetime" : "timestamp",
-    nullable: true,
-  })
+  @Column({ nullable: true })
   expires_at: Date | null;
 
   @Column("integer", { default: 0 })

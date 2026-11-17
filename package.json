@@ -1,0 +1,15 @@
+{
+  "name": "ghostroom-monorepo",
+  "version": "2.2.4",
+  "private": true,
+  "workspaces": [
+    "backend"
+  ],
+  "scripts": {
+    "build": "npm --prefix backend run build",
+    "start": "npm --prefix backend run start:prod"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

@@ -38,6 +38,21 @@ import { ThrottlerModule } from "@nestjs/throttler";
             database: ":memory:",
             autoLoadEntities: true,
             synchronize: true,
+            retryAttempts: 1,
+          } as any;
+        }
+
+        const isDockerHost = dbUrl.includes("@postgres:") || dbUrl.includes("@postgres/");
+        if (isDockerHost && (process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME)) {
+          console.warn(
+            "⚠️ DATABASE_URL points to internal Docker host 'postgres' which is unreachable in cloud serverless environment. Falling back to local in-memory SQLite store.",
+          );
+          return {
+            type: "better-sqlite3",
+            database: ":memory:",
+            autoLoadEntities: true,
+            synchronize: true,
+            retryAttempts: 1,
           } as any;
         }
 
@@ -51,6 +66,8 @@ import { ThrottlerModule } from "@nestjs/throttler";
           url: dbUrl,
           autoLoadEntities: true,
           synchronize: true,
+          retryAttempts: 2,
+          retryDelay: 1000,
           extra: isSsl ? { ssl: { rejectUnauthorized: false } } : undefined,
         } as any;
       },

@@ -1,7 +1,7 @@
 {
   "version": "2.2.4",
   "build_number": 5,
-  "release_date": "2026-11-16T15:20:59.561152+00:00",
+  "release_date": "2026-11-17T04:39:22.744165+00:00",
   "release_url": "https://github.com/Sugarcube08/GhostRoom/releases/tag/v2.2.4",
   "changelog": "GhostRoom v2.2.4+5: Zero-knowledge P2P store-and-forward relay, automated in-app updates with SHA-256 integrity verification, and enhanced offline queuing.",
   "platforms": {
@@ -14,7 +14,7 @@
     "linux": {
       "url": "https://github.com/Sugarcube08/GhostRoom/releases/download/v2.2.4/ghostroom-linux-x86_64.AppImage",
       "filename": "ghostroom-linux-x86_64.AppImage",
-      "sha256": "9bbdfb3457c8976aad6da88a8fa32fc2b062a6d2b1b29accb04ffa7b27ed314c",
+      "sha256": "df45b4d400b973d2cf3f4ec474a2bca9b7837c3a93bb7cffebc9d35d0bca195a",
       "size_bytes": 12354752
     },
     "windows": {
@@ -32,8 +32,8 @@
     "web": {
       "url": "https://github.com/Sugarcube08/GhostRoom/releases/download/v2.2.4/ghostroom-web.zip",
       "filename": "ghostroom-web.zip",
-      "sha256": "8d74c41095ae8452ec7e8707da33e9bfad791232c6993fc865eb44e347272352",
-      "size_bytes": 14779873
+      "sha256": "1b1daf24f9536bba5b8f89ee8916169b032d139e33a7c76b09d9c479a69168fe",
+      "size_bytes": 14779871
     }
   }
 }

@@ -34,8 +34,9 @@ export class FirebaseService implements OnModuleInit {
 
     if (this.fcmEnabled) {
       if (this.credentialSource === "none") {
-        this.logger.error("FCM_ADMIN_INITIALIZATION_FAILED error=\"Firebase Admin credentials missing.\"");
-        throw new Error("Firebase Admin credentials missing.");
+        this.logger.warn("FCM_ADMIN_INITIALIZATION_SKIPPED: Firebase Admin credentials missing. Push notifications disabled.");
+        this.fcmEnabled = false;
+        return;
       }
 
       try {
@@ -65,8 +66,9 @@ export class FirebaseService implements OnModuleInit {
         }
         this.logger.log("FCM_ADMIN_INITIALIZED");
       } catch (err: any) {
-        this.logger.error(`FCM_ADMIN_INITIALIZATION_FAILED error="${err.message}"`);
-        throw err;
+        this.logger.error(`FCM_ADMIN_INITIALIZATION_FAILED error="${err.message}". Push notifications disabled.`);
+        this.fcmEnabled = false;
+        this.firebaseApp = null;
       }
     } else {
       this.logger.log("FCM is disabled in configuration.");
