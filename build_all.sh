@@ -20,11 +20,10 @@ set -euo pipefail
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CLIENT_DIR="${PROJECT_ROOT}/client"
 RELEASE_DIR="${PROJECT_ROOT}/release"
-DIST_DIR="${PROJECT_ROOT}/dist"
 OS="$(uname -s)"
 
 # Ensure clean canonical version.json only - purge any legacy uppercase VERSION.json
-rm -f "${PROJECT_ROOT}/VERSION.json" "${RELEASE_DIR}/VERSION.json" "${DIST_DIR}/VERSION.json" 2>/dev/null || true
+rm -f "${PROJECT_ROOT}/VERSION.json" "${RELEASE_DIR}/VERSION.json" 2>/dev/null || true
 
 # 2. Configure compatible JDK & Linux Native Library Paths
 if [ -d "/usr/lib/jvm/java-17-openjdk-amd64" ]; then
@@ -124,10 +123,9 @@ echo "========================================================"
 sed -i "s/^version: .*/version: ${TARGET_VERSION}+${BUILD_NUMBER}/" "${CLIENT_DIR}/pubspec.yaml"
 echo "📝 Synchronized client/pubspec.yaml -> version: ${TARGET_VERSION}+${BUILD_NUMBER}"
 
-# 4. Prepare release directories
-mkdir -p "${RELEASE_DIR}" "${DIST_DIR}"
+# 4. Prepare release directory
+mkdir -p "${RELEASE_DIR}"
 rm -f "${RELEASE_DIR}"/*.apk "${RELEASE_DIR}"/*.zip "${RELEASE_DIR}"/*.tar.gz "${RELEASE_DIR}"/*.AppImage "${RELEASE_DIR}"/*.deb "${RELEASE_DIR}"/*.rpm "${RELEASE_DIR}"/*.ipa "${RELEASE_DIR}"/SHA256SUMS 2>/dev/null || true
-rm -f "${DIST_DIR}"/*.apk "${DIST_DIR}"/*.zip "${DIST_DIR}"/*.tar.gz "${DIST_DIR}"/*.AppImage "${DIST_DIR}"/*.deb "${DIST_DIR}"/*.rpm "${DIST_DIR}"/*.ipa "${DIST_DIR}"/SHA256SUMS 2>/dev/null || true
 
 # 5. Check System Dependencies (Linux only)
 if [ "${OS}" = "Linux" ]; then
@@ -329,9 +327,6 @@ if [ "${OS}" = "Darwin" ]; then
     fi
 fi
 
-# Sync all assets to dist/ directory for full backward-compatibility
-cp -r "${RELEASE_DIR}"/* "${DIST_DIR}/" 2>/dev/null || true
-
 # 11. Calculate SHA-256 Checksums
 echo ""
 echo "🔒 Calculating SHA-256 checksums for all release assets..."
@@ -362,9 +357,6 @@ else
     exit 1
 fi
 
-# Sync SHA256SUMS to dist/
-cp SHA256SUMS "${DIST_DIR}/SHA256SUMS"
-
 # 13. Build Single Canonical version.json
 echo ""
 echo "📄 Generating single canonical version.json..."
@@ -376,7 +368,6 @@ import hashlib
 from datetime import datetime, timezone
 
 release_dir = "${RELEASE_DIR}"
-dist_dir = "${DIST_DIR}"
 project_root = "${PROJECT_ROOT}"
 version = "${TARGET_VERSION}"
 build_number = int("${BUILD_NUMBER}")
@@ -470,23 +461,17 @@ rel_version_path = os.path.join(release_dir, "version.json")
 with open(rel_version_path, "w", encoding="utf-8") as f:
     json.dump(manifest, f, indent=2)
 
-# Write to dist/version.json
-dist_version_path = os.path.join(dist_dir, "version.json")
-with open(dist_version_path, "w", encoding="utf-8") as f:
-    json.dump(manifest, f, indent=2)
-
 # Write to single canonical root version.json
 root_version_path = os.path.join(project_root, "version.json")
 with open(root_version_path, "w", encoding="utf-8") as f:
     json.dump(manifest, f, indent=2)
 
 # Ensure uppercase VERSION.json is purged everywhere
-for p in [os.path.join(project_root, "VERSION.json"), os.path.join(release_dir, "VERSION.json"), os.path.join(dist_dir, "VERSION.json")]:
+for p in [os.path.join(project_root, "VERSION.json"), os.path.join(release_dir, "VERSION.json")]:
     if os.path.exists(p):
         os.remove(p)
 
 print(f"✅ Created: {rel_version_path}")
-print(f"✅ Created: {dist_version_path}")
 print(f"✅ Created: {root_version_path}")
 EOF
 
