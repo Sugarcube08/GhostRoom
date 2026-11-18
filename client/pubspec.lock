@@ -1389,14 +1389,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "4.0.4"
-  sodium_libs:
-    dependency: "direct main"
-    description:
-      name: sodium_libs
-      sha256: a888954f9085c3b5a8d10db82b692bbc6d8619cf4e240c9f52b34fdf763c7595
-      url: "https://pub.dev"
-    source: hosted
-    version: "4.0.1"
   source_gen:
     dependency: transitive
     description:

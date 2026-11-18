@@ -365,6 +365,7 @@ python3 - <<EOF
 import os
 import json
 import hashlib
+import glob
 from datetime import datetime, timezone
 
 release_dir = "${RELEASE_DIR}"
@@ -375,9 +376,7 @@ tag = f"v{version}"
 release_base_url = f"https://github.com/Sugarcube08/GhostRoom/releases/download/{tag}"
 page_url = f"https://github.com/Sugarcube08/GhostRoom/releases/tag/{tag}"
 
-platforms = {}
-
-def get_file_info(filename):
+def get_file_info(filename, display_name=None, fmt=None):
     path = os.path.join(release_dir, filename)
     if not os.path.isfile(path):
         return None
@@ -385,65 +384,98 @@ def get_file_info(filename):
     with open(path, "rb") as f:
         while chunk := f.read(65536):
             h.update(chunk)
+    
+    if not fmt:
+        if filename.endswith(".AppImage"): fmt = "appimage"
+        elif filename.endswith(".deb"): fmt = "deb"
+        elif filename.endswith(".rpm"): fmt = "rpm"
+        elif filename.endswith(".tar.gz"): fmt = "tar.gz"
+        elif filename.endswith(".apk"): fmt = "apk"
+        elif filename.endswith(".zip"): fmt = "zip"
+        elif filename.endswith(".ipa"): fmt = "ipa"
+        else: fmt = "bin"
+
     return {
-        "url": f"{release_base_url}/{filename}",
+        "name": display_name or filename,
+        "format": fmt,
         "filename": filename,
+        "url": f"{release_base_url}/{filename}",
         "sha256": h.hexdigest(),
         "size_bytes": os.path.getsize(path)
     }
 
-# Android
-android_info = get_file_info("ghostroom-android.apk")
+platforms = {}
+
+# Android APK
+android_info = get_file_info("ghostroom-android.apk", "Android Package (APK)", "apk")
 platforms["android"] = android_info if android_info else {
+    "name": "Android Package (APK)",
+    "format": "apk",
     "url": f"{release_base_url}/ghostroom-android.apk",
     "filename": "ghostroom-android.apk",
     "sha256": "",
     "size_bytes": 0
 }
 
-# Linux: prefer AppImage, fallback to tar.gz, then deb
-linux_appimage = get_file_info("ghostroom-linux-x86_64.AppImage")
-linux_tar = get_file_info("ghostroom-linux-x86_64.tar.gz")
-linux_deb = get_file_info("ghostroom-linux.deb")
-if linux_appimage:
-    platforms["linux"] = linux_appimage
-elif linux_tar:
-    platforms["linux"] = linux_tar
-elif linux_deb:
-    platforms["linux"] = linux_deb
-else:
-    platforms["linux"] = {
-        "url": f"{release_base_url}/ghostroom-linux-x86_64.AppImage",
-        "filename": "ghostroom-linux-x86_64.AppImage",
-        "sha256": "",
-        "size_bytes": 0
-    }
+# Linux derivatives
+linux_appimage = get_file_info("ghostroom-linux-x86_64.AppImage", "Linux Universal AppImage", "appimage")
+linux_deb = get_file_info("ghostroom-linux.deb", "Debian / Ubuntu Package (.deb)", "deb")
+linux_tar = get_file_info("ghostroom-linux-x86_64.tar.gz", "Linux Standalone Bundle (.tar.gz)", "tar.gz")
 
-# Windows
-windows_info = get_file_info("ghostroom-windows-x64.zip")
+rpm_files = glob.glob(os.path.join(release_dir, "ghostroom-*.rpm"))
+linux_rpm = None
+if rpm_files:
+    rpm_filename = os.path.basename(sorted(rpm_files)[-1])
+    linux_rpm = get_file_info(rpm_filename, "Fedora / RHEL / openSUSE Package (.rpm)", "rpm")
+
+# Default linux key points to AppImage (fallback to tar.gz / deb) for standard compatibility
+platforms["linux"] = linux_appimage or linux_tar or linux_deb or {
+    "name": "Linux Universal AppImage",
+    "format": "appimage",
+    "url": f"{release_base_url}/ghostroom-linux-x86_64.AppImage",
+    "filename": "ghostroom-linux-x86_64.AppImage",
+    "sha256": "",
+    "size_bytes": 0
+}
+
+if linux_appimage:
+    platforms["linux_appimage"] = linux_appimage
+if linux_deb:
+    platforms["linux_deb"] = linux_deb
+if linux_rpm:
+    platforms["linux_rpm"] = linux_rpm
+if linux_tar:
+    platforms["linux_tar"] = linux_tar
+
+# Windows Bundle
+windows_info = get_file_info("ghostroom-windows-x64.zip", "Windows Portable Bundle (x64)", "zip")
 platforms["windows"] = windows_info if windows_info else {
+    "name": "Windows Portable Bundle (x64)",
+    "format": "zip",
     "url": f"{release_base_url}/ghostroom-windows-x64.zip",
     "filename": "ghostroom-windows-x64.zip",
     "sha256": "",
     "size_bytes": 0
 }
 
-# macOS
-macos_info = get_file_info("ghostroom-macos.zip")
+# macOS Bundle
+macos_info = get_file_info("ghostroom-macos.zip", "macOS Universal Bundle", "zip")
 platforms["macos"] = macos_info if macos_info else {
+    "name": "macOS Universal Bundle",
+    "format": "zip",
     "url": f"{release_base_url}/ghostroom-macos.zip",
     "filename": "ghostroom-macos.zip",
     "sha256": "",
     "size_bytes": 0
 }
 
-# iOS
-ios_info = get_file_info("ghostroom-ios.ipa")
+# iOS Package
+ios_info = get_file_info("ghostroom-ios.ipa", "iOS Package (IPA)", "ipa")
 if ios_info:
     platforms["ios"] = ios_info
 
-# Web
-web_info = get_file_info("ghostroom-web.zip")
+# Web Application Archive
+web_info = get_file_info("ghostroom-web.zip", "Web Release Archive", "zip")
 if web_info:
     platforms["web"] = web_info
 

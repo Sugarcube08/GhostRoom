@@ -39,6 +39,13 @@ class _UpdateDialogState extends State<UpdateDialog> {
   double _progress = 0.0;
   String _statusMessage = '';
   String? _errorMessage;
+  PlatformAsset? _selectedAsset;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedAsset = widget.manifest.getAssetForCurrentPlatform();
+  }
 
   void _startUpdate() async {
     setState(() {
@@ -51,6 +58,7 @@ class _UpdateDialogState extends State<UpdateDialog> {
     try {
       await widget.updateService.runAutoUpdate(
         manifest: widget.manifest,
+        customAsset: _selectedAsset,
         onStatus: (status, progress, message) {
           if (!mounted) return;
           setState(() {
@@ -90,7 +98,12 @@ class _UpdateDialogState extends State<UpdateDialog> {
   @override
   Widget build(BuildContext context) {
     final colors = AppColors.of(context);
-    final asset = widget.manifest.getAssetForCurrentPlatform();
+    final availableAssets =
+        widget.manifest.getAvailableAssetsForCurrentPlatform();
+    final activeAsset = _selectedAsset ??
+        (availableAssets.isNotEmpty
+            ? availableAssets.first
+            : widget.manifest.getAssetForCurrentPlatform());
 
     return AlertDialog(
       backgroundColor: colors.backgroundSecondary,
@@ -142,7 +155,8 @@ class _UpdateDialogState extends State<UpdateDialog> {
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    widget.manifest.targetPlatformName,
+                    activeAsset?.displayName ??
+                        widget.manifest.targetPlatformName,
                     style: TextStyle(
                       color: colors.textMuted,
                       fontSize: 12,
@@ -153,6 +167,56 @@ class _UpdateDialogState extends State<UpdateDialog> {
               ],
             ),
             const SizedBox(height: 12),
+
+            // Package Format Selector (when multiple formats are available and in available state)
+            if (availableAssets.length > 1 &&
+                _status == UpdateStatus.available) ...[
+              Text(
+                'Release Package Format:',
+                style: TextStyle(
+                  color: colors.textMuted,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10),
+                decoration: BoxDecoration(
+                  color: colors.backgroundPrimary,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: colors.borderPrimary),
+                ),
+                child: DropdownButtonHideUnderline(
+                  child: DropdownButton<PlatformAsset>(
+                    value: availableAssets.contains(_selectedAsset)
+                        ? _selectedAsset
+                        : availableAssets.first,
+                    isExpanded: true,
+                    dropdownColor: colors.backgroundSecondary,
+                    items: availableAssets.map((asset) {
+                      return DropdownMenuItem<PlatformAsset>(
+                        value: asset,
+                        child: Text(
+                          '${asset.displayName} (${asset.formattedSize})',
+                          style: TextStyle(
+                            color: colors.textPrimary,
+                            fontSize: 12,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      );
+                    }).toList(),
+                    onChanged: (selected) {
+                      if (selected != null) {
+                        setState(() => _selectedAsset = selected);
+                      }
+                    },
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+            ],
 
             // Changelog or description
             if (widget.manifest.changelog != null &&
@@ -257,14 +321,14 @@ class _UpdateDialogState extends State<UpdateDialog> {
                 ),
               ),
             ] else ...[
-              if (asset != null && asset.sha256.isNotEmpty)
+              if (activeAsset != null && activeAsset.sha256.isNotEmpty)
                 Row(
                   children: [
                     Icon(Icons.verified_user_outlined,
                         size: 14, color: colors.success),
                     const SizedBox(width: 4),
                     Text(
-                      'SHA-256 Verified Release',
+                      'SHA-256 Verified Release (${activeAsset.formattedSize})',
                       style: TextStyle(color: colors.success, fontSize: 11),
                     ),
                   ],

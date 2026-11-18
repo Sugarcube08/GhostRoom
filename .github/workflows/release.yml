@@ -91,34 +91,62 @@ jobs:
           sha256sum ghostroom-* > SHA256SUMS || true
           TAG="${{ github.ref_name }}"
           VERSION="${TAG#v}"
-          cat <<EOF > version.json
-          {
-            "version": "${VERSION}",
-            "release_date": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-            "release_url": "https://github.com/Sugarcube08/GhostRoom/releases/tag/${TAG}",
-            "changelog": "GhostRoom ${TAG}: Automated release build with verified SHA-256 integrity.",
-            "platforms": {
-              "android": {
-                "url": "https://github.com/Sugarcube08/GhostRoom/releases/download/${TAG}/ghostroom-android.apk",
-                "filename": "ghostroom-android.apk",
-                "sha256": "$(sha256sum ghostroom-android.apk 2>/dev/null | cut -d' ' -f1 || echo '')",
-                "size_bytes": $(wc -c < ghostroom-android.apk 2>/dev/null || echo 0)
-              },
-              "linux": {
-                "url": "https://github.com/Sugarcube08/GhostRoom/releases/download/${TAG}/ghostroom-linux-x86_64.tar.gz",
-                "filename": "ghostroom-linux-x86_64.tar.gz",
-                "sha256": "$(sha256sum ghostroom-linux-x86_64.tar.gz 2>/dev/null | cut -d' ' -f1 || echo '')",
-                "size_bytes": $(wc -c < ghostroom-linux-x86_64.tar.gz 2>/dev/null || echo 0)
-              },
-              "web": {
-                "url": "https://github.com/Sugarcube08/GhostRoom/releases/download/${TAG}/ghostroom-web.zip",
-                "filename": "ghostroom-web.zip",
-                "sha256": "$(sha256sum ghostroom-web.zip 2>/dev/null | cut -d' ' -f1 || echo '')",
-                "size_bytes": $(wc -c < ghostroom-web.zip 2>/dev/null || echo 0)
+          python3 - <<PY
+          import os, json, hashlib, glob
+          from datetime import datetime, timezone
+          tag = "${{ github.ref_name }}"
+          version = tag.lstrip("v")
+          base_url = f"https://github.com/Sugarcube08/GhostRoom/releases/download/{tag}"
+          
+          def file_info(fn, display, fmt):
+              if not os.path.isfile(fn): return None
+              h = hashlib.sha256()
+              with open(fn, "rb") as f:
+                  while c := f.read(65536): h.update(c)
+              return {
+                  "name": display,
+                  "format": fmt,
+                  "filename": fn,
+                  "url": f"{base_url}/{fn}",
+                  "sha256": h.hexdigest(),
+                  "size_bytes": os.path.getsize(fn)
               }
-            }
+          
+          platforms = {}
+          apk = file_info("ghostroom-android.apk", "Android Package (APK)", "apk")
+          if apk: platforms["android"] = apk
+          
+          appimage = file_info("ghostroom-linux-x86_64.AppImage", "Linux Universal AppImage", "appimage")
+          deb = file_info("ghostroom-linux.deb", "Debian / Ubuntu Package (.deb)", "deb")
+          tar = file_info("ghostroom-linux-x86_64.tar.gz", "Linux Standalone Bundle (.tar.gz)", "tar.gz")
+          rpms = glob.glob("ghostroom-*.rpm")
+          rpm = file_info(os.path.basename(rpms[0]), "Fedora / RHEL / openSUSE Package (.rpm)", "rpm") if rpms else None
+          
+          if appimage:
+              platforms["linux"] = appimage
+              platforms["linux_appimage"] = appimage
+          elif tar:
+              platforms["linux"] = tar
+          elif deb:
+              platforms["linux"] = deb
+          
+          if deb: platforms["linux_deb"] = deb
+          if rpm: platforms["linux_rpm"] = rpm
+          if tar: platforms["linux_tar"] = tar
+          
+          web = file_info("ghostroom-web.zip", "Web Release Archive", "zip")
+          if web: platforms["web"] = web
+          
+          manifest = {
+              "version": version,
+              "release_date": datetime.now(timezone.utc).isoformat(),
+              "release_url": f"https://github.com/Sugarcube08/GhostRoom/releases/tag/{tag}",
+              "changelog": f"GhostRoom {tag}: Automated release build with verified SHA-256 integrity.",
+              "platforms": platforms
           }
-          EOF
+          with open("version.json", "w", encoding="utf-8") as f:
+              json.dump(manifest, f, indent=2)
+          PY
 
       - name: Create Release
         uses: softprops/action-gh-release@v2

@@ -24,21 +24,85 @@ class PlatformAsset {
   final String filename;
   final String sha256;
   final int sizeBytes;
+  final String? format;
+  final String? name;
 
   PlatformAsset({
     required this.url,
     required this.filename,
     required this.sha256,
     required this.sizeBytes,
+    this.format,
+    this.name,
   });
 
   factory PlatformAsset.fromJson(Map<String, dynamic> json) {
+    final filename = json['filename'] as String? ?? 'update';
+    String inferredFormat = json['format'] as String? ?? '';
+    if (inferredFormat.isEmpty) {
+      final lower = filename.toLowerCase();
+      if (lower.endsWith('.appimage')) {
+        inferredFormat = 'appimage';
+      } else if (lower.endsWith('.deb')) {
+        inferredFormat = 'deb';
+      } else if (lower.endsWith('.rpm')) {
+        inferredFormat = 'rpm';
+      } else if (lower.endsWith('.tar.gz') || lower.endsWith('.tgz')) {
+        inferredFormat = 'tar.gz';
+      } else if (lower.endsWith('.apk')) {
+        inferredFormat = 'apk';
+      } else if (lower.endsWith('.zip')) {
+        inferredFormat = 'zip';
+      } else if (lower.endsWith('.ipa')) {
+        inferredFormat = 'ipa';
+      }
+    }
+
     return PlatformAsset(
       url: json['url'] as String? ?? '',
-      filename: json['filename'] as String? ?? 'update',
+      filename: filename,
       sha256: json['sha256'] as String? ?? '',
       sizeBytes: json['size_bytes'] as int? ?? 0,
+      format: inferredFormat.isNotEmpty ? inferredFormat : null,
+      name: json['name'] as String?,
     );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'name': name,
+        'format': format,
+        'filename': filename,
+        'url': url,
+        'sha256': sha256,
+        'size_bytes': sizeBytes,
+      };
+
+  String get displayName {
+    if (name != null && name!.isNotEmpty) return name!;
+    switch (format?.toLowerCase()) {
+      case 'appimage':
+        return 'Linux Universal AppImage';
+      case 'deb':
+        return 'Debian / Ubuntu (.deb)';
+      case 'rpm':
+        return 'Fedora / RHEL / openSUSE (.rpm)';
+      case 'tar.gz':
+        return 'Linux Standalone Bundle (.tar.gz)';
+      case 'apk':
+        return 'Android Package (.apk)';
+      case 'zip':
+        return 'Release Archive (.zip)';
+      default:
+        return filename;
+    }
+  }
+
+  String get formattedSize {
+    if (sizeBytes <= 0) return '';
+    if (sizeBytes < 1024 * 1024) {
+      return '${(sizeBytes / 1024).toStringAsFixed(1)} KB';
+    }
+    return '${(sizeBytes / (1024 * 1024)).toStringAsFixed(1)} MB';
   }
 }
 
@@ -87,7 +151,61 @@ class UpdateManifest {
     );
   }
 
-  /// Detects the host operating system and returns the corresponding release asset
+  /// Returns all available release assets suitable for the current operating system
+  List<PlatformAsset> getAvailableAssetsForCurrentPlatform() {
+    if (kIsWeb) {
+      return platforms.containsKey('web') && platforms['web']!.url.isNotEmpty
+          ? [platforms['web']!]
+          : [];
+    }
+
+    if (Platform.isAndroid) {
+      return platforms.containsKey('android') &&
+              platforms['android']!.url.isNotEmpty
+          ? [platforms['android']!]
+          : [];
+    }
+
+    if (Platform.isLinux) {
+      final list = <PlatformAsset>[];
+      final seenUrls = <String>{};
+
+      for (final key in [
+        'linux_appimage',
+        'linux_deb',
+        'linux_rpm',
+        'linux_tar',
+        'linux'
+      ]) {
+        if (platforms.containsKey(key)) {
+          final asset = platforms[key]!;
+          if (asset.url.isNotEmpty && !seenUrls.contains(asset.url)) {
+            seenUrls.add(asset.url);
+            list.add(asset);
+          }
+        }
+      }
+      return list;
+    }
+
+    if (Platform.isWindows) {
+      return platforms.containsKey('windows') &&
+              platforms['windows']!.url.isNotEmpty
+          ? [platforms['windows']!]
+          : [];
+    }
+
+    if (Platform.isMacOS) {
+      return platforms.containsKey('macos') &&
+              platforms['macos']!.url.isNotEmpty
+          ? [platforms['macos']!]
+          : [];
+    }
+
+    return [];
+  }
+
+  /// Intelligently detects host environment to choose the ideal asset
   PlatformAsset? getAssetForCurrentPlatform() {
     if (kIsWeb) return platforms['web'];
 
@@ -103,18 +221,66 @@ class UpdateManifest {
         filename: 'ghostroom-android.apk',
         sha256: '',
         sizeBytes: 0,
+        format: 'apk',
+        name: 'Android Package (APK)',
       );
     } else if (Platform.isLinux) {
+      // 1. If currently executing from AppImage, prioritize AppImage
+      final isRunningAppImage = Platform.environment.containsKey('APPIMAGE') ||
+          Platform.environment.containsKey('APPDIR');
+      if (isRunningAppImage &&
+          platforms.containsKey('linux_appimage') &&
+          platforms['linux_appimage']!.url.isNotEmpty) {
+        return platforms['linux_appimage'];
+      }
+
+      // 2. If installed system-wide in Debian path or Debian/Ubuntu OS
+      final isInstalledDeb =
+          Platform.resolvedExecutable.startsWith('/opt/ghostroom') ||
+              Platform.resolvedExecutable.startsWith('/usr/');
+      final isDebian = File('/etc/debian_version').existsSync();
+      if ((isInstalledDeb || isDebian) &&
+          platforms.containsKey('linux_deb') &&
+          platforms['linux_deb']!.url.isNotEmpty) {
+        return platforms['linux_deb'];
+      }
+
+      // 3. If RedHat/Fedora/openSUSE
+      final isRpmDistro = File('/etc/redhat-release').existsSync() ||
+          File('/etc/fedora-release').existsSync() ||
+          File('/etc/SuSE-release').existsSync();
+      if (isRpmDistro &&
+          platforms.containsKey('linux_rpm') &&
+          platforms['linux_rpm']!.url.isNotEmpty) {
+        return platforms['linux_rpm'];
+      }
+
+      // 4. Default to universal AppImage if available
+      if (platforms.containsKey('linux_appimage') &&
+          platforms['linux_appimage']!.url.isNotEmpty) {
+        return platforms['linux_appimage'];
+      }
       if (platforms.containsKey('linux') &&
           platforms['linux']!.url.isNotEmpty) {
         return platforms['linux'];
       }
+      if (platforms.containsKey('linux_deb') &&
+          platforms['linux_deb']!.url.isNotEmpty) {
+        return platforms['linux_deb'];
+      }
+      if (platforms.containsKey('linux_tar') &&
+          platforms['linux_tar']!.url.isNotEmpty) {
+        return platforms['linux_tar'];
+      }
+
       return PlatformAsset(
         url:
             'https://github.com/Sugarcube08/GhostRoom/releases/download/$tag/ghostroom-linux-x86_64.AppImage',
         filename: 'ghostroom-linux-x86_64.AppImage',
         sha256: '',
         sizeBytes: 0,
+        format: 'appimage',
+        name: 'Linux Universal AppImage',
       );
     } else if (Platform.isWindows) {
       if (platforms.containsKey('windows') &&
@@ -127,6 +293,8 @@ class UpdateManifest {
         filename: 'ghostroom-windows-x64.zip',
         sha256: '',
         sizeBytes: 0,
+        format: 'zip',
+        name: 'Windows Portable Bundle (x64)',
       );
     } else if (Platform.isMacOS) {
       if (platforms.containsKey('macos') &&
@@ -139,6 +307,8 @@ class UpdateManifest {
         filename: 'ghostroom-macos.zip',
         sha256: '',
         sizeBytes: 0,
+        format: 'zip',
+        name: 'macOS Universal Bundle',
       );
     }
 
@@ -146,9 +316,15 @@ class UpdateManifest {
   }
 
   String get targetPlatformName {
-    if (kIsWeb) return 'Web';
+    if (kIsWeb) return 'Web Application';
     if (Platform.isAndroid) return 'Android (APK)';
-    if (Platform.isLinux) return 'Linux (AppImage / Package)';
+    if (Platform.isLinux) {
+      final asset = getAssetForCurrentPlatform();
+      if (asset != null && asset.displayName.isNotEmpty) {
+        return asset.displayName;
+      }
+      return 'Linux (AppImage / Package)';
+    }
     if (Platform.isWindows) return 'Windows (ZIP / EXE)';
     if (Platform.isMacOS) return 'macOS (ZIP / APP)';
     return 'Unknown';
@@ -166,9 +342,13 @@ class UpdateService {
       final currentVersion = packageInfo.version;
       final currentBuild = int.tryParse(packageInfo.buildNumber);
 
-      final res = await http
-          .get(Uri.parse(manifestUrl))
-          .timeout(const Duration(seconds: 8));
+      // Append timestamp cache-buster to bypass CDN caching for immediate release discovery
+      final cacheBusterUri = Uri.parse(
+        '$manifestUrl?t=${DateTime.now().millisecondsSinceEpoch}',
+      );
+
+      final res =
+          await http.get(cacheBusterUri).timeout(const Duration(seconds: 8));
       if (res.statusCode != 200) {
         return null;
       }
@@ -260,14 +440,58 @@ class UpdateService {
     if (kIsWeb) return;
 
     if (Platform.isAndroid) {
-      const channel = MethodChannel('com.ghostroom.app/updater');
-      await channel.invokeMethod('installApk', {'filePath': file.path});
-    } else if (Platform.isLinux) {
-      await Process.run('chmod', ['+x', file.path]);
       try {
-        await Process.start('xdg-open', [file.path]);
-      } catch (_) {
-        await Process.start(file.path, [], mode: ProcessStartMode.detached);
+        const channel = MethodChannel('com.ghostroom.app/updater');
+        await channel.invokeMethod('installApk', {'filePath': file.path});
+      } catch (e) {
+        // Fallback: trigger system intent via xdg-open if available
+        try {
+          await Process.start('xdg-open', [file.path]);
+        } catch (_) {}
+      }
+    } else if (Platform.isLinux) {
+      final path = file.path.toLowerCase();
+      if (path.endsWith('.deb')) {
+        // Open using graphical package installer (e.g. GNOME Software, GDebi)
+        try {
+          await Process.start('xdg-open', [file.path]);
+        } catch (_) {
+          // Fallback to pkexec dpkg -i
+          await Process.start(
+            'pkexec',
+            ['dpkg', '-i', file.path],
+            mode: ProcessStartMode.detached,
+          );
+        }
+      } else if (path.endsWith('.rpm')) {
+        // Open using graphical package manager (Discover, Software)
+        try {
+          await Process.start('xdg-open', [file.path]);
+        } catch (_) {
+          // Fallback to pkexec rpm -Uvh
+          await Process.start(
+            'pkexec',
+            ['rpm', '-Uvh', file.path],
+            mode: ProcessStartMode.detached,
+          );
+        }
+      } else if (path.endsWith('.appimage')) {
+        await Process.run('chmod', ['+x', file.path]);
+        try {
+          await Process.start(file.path, [], mode: ProcessStartMode.detached);
+        } catch (_) {
+          await Process.start('xdg-open', [file.path]);
+        }
+      } else if (path.endsWith('.tar.gz') || path.endsWith('.tgz')) {
+        // Open file parent directory in file explorer for manual extraction
+        await Process.start('xdg-open', [file.parent.path]);
+      } else {
+        await Process.run('chmod', ['+x', file.path]);
+        try {
+          await Process.start('xdg-open', [file.path]);
+        } catch (_) {
+          await Process.start(file.path, [], mode: ProcessStartMode.detached);
+        }
       }
     } else if (Platform.isWindows) {
       await Process.start(file.path, [], mode: ProcessStartMode.detached);
@@ -283,10 +507,11 @@ class UpdateService {
   /// High-level auto-updater: downloads, verifies SHA-256, and launches installation
   Future<void> runAutoUpdate({
     required UpdateManifest manifest,
+    PlatformAsset? customAsset,
     required void Function(UpdateStatus status, double progress, String message)
         onStatus,
   }) async {
-    final asset = manifest.getAssetForCurrentPlatform();
+    final asset = customAsset ?? manifest.getAssetForCurrentPlatform();
     if (asset == null) {
       throw Exception(
         'No release asset configured for platform: ${manifest.targetPlatformName}',
