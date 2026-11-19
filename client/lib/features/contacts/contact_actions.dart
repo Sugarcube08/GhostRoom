@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:image_picker/image_picker.dart';
@@ -10,6 +11,12 @@ import '../../core/providers.dart';
 import '../contacts/contact.dart';
 import '../../core/crypto/identity_service.dart';
 import '../../design_system/colors.dart';
+import '../../design_system/typography.dart';
+import '../../design_system/spacing.dart';
+import '../../design_system/components/components.dart';
+import '../chat/conversation_service.dart';
+import '../chat/conversation_state.dart';
+import '../chat/conversation_screen.dart';
 
 mixin ContactActions<T extends ConsumerStatefulWidget> on ConsumerState<T> {
   void openScanner(BuildContext context) async {
@@ -193,40 +200,376 @@ mixin ContactActions<T extends ConsumerStatefulWidget> on ConsumerState<T> {
     );
   }
 
-  void processScannedData(BuildContext context, String data) async {
-    try {
-      final idService = ref.read(identityServiceProvider);
-      final pkg = IdentityPackage.fromEncodedString(data);
-      final isValid = idService.verifyPackage(pkg);
-      if (!isValid) throw Exception('Invalid package signature');
+  void handleDeepLinkUri(BuildContext context, Uri uri) {
+    debugPrint('GhostRoom handling deep link URI: $uri');
 
-      final eidBytes = base64Decode(pkg.eid);
-      final xidBytes = base64Decode(pkg.xid);
-      
-      final publicId = idService.derivePublicId(eidBytes);
-      final fingerprint = idService.calculateFingerprint(eidBytes, xidBytes);
-
-      final contact = Contact(
-        publicId: publicId,
-        alias: 'New Contact',
-        eid: pkg.eid,
-        xid: pkg.xid,
-        fingerprint: fingerprint,
-        createdAt: DateTime.now(),
-        preferredRelay: pkg.relays.isNotEmpty ? pkg.relays.first : null,
-      );
-
-      await ref.read(contactServiceProvider).saveContact(contact);
-      if (!context.mounted) return;
-      
-      // Removed the unconditional Navigator.pop(context) which caused double-pops
-      // If we are in a dialog (like showManualImport), we handle the pop there.
-      
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Contact Added')));
-    } catch (e) {
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+    // 1. Custom scheme: ghostroom://
+    if (uri.scheme == 'ghostroom') {
+      if (uri.host == 'identity') {
+        final payload = uri.pathSegments.isNotEmpty ? uri.pathSegments.first : null;
+        if (payload != null) {
+          processScannedData(context, payload);
+          return;
+        }
+      }
+      if (uri.host == 'connect') {
+        final publicId = uri.pathSegments.isNotEmpty ? uri.pathSegments.first : null;
+        if (publicId != null && publicId.isNotEmpty) {
+          showContactVerificationModal(context, publicId: publicId);
+          return;
+        }
+      }
+      if (uri.pathSegments.contains('connect')) {
+        final idx = uri.pathSegments.indexOf('connect');
+        if (idx + 1 < uri.pathSegments.length) {
+          showContactVerificationModal(context, publicId: uri.pathSegments[idx + 1]);
+          return;
+        }
+      }
+      if (uri.pathSegments.contains('u')) {
+        final idx = uri.pathSegments.indexOf('u');
+        if (idx + 1 < uri.pathSegments.length) {
+          showContactVerificationModal(context, publicId: uri.pathSegments[idx + 1]);
+          return;
+        }
+      }
     }
+
+    // 2. HTTPS / HTTP: https://ghost-room-chi.vercel.app/connect/<publicId> or /u/<publicId>
+    if (uri.scheme == 'https' || uri.scheme == 'http') {
+      if (uri.pathSegments.isNotEmpty) {
+        final first = uri.pathSegments.first;
+        if ((first == 'connect' || first == 'u') && uri.pathSegments.length > 1) {
+          final publicId = uri.pathSegments[1];
+          showContactVerificationModal(context, publicId: publicId);
+          return;
+        }
+        if (first == 'i' && uri.pathSegments.length > 1) {
+          processScannedData(context, uri.pathSegments[1]);
+          return;
+        }
+      }
+      if (uri.queryParameters.containsKey('id')) {
+        final publicId = uri.queryParameters['id']!;
+        showContactVerificationModal(context, publicId: publicId);
+        return;
+      }
+    }
+  }
+
+  void processScannedData(BuildContext context, String rawData) async {
+    final clean = rawData.trim();
+    if (clean.isEmpty) return;
+
+    // 1. Is it a URI / deep link?
+    final uri = Uri.tryParse(clean);
+    if (uri != null && (uri.scheme == 'http' || uri.scheme == 'https' || uri.scheme == 'ghostroom')) {
+      handleDeepLinkUri(context, uri);
+      return;
+    }
+
+    // 2. Is it an encoded identity package?
+    if (clean.contains('ghostroom://identity/') ||
+        clean.contains('/i/') ||
+        clean.startsWith('ey') ||
+        (clean.startsWith('{') && clean.contains('eid'))) {
+      try {
+        final idService = ref.read(identityServiceProvider);
+        final pkg = IdentityPackage.fromEncodedString(clean);
+        final isValid = idService.verifyPackage(pkg);
+        if (!isValid) throw Exception('Identity package signature verification failed');
+
+        final eidBytes = base64Decode(pkg.eid);
+        final publicId = idService.derivePublicId(eidBytes);
+        showContactVerificationModal(context, publicId: publicId, package: pkg);
+        return;
+      } catch (e) {
+        debugPrint('Package decode error: $e');
+      }
+    }
+
+    // 3. Raw public ID string
+    final cleanId = clean.replaceAll(RegExp(r'[^a-zA-Z0-9_-]'), '');
+    if (cleanId.length >= 8) {
+      showContactVerificationModal(context, publicId: cleanId);
+      return;
+    }
+
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Unrecognized identity format. Please scan a valid GhostRoom Passport QR or Link.')),
+      );
+    }
+  }
+
+  void showContactVerificationModal(
+    BuildContext context, {
+    required String publicId,
+    IdentityPackage? package,
+  }) async {
+    final idService = ref.read(identityServiceProvider);
+    final myIdentity = idService.currentIdentity;
+    if (myIdentity != null && myIdentity.publicId == publicId) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('This is your own GhostRoom Passport.')),
+        );
+      }
+      return;
+    }
+
+    final contactService = ref.read(contactServiceProvider);
+    final existingContact = contactService.getContact(publicId);
+
+    // Compute or retrieve fingerprint
+    String fingerprint = 'Pending Key Exchange';
+    bool isCryptographicallySigned = false;
+
+    if (package != null) {
+      try {
+        final eidBytes = base64Decode(package.eid);
+        final xidBytes = base64Decode(package.xid);
+        fingerprint = idService.calculateFingerprint(eidBytes, xidBytes);
+        isCryptographicallySigned = true;
+      } catch (_) {}
+    } else if (existingContact != null && existingContact.fingerprint.isNotEmpty) {
+      fingerprint = existingContact.fingerprint;
+      isCryptographicallySigned = fingerprint != 'Unverified' && fingerprint != 'Pending Key Exchange';
+    }
+
+    final aliasController = TextEditingController(
+      text: existingContact?.alias ?? 'Peer ${publicId.length > 8 ? publicId.substring(0, 8) : publicId}',
+    );
+
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (modalContext) {
+        final colors = AppColors.of(modalContext);
+        return Container(
+          decoration: BoxDecoration(
+            color: colors.primaryBackground,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+            border: Border.all(color: colors.hairline, width: 1),
+          ),
+          padding: EdgeInsets.only(
+            left: AppSpacing.l,
+            right: AppSpacing.l,
+            top: AppSpacing.l,
+            bottom: MediaQuery.of(modalContext).viewInsets.bottom + AppSpacing.xl,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 36,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: colors.hairline,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: AppSpacing.l),
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: isCryptographicallySigned
+                          ? colors.accent.withAlpha(25)
+                          : colors.hairline.withAlpha(50),
+                      border: Border.all(
+                        color: isCryptographicallySigned ? colors.accent : colors.hairline,
+                        width: 1,
+                      ),
+                      borderRadius: BorderRadius.circular(100),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          isCryptographicallySigned ? Icons.verified_user : Icons.link,
+                          size: 13,
+                          color: isCryptographicallySigned ? colors.accent : colors.textSecondary,
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          isCryptographicallySigned
+                              ? 'CRYPTOGRAPHICALLY VERIFIED'
+                              : (existingContact != null ? 'EXISTING CONTACT' : 'PEER INVITATION'),
+                          style: AppTypography.caption(modalContext).copyWith(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 1,
+                            color: isCryptographicallySigned ? colors.accent : colors.textSecondary,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: AppSpacing.m),
+              Text(
+                existingContact != null ? 'VERIFY CONTACT IDENTITY' : 'ADD CONTACT & VERIFY',
+                style: AppTypography.title(modalContext).copyWith(fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                'Verify the peer\'s public identity and safety numbers before initiating end-to-end encrypted sessions.',
+                style: AppTypography.caption(modalContext).copyWith(color: colors.textSecondary),
+              ),
+              const SizedBox(height: AppSpacing.l),
+              // Public ID Box
+              Text(
+                'PUBLIC ID',
+                style: AppTypography.caption(modalContext).copyWith(
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 1.5,
+                  color: colors.textSecondary,
+                ),
+              ),
+              const SizedBox(height: 6),
+              GhostSurface(
+                type: GhostSurfaceType.secondary,
+                width: double.infinity,
+                padding: const EdgeInsets.all(AppSpacing.m),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        publicId,
+                        style: AppTypography.body(modalContext).copyWith(
+                          fontFamily: 'monospace',
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: colors.primaryText,
+                        ),
+                      ),
+                    ),
+                    InkWell(
+                      onTap: () {
+                        Clipboard.setData(ClipboardData(text: publicId));
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Public ID copied to clipboard.')),
+                        );
+                      },
+                      child: Padding(
+                        padding: const EdgeInsets.all(4),
+                        child: Icon(Icons.copy, size: 16, color: colors.accent),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: AppSpacing.m),
+              // Safety Fingerprint Box
+              Text(
+                'SAFETY FINGERPRINT',
+                style: AppTypography.caption(modalContext).copyWith(
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 1.5,
+                  color: colors.textSecondary,
+                ),
+              ),
+              const SizedBox(height: 6),
+              GhostSurface(
+                type: GhostSurfaceType.secondary,
+                width: double.infinity,
+                padding: const EdgeInsets.all(AppSpacing.m),
+                child: Text(
+                  fingerprint,
+                  style: AppTypography.body(modalContext).copyWith(
+                    fontFamily: 'monospace',
+                    fontSize: 12,
+                    color: isCryptographicallySigned ? colors.accent : colors.textSecondary,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 1,
+                  ),
+                ),
+              ),
+              const SizedBox(height: AppSpacing.m),
+              // Alias Input
+              GhostInput(
+                controller: aliasController,
+                labelText: 'Contact Alias',
+                hintText: 'Enter a name for this contact...',
+              ),
+              const SizedBox(height: AppSpacing.xl),
+              Row(
+                children: [
+                  Expanded(
+                    child: GhostButton(
+                      label: 'CANCEL',
+                      type: GhostButtonType.secondary,
+                      onPressed: () => Navigator.pop(modalContext),
+                    ),
+                  ),
+                  const SizedBox(width: AppSpacing.m),
+                  Expanded(
+                    flex: 2,
+                    child: GhostButton(
+                      label: existingContact != null ? 'OPEN CHAT' : 'CONFIRM & ADD',
+                      type: GhostButtonType.accent,
+                      onPressed: () async {
+                        final alias = aliasController.text.trim().isNotEmpty
+                            ? aliasController.text.trim()
+                            : (existingContact?.alias ?? 'Peer ${publicId.length > 8 ? publicId.substring(0, 8) : publicId}');
+
+                        final updatedContact = Contact(
+                          publicId: publicId,
+                          alias: alias,
+                          eid: package?.eid ?? existingContact?.eid ?? '',
+                          xid: package?.xid ?? existingContact?.xid ?? '',
+                          fingerprint: fingerprint,
+                          createdAt: existingContact?.createdAt ?? DateTime.now(),
+                          preferredRelay: package?.relays.isNotEmpty == true
+                              ? package!.relays.first
+                              : existingContact?.preferredRelay,
+                        );
+
+                        await contactService.saveContact(updatedContact);
+
+                        if (modalContext.mounted) {
+                          Navigator.pop(modalContext);
+                        }
+
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('Contact "$alias" verified & added.')),
+                          );
+
+                          // Open Conversation
+                          final conv = Conversation(
+                            contact: updatedContact,
+                            contactId: updatedContact.publicId,
+                            alias: updatedContact.alias,
+                            messages: const [],
+                            unreadCount: 0,
+                            mode: ConversationMode.normal,
+                            lastActivityAt: DateTime.now(),
+                          );
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => ConversationScreen(conversation: conv),
+                            ),
+                          );
+                        }
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        );
+      },
+    );
   }
 }
 

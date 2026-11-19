@@ -109,20 +109,20 @@ class GhostColorsExtension extends ThemeExtension<GhostColorsExtension> {
 
 class GhostTheme {
   static const darkColors = GhostColorsExtension(
-    backgroundPrimary: Color(0xFF080808),
-    backgroundSecondary: Color(0xFF101010),
-    surfacePrimary: Color(0xFF181818),
-    surfaceSecondary: Color(0xFF202020),
-    borderPrimary: Color(0x14FFFFFF),
-    borderMuted: Color(0x0AFFFFFF),
-    textPrimary: Color(0xFFFFFFFF),
-    textSecondary: Color(0xB8FFFFFF),
-    textMuted: Color(0x66FFFFFF),
+    backgroundPrimary: Color(0xFF090A0F),
+    backgroundSecondary: Color(0xFF12141D),
+    surfacePrimary: Color(0xFF12141D),
+    surfaceSecondary: Color(0xFF1A1D2B),
+    borderPrimary: Color(0xFF1F2333),
+    borderMuted: Color(0xFF151824),
+    textPrimary: Color(0xFFF4F6FA),
+    textSecondary: Color(0xFF9BA3B8),
+    textMuted: Color(0xFF525A70),
     success: Color(0xFF3DDC97),
     warning: Color(0xFFFFB74D),
     error: Color(0xFFFF6B6B),
-    info: Color(0xFF7F7FFF),
-    accent: Color(0xFF7F7FFF),
+    info: Color(0xFF7C5CFF),
+    accent: Color(0xFF7C5CFF),
   );
 
   static const lightColors = GhostColorsExtension(

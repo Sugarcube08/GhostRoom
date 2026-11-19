@@ -38,11 +38,35 @@
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
 
-            <intent-filter android:autoVerify="true">
+            <!-- Custom Scheme Link Handler -->
+            <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="ghostroom" />
+            </intent-filter>
+
+            <!-- Android App Links with autoVerify -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data
+                    android:scheme="https"
+                    android:host="ghost-room-chi.vercel.app"
+                    android:pathPrefix="/connect" />
+                <data
+                    android:scheme="https"
+                    android:host="ghost-room-chi.vercel.app"
+                    android:pathPrefix="/u" />
+                <data
+                    android:scheme="https"
+                    android:host="ghostroom.app"
+                    android:pathPrefix="/connect" />
+                <data
+                    android:scheme="https"
+                    android:host="ghostroom.app"
+                    android:pathPrefix="/u" />
             </intent-filter>
         </activity>
         <provider

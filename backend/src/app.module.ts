@@ -7,6 +7,7 @@ import { MediaModule } from "./media/media.module";
 import { AuditModule } from "./audit/audit.module";
 import { FederationModule } from "./federation/federation.module";
 import { AppController } from "./app.controller";
+import { PortalController } from "./portal/portal.controller";
 
 import { ThrottlerModule } from "@nestjs/throttler";
 
@@ -84,6 +85,6 @@ import { ThrottlerModule } from "@nestjs/throttler";
     AuditModule,
     FederationModule,
   ],
-  controllers: [AppController],
+  controllers: [AppController, PortalController],
 })
 export class AppModule {}

@@ -6,6 +6,7 @@ import '../haptics.dart';
 
 enum GhostButtonType {
   primary,
+  accent,
   secondary,
   ghost,
   danger,
@@ -42,6 +43,10 @@ class GhostButton extends StatelessWidget {
         backgroundColor = colors.primaryText;
         foregroundColor = colors.primaryBackground;
         break;
+      case GhostButtonType.accent:
+        backgroundColor = colors.accent;
+        foregroundColor = const Color(0xFFFFFFFF);
+        break;
       case GhostButtonType.secondary:
         backgroundColor = colors.secondaryBackground;
         foregroundColor = colors.primaryText;
@@ -61,7 +66,7 @@ class GhostButton extends StatelessWidget {
     final bool isDisabled = onPressed == null || isLoading;
 
     return Opacity(
-      opacity: isDisabled ? 0.5 : 1.0,
+      opacity: isDisabled ? 0.45 : 1.0,
       child: GestureDetector(
         onTap: isDisabled ? null : () {
           AppHaptics.light();
@@ -70,12 +75,12 @@ class GhostButton extends StatelessWidget {
         child: Container(
           width: width,
           padding: const EdgeInsets.symmetric(
-            vertical: AppSpacing.m,
+            vertical: 14,
             horizontal: AppSpacing.l,
           ),
           decoration: BoxDecoration(
             color: backgroundColor,
-            borderRadius: BorderRadius.circular(AppSpacing.radiusM),
+            borderRadius: BorderRadius.circular(AppSpacing.radiusButton),
             border: border,
           ),
           child: Row(
@@ -104,6 +109,8 @@ class GhostButton extends StatelessWidget {
                 style: AppTypography.body(context).copyWith(
                   color: foregroundColor,
                   fontWeight: FontWeight.w600,
+                  fontSize: 14,
+                  letterSpacing: 0.5,
                 ),
               ),
             ],

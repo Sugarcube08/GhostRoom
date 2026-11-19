@@ -5,12 +5,12 @@ import { InboxService } from "./inbox/inbox.service";
 export class AppController {
   constructor(private readonly inboxService: InboxService) {}
 
-  @Get()
-  getRoot() {
+  @Get("status")
+  getStatus() {
     return {
       status: "online",
       service: "GhostRoom Relay",
-      version: "2.2.1",
+      version: "2.5.0",
       protocol: "store-and-forward",
       timestamp: new Date().toISOString(),
     };

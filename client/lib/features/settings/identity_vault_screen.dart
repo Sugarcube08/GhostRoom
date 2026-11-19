@@ -83,6 +83,12 @@ class _IdentityVaultScreenState extends ConsumerState<IdentityVaultScreen> with 
                                 onTap: () => _showSeedReveal(context, ref),
                               ),
                               VaultAction(
+                                icon: Icons.key_outlined,
+                                title: 'Export .ghostkey Vault',
+                                subtitle: 'Encrypted JSON keyfile for login',
+                                onTap: () => _exportGhostkeyFile(context, ref),
+                              ),
+                              VaultAction(
                                 icon: Icons.mail_lock_outlined,
                                 title: 'Identity Links',
                                 subtitle: 'Manage message requests',
@@ -291,6 +297,86 @@ class _IdentityVaultScreenState extends ConsumerState<IdentityVaultScreen> with 
         title: const Text('RECOVERY SEED'),
         content: Text(mnemonic, style: const TextStyle(fontFamily: 'monospace', fontSize: 13, height: 1.5)),
         actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('CLOSE'))],
+      ),
+    );
+  }
+
+  void _exportGhostkeyFile(BuildContext context, WidgetRef ref) async {
+    final identity = ref.read(identityServiceProvider).currentIdentity;
+    if (identity == null) return;
+    final pinController = TextEditingController();
+    final colors = AppColors.of(context);
+
+    showDialog(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: colors.secondaryBackground,
+        title: const Text('EXPORT .GHOSTKEY VAULT'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Enter a password or PIN to encrypt your portable .ghostkey file via Argon2id + XChaCha20-Poly1305:',
+              style: TextStyle(fontSize: 12, color: colors.secondaryText),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: pinController,
+              obscureText: true,
+              decoration: const InputDecoration(
+                hintText: 'Encryption Password or PIN',
+                prefixIcon: Icon(Icons.lock_outline),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: Text('CANCEL', style: TextStyle(color: colors.secondaryText.withAlpha(120))),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              final pin = pinController.text.trim();
+              if (pin.isEmpty) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Please enter an encryption PIN or password.')),
+                );
+                return;
+              }
+              Navigator.pop(dialogContext);
+
+              try {
+                final keyfileService = ref.read(keyfileServiceProvider);
+                final keyfile = keyfileService.createKeyfile(
+                  mnemonic: identity.mnemonic,
+                  publicId: identity.publicId,
+                  fingerprint: identity.fingerprint,
+                  password: pin,
+                );
+                await keyfileService.shareKeyfile(keyfile: keyfile);
+
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('.ghostkey file generated and exported successfully!')),
+                  );
+                }
+              } catch (e) {
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Failed to export .ghostkey: $e')),
+                  );
+                }
+              }
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: colors.ghostAccent,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('EXPORT'),
+          ),
+        ],
       ),
     );
   }

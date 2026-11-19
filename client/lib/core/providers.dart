@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sodium/sodium_sumo.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'crypto/identity_service.dart';
+import 'crypto/keyfile_service.dart';
 import 'network/relay_manager.dart';
 import 'network/websocket_service.dart';
 import 'notification_service.dart';
@@ -96,6 +97,10 @@ final backupServiceProvider = Provider<BackupService>((ref) {
     ref.watch(contactServiceProvider),
     ref.watch(relayManagerProvider),
   );
+});
+
+final keyfileServiceProvider = Provider<KeyfileService>((ref) {
+  return KeyfileService(ref.watch(sodiumProvider));
 });
 
 final relayManagerProvider = Provider<RelayManager>((ref) {

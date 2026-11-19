@@ -56,7 +56,7 @@ class GhostSurface extends StatelessWidget {
       padding: padding,
       decoration: BoxDecoration(
         color: backgroundColor,
-        borderRadius: borderRadius ?? BorderRadius.circular(AppSpacing.radiusM),
+        borderRadius: borderRadius ?? BorderRadius.circular(AppSpacing.radiusCard),
         border: border ?? Border.all(color: colors.hairline, width: 1),
         boxShadow: boxShadow,
       ),

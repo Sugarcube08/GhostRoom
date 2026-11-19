@@ -28,7 +28,7 @@ class MyPassportCard extends StatelessWidget {
       ),
       padding: const EdgeInsets.all(AppSpacing.l),
       type: GhostSurfaceType.elevated,
-      borderRadius: BorderRadius.circular(24),
+      borderRadius: BorderRadius.circular(12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -38,10 +38,10 @@ class MyPassportCard extends StatelessWidget {
                 padding: const EdgeInsets.all(AppSpacing.s),
                 decoration: BoxDecoration(
                   color: Colors.white,
-                  borderRadius: BorderRadius.circular(16),
+                  borderRadius: BorderRadius.circular(8),
                 ),
                 child: QrImageView(
-                  data: identity.publicId,
+                  data: 'https://ghost-room-chi.vercel.app/connect/${identity.publicId}',
                   version: QrVersions.auto,
                   size: 80.0,
                   gapless: false,

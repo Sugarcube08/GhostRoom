@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart';
 import 'dart:io';
 import 'dart:ui' as ui;
 import 'package:path_provider/path_provider.dart';
@@ -77,6 +78,8 @@ class _MyPassportScreenState extends ConsumerState<MyPassportScreen> with Identi
       );
     }
 
+    final connectUrl = getConnectUrl(identity.publicId);
+
     return Scaffold(
       backgroundColor: colors.primaryBackground,
       appBar: AppBar(
@@ -100,10 +103,6 @@ class _MyPassportScreenState extends ConsumerState<MyPassportScreen> with Identi
                     FutureBuilder<IdentityPackage>(
                       future: idService.createPackage([]),
                       builder: (context, snapshot) {
-                        if (!snapshot.hasData) {
-                          return const CircularProgressIndicator();
-                        }
-                        final pkgString = snapshot.data!.toEncodedString();
                         return Column(
                           children: [
                             RepaintBoundary(
@@ -111,19 +110,19 @@ class _MyPassportScreenState extends ConsumerState<MyPassportScreen> with Identi
                               child: GhostSurface(
                                 type: GhostSurfaceType.elevated,
                                 padding: const EdgeInsets.all(AppSpacing.xl),
-                                borderRadius: BorderRadius.circular(32),
+                                borderRadius: BorderRadius.circular(12),
                                 child: Column(
                                   children: [
                                     Container(
                                       padding: const EdgeInsets.all(AppSpacing.m),
                                       decoration: BoxDecoration(
                                         color: Colors.white,
-                                        borderRadius: BorderRadius.circular(20),
+                                        borderRadius: BorderRadius.circular(8),
                                       ),
                                       child: QrImageView(
-                                        data: pkgString,
+                                        data: connectUrl,
                                         version: QrVersions.auto,
-                                        size: isNarrow ? 160 : 200,
+                                        size: isNarrow ? 170 : 210,
                                         gapless: false,
                                         eyeStyle: const QrEyeStyle(eyeShape: QrEyeShape.square, color: Colors.black),
                                         dataModuleStyle: const QrDataModuleStyle(dataModuleShape: QrDataModuleShape.square, color: Colors.black),
@@ -132,7 +131,7 @@ class _MyPassportScreenState extends ConsumerState<MyPassportScreen> with Identi
                                     const SizedBox(height: AppSpacing.xl),
                                     FittedBox(
                                       fit: BoxFit.scaleDown,
-                                      child: Text(
+                                      child: SelectableText(
                                         identity.publicId,
                                         textAlign: TextAlign.center,
                                         style: AppTypography.section(context).copyWith(
@@ -144,7 +143,7 @@ class _MyPassportScreenState extends ConsumerState<MyPassportScreen> with Identi
                                     ),
                                     const SizedBox(height: AppSpacing.s),
                                     Text(
-                                      'GHOSTROOM ID',
+                                      'PUBLIC IDENTITY ID',
                                       style: AppTypography.caption(context).copyWith(
                                         color: colors.ghostAccent,
                                         fontWeight: FontWeight.w900,
@@ -159,63 +158,64 @@ class _MyPassportScreenState extends ConsumerState<MyPassportScreen> with Identi
                             const SizedBox(height: AppSpacing.xl),
                             _buildInfoSection(
                               context,
+                              'SHAREABLE CONNECT URL',
+                              connectUrl,
+                              isMonospace: true,
+                              onCopy: () => copyConnectUrl(context, identity.publicId),
+                            ),
+                            const SizedBox(height: AppSpacing.m),
+                            _buildInfoSection(
+                              context,
                               'SAFETY FINGERPRINT',
                               identity.fingerprint,
                               isMonospace: true,
+                              onCopy: () {
+                                Clipboard.setData(ClipboardData(text: identity.fingerprint));
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(content: Text('Safety fingerprint copied to clipboard.')),
+                                );
+                              },
                             ),
                             const SizedBox(height: AppSpacing.l),
                             Padding(
-                              padding: const EdgeInsets.symmetric(vertical: AppSpacing.l),
+                              padding: const EdgeInsets.symmetric(vertical: AppSpacing.m),
                               child: Text(
-                                'Scan this passport to establish a secure, end-to-end encrypted channel. Your identity is local and sovereign.',
+                                'Anyone with this link or QR code can securely initiate an end-to-end encrypted channel with you.',
                                 textAlign: TextAlign.center,
-                                style: TextStyle(fontSize: 13, color: colors.textMuted, height: 1.5),
+                                style: TextStyle(fontSize: 12, color: colors.textMuted, height: 1.5),
                               ),
                             ),
                             const SizedBox(height: AppSpacing.l),
-                            // Responsive Button Row/Column
-                            if (constraints.maxWidth > 380)
-                              Row(
-                                children: [
-                                  Expanded(
-                                    child: GhostButton(
-                                      label: 'DOWNLOAD',
-                                      icon: Icons.download,
-                                      type: GhostButtonType.secondary,
-                                      onPressed: () => _saveQRToGallery(identity.publicId),
-                                    ),
-                                  ),
-                                  const SizedBox(width: AppSpacing.m),
-                                  Expanded(
-                                    child: GhostButton(
-                                      label: 'SHARE LINK',
-                                      icon: Icons.share,
-                                      type: GhostButtonType.primary,
-                                      onPressed: () => shareIdentity(ref),
-                                    ),
-                                  ),
-                                ],
-                              )
-                            else
-                              Column(
-                                children: [
-                                  GhostButton(
-                                    label: 'DOWNLOAD',
-                                    icon: Icons.download,
+                            // Action Buttons
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: GhostButton(
+                                    label: 'COPY LINK',
+                                    icon: Icons.copy,
                                     type: GhostButtonType.secondary,
-                                    width: double.infinity,
-                                    onPressed: () => _saveQRToGallery(identity.publicId),
+                                    onPressed: () => copyConnectUrl(context, identity.publicId),
                                   ),
-                                  const SizedBox(height: AppSpacing.m),
-                                  GhostButton(
+                                ),
+                                const SizedBox(width: AppSpacing.m),
+                                Expanded(
+                                  child: GhostButton(
                                     label: 'SHARE LINK',
                                     icon: Icons.share,
-                                    type: GhostButtonType.primary,
-                                    width: double.infinity,
+                                    type: GhostButtonType.accent,
                                     onPressed: () => shareIdentity(ref),
                                   ),
-                                ],
-                              ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: AppSpacing.m),
+                            GhostButton(
+                              label: 'DOWNLOAD QR PASSPORT',
+                              icon: Icons.download,
+                              type: GhostButtonType.secondary,
+                              width: double.infinity,
+                              onPressed: () => _saveQRToGallery(identity.publicId),
+                            ),
                           ],
                         );
                       },
@@ -231,7 +231,13 @@ class _MyPassportScreenState extends ConsumerState<MyPassportScreen> with Identi
     );
   }
 
-  Widget _buildInfoSection(BuildContext context, String label, String value, {bool isMonospace = false}) {
+  Widget _buildInfoSection(
+    BuildContext context,
+    String label,
+    String value, {
+    bool isMonospace = false,
+    VoidCallback? onCopy,
+  }) {
     final colors = AppColors.of(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -250,16 +256,33 @@ class _MyPassportScreenState extends ConsumerState<MyPassportScreen> with Identi
         GhostSurface(
           type: GhostSurfaceType.secondary,
           width: double.infinity,
-          padding: const EdgeInsets.all(AppSpacing.m),
-          child: Text(
-            value,
-            style: AppTypography.body(context).copyWith(
-              fontFamily: isMonospace ? 'monospace' : null,
-              fontWeight: isMonospace ? FontWeight.bold : null,
-              fontSize: isMonospace ? 12 : null,
-              color: colors.primaryText.withAlpha(200),
-            ),
-            textAlign: TextAlign.center,
+          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.m, vertical: AppSpacing.m),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  value,
+                  style: AppTypography.body(context).copyWith(
+                    fontFamily: isMonospace ? 'monospace' : null,
+                    fontWeight: isMonospace ? FontWeight.bold : null,
+                    fontSize: isMonospace ? 12 : null,
+                    color: colors.primaryText.withAlpha(220),
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              if (onCopy != null) ...[
+                const SizedBox(width: 8),
+                InkWell(
+                  onTap: onCopy,
+                  borderRadius: BorderRadius.circular(4),
+                  child: Padding(
+                    padding: const EdgeInsets.all(4),
+                    child: Icon(Icons.copy, size: 16, color: colors.ghostAccent),
+                  ),
+                ),
+              ],
+            ],
           ),
         ),
       ],

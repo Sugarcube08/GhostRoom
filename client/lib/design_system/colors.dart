@@ -3,24 +3,24 @@ import '../core/theme/ghost_theme.dart';
 
 class AppColors {
   static GhostColorsExtension of(BuildContext context) {
-    return Theme.of(context).extension<GhostColorsExtension>()!;
+    return Theme.of(context).extension<GhostColorsExtension>() ?? GhostTheme.darkColors;
   }
 
-  // Semantic tokens (defaults serving as fallback dark values)
-  static const Color backgroundPrimary = Color(0xFF080808);
-  static const Color backgroundSecondary = Color(0xFF101010);
-  static const Color surfacePrimary = Color(0xFF181818);
-  static const Color surfaceSecondary = Color(0xFF202020);
-  static const Color borderPrimary = Color(0x14FFFFFF);
-  static const Color borderMuted = Color(0x0AFFFFFF);
-  static const Color textPrimary = Color(0xFFFFFFFF);
-  static const Color textSecondary = Color(0xB8FFFFFF);
-  static const Color textMuted = Color(0x66FFFFFF);
+  // Obsidian Void & Elevated Slate Architectural Palette
+  static const Color backgroundPrimary = Color(0xFF090A0F); // Obsidian Void
+  static const Color backgroundSecondary = Color(0xFF12141D); // Elevated Slate
+  static const Color surfacePrimary = Color(0xFF12141D); // Elevated Slate
+  static const Color surfaceSecondary = Color(0xFF1A1D2B); // Secondary Slate Container
+  static const Color borderPrimary = Color(0xFF1F2333); // Crisp 1px Structural Border
+  static const Color borderMuted = Color(0xFF151824); // Subtle Border
+  static const Color textPrimary = Color(0xFFF4F6FA); // High-Contrast Mist
+  static const Color textSecondary = Color(0xFF9BA3B8); // Secondary Mist
+  static const Color textMuted = Color(0xFF525A70); // Muted Slate
   static const Color success = Color(0xFF3DDC97);
   static const Color warning = Color(0xFFFFB74D);
   static const Color error = Color(0xFFFF6B6B);
-  static const Color info = Color(0xFF7F7FFF);
-  static const Color accent = Color(0xFF7F7FFF);
+  static const Color info = Color(0xFF7C5CFF);
+  static const Color accent = Color(0xFF7C5CFF); // Cyber Iris / Phantom Violet
 
   // Legacy constants for backward compatibility
   static const Color primaryBackground = backgroundPrimary;

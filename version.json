@@ -1,7 +1,7 @@
 {
   "version": "2.5.0",
   "build_number": 6,
-  "release_date": "2026-11-18T12:39:02.406838+00:00",
+  "release_date": "2026-11-18T14:33:18.493873+00:00",
   "release_url": "https://github.com/Sugarcube08/GhostRoom/releases/tag/v2.5.0",
   "changelog": "GhostRoom v2.5.0+6: Zero-knowledge P2P store-and-forward relay, automated in-app updates with SHA-256 integrity verification, and enhanced offline queuing.",
   "platforms": {
@@ -10,48 +10,48 @@
       "format": "apk",
       "filename": "ghostroom-android.apk",
       "url": "https://github.com/Sugarcube08/GhostRoom/releases/download/v2.5.0/ghostroom-android.apk",
-      "sha256": "9e24fa89a56ec97e3546dda01d74c4d9fcfe78f9b1e7c7e6d04de700ac33ffb1",
-      "size_bytes": 82175926
+      "sha256": "b5b753d5a06a8c50be91c4fd07aa55c5f41e05c24e487b8d18533f6bd5c6f8e0",
+      "size_bytes": 82454482
     },
     "linux": {
       "name": "Linux Universal AppImage",
       "format": "appimage",
       "filename": "ghostroom-linux-x86_64.AppImage",
       "url": "https://github.com/Sugarcube08/GhostRoom/releases/download/v2.5.0/ghostroom-linux-x86_64.AppImage",
-      "sha256": "78a5596278b3c3a64354f93ff15170fa81ef89a4d23f44b27fce16388c252179",
-      "size_bytes": 12354752
+      "sha256": "494afbffb38e4c24c26e734d2256a532bb9221acd37b8839438d844ee20fbb0b",
+      "size_bytes": 12375232
     },
     "linux_appimage": {
       "name": "Linux Universal AppImage",
       "format": "appimage",
       "filename": "ghostroom-linux-x86_64.AppImage",
       "url": "https://github.com/Sugarcube08/GhostRoom/releases/download/v2.5.0/ghostroom-linux-x86_64.AppImage",
-      "sha256": "78a5596278b3c3a64354f93ff15170fa81ef89a4d23f44b27fce16388c252179",
-      "size_bytes": 12354752
+      "sha256": "494afbffb38e4c24c26e734d2256a532bb9221acd37b8839438d844ee20fbb0b",
+      "size_bytes": 12375232
     },
     "linux_deb": {
-      "name": "Debian / Ubuntu (.deb)",
+      "name": "Debian / Ubuntu Package (.deb)",
       "format": "deb",
       "filename": "ghostroom-linux.deb",
       "url": "https://github.com/Sugarcube08/GhostRoom/releases/download/v2.5.0/ghostroom-linux.deb",
-      "sha256": "eaaac911f169d988dd10549c9d0a93a640a73265c94251fc855ae100d2de1e64",
-      "size_bytes": 9817314
+      "sha256": "8cd4db21c594ad869ee04c232fbaa8d89693dab06209ac2d8151d5e72230ca26",
+      "size_bytes": 9833612
     },
     "linux_rpm": {
-      "name": "Fedora / RHEL / openSUSE (.rpm)",
+      "name": "Fedora / RHEL / openSUSE Package (.rpm)",
       "format": "rpm",
       "filename": "ghostroom-2.5.0-2.x86_64.rpm",
       "url": "https://github.com/Sugarcube08/GhostRoom/releases/download/v2.5.0/ghostroom-2.5.0-2.x86_64.rpm",
-      "sha256": "68d68159f5081f1df03cdc531ce7c48d3ea6f9834afea122b15fd47a1125484a",
-      "size_bytes": 9836152
+      "sha256": "55f34ae6b1a8d782922e008e178ba563461295e899ed68acf57ca431ca389e7a",
+      "size_bytes": 9852889
     },
     "linux_tar": {
       "name": "Linux Standalone Bundle (.tar.gz)",
       "format": "tar.gz",
       "filename": "ghostroom-linux-x86_64.tar.gz",
       "url": "https://github.com/Sugarcube08/GhostRoom/releases/download/v2.5.0/ghostroom-linux-x86_64.tar.gz",
-      "sha256": "9667f6c83c98463e083abd9412df81c1650b90524d75ef6025ff44f5741b1c0b",
-      "size_bytes": 12102039
+      "sha256": "a8ec7ef4b48c987ac552a812c7f224226655ca2e1cbc08b178ba11881c9af448",
+      "size_bytes": 12125256
     },
     "windows": {
       "name": "Windows Portable Bundle (x64)",
@@ -74,8 +74,8 @@
       "format": "zip",
       "filename": "ghostroom-web.zip",
       "url": "https://github.com/Sugarcube08/GhostRoom/releases/download/v2.5.0/ghostroom-web.zip",
-      "sha256": "42e063968998cc71c116b9d9f8b18fc799c90438fdff8fc1c53285239cdfaf4d",
-      "size_bytes": 14779862
+      "sha256": "8207e0fb06bb700c97e4d8d5402c7784eb252c11a7a25a7aba23bc79364ee93a",
+      "size_bytes": 14786431
     }
   }
 }

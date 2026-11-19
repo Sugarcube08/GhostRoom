@@ -16,6 +16,7 @@ class GhostInput extends StatelessWidget {
   final Widget? suffixIcon;
   final int? maxLines;
   final bool autofocus;
+  final bool isMonospace;
 
   const GhostInput({
     super.key,
@@ -31,6 +32,7 @@ class GhostInput extends StatelessWidget {
     this.suffixIcon,
     this.maxLines = 1,
     this.autofocus = false,
+    this.isMonospace = false,
   });
 
   @override
@@ -43,13 +45,13 @@ class GhostInput extends StatelessWidget {
       children: [
         if (labelText != null) ...[
           Padding(
-            padding: const EdgeInsets.only(left: 4, bottom: 8),
+            padding: const EdgeInsets.only(left: 2, bottom: 8),
             child: Text(
               labelText!.toUpperCase(),
               style: AppTypography.caption(context).copyWith(
-                fontWeight: FontWeight.bold,
-                letterSpacing: 1.0,
-                color: colors.secondaryText.withAlpha(120),
+                fontWeight: FontWeight.w700,
+                letterSpacing: 1.2,
+                color: colors.textSecondary,
               ),
             ),
           ),
@@ -63,29 +65,37 @@ class GhostInput extends StatelessWidget {
           onSubmitted: onSubmitted,
           maxLines: maxLines,
           autofocus: autofocus,
-          style: AppTypography.body(context),
+          style: isMonospace
+              ? AppTypography.mono(context, fontSize: 14)
+              : AppTypography.body(context),
           cursorColor: colors.ghostAccent,
           decoration: InputDecoration(
             hintText: hintText,
-            hintStyle: AppTypography.body(context).copyWith(
-              color: colors.secondaryText.withAlpha(80),
+            hintStyle: (isMonospace
+                    ? AppTypography.mono(context, fontSize: 14)
+                    : AppTypography.body(context))
+                .copyWith(
+              color: colors.textMuted,
             ),
             prefixIcon: prefixIcon,
             suffixIcon: suffixIcon,
             filled: true,
             fillColor: colors.secondaryBackground,
-            contentPadding: const EdgeInsets.all(AppSpacing.m),
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 14,
+              vertical: 14,
+            ),
             border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(AppSpacing.radiusM),
+              borderRadius: BorderRadius.circular(AppSpacing.radiusInput),
               borderSide: BorderSide(color: colors.hairline, width: 1),
             ),
             enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(AppSpacing.radiusM),
+              borderRadius: BorderRadius.circular(AppSpacing.radiusInput),
               borderSide: BorderSide(color: colors.hairline, width: 1),
             ),
             focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(AppSpacing.radiusM),
-              borderSide: BorderSide(color: colors.ghostAccent, width: 1),
+              borderRadius: BorderRadius.circular(AppSpacing.radiusInput),
+              borderSide: BorderSide(color: colors.ghostAccent, width: 1.5),
             ),
           ),
         ),

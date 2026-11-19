@@ -281,66 +281,13 @@ class _GhostAppState extends ConsumerState<GhostApp> with WidgetsBindingObserver
   }
 
   void _handleDeepLink(Uri uri) {
-    if (uri.scheme == 'ghostroom' && uri.host == 'identity') {
-      final payload = uri.pathSegments.isNotEmpty ? uri.pathSegments.first : null;
-      if (payload != null) {
-        // Find the current navigator state and show a preview dialog
-        final context = navigatorKey.currentContext;
-        if (context != null && context.mounted) {
-          Future.microtask(() {
-            if (context.mounted) _showDeepLinkPreview(context, payload);
-          });
+    final context = navigatorKey.currentContext;
+    if (context != null && context.mounted) {
+      Future.microtask(() {
+        if (context.mounted) {
+          handleDeepLinkUri(context, uri);
         }
-      }
-    }
-  }
-
-  void _showDeepLinkPreview(BuildContext context, String payload) {
-    try {
-      final pkg = IdentityPackage.fromEncodedString(payload);
-      final idService = ref.read(identityServiceProvider);
-      final eidBytes = base64Decode(pkg.eid);
-      final publicId = idService.derivePublicId(eidBytes);
-
-      showDialog(
-        context: context,
-        builder: (dialogContext) {
-          final dialogColors = AppColors.of(dialogContext);
-          return AlertDialog(
-            backgroundColor: dialogColors.backgroundSecondary,
-            title: const Text('NEW IDENTITY LINK'),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text('An identity package was shared via deep link.', style: TextStyle(color: dialogColors.textSecondary)),
-                const SizedBox(height: 16),
-                Text(publicId, style: TextStyle(fontWeight: FontWeight.bold, color: dialogColors.accent)),
-                const SizedBox(height: 8),
-                Text('Would you like to view and add this contact?', style: TextStyle(fontSize: 12, color: dialogColors.textPrimary)),
-              ],
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(dialogContext), 
-                child: Text('CANCEL', style: TextStyle(color: dialogColors.textMuted))
-              ),
-              ElevatedButton(
-                onPressed: () {
-                  Navigator.pop(dialogContext);
-                  processScannedData(context, payload);
-                }, 
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: dialogColors.accent,
-                  foregroundColor: dialogColors.backgroundPrimary,
-                ),
-                child: const Text('ADD CONTACT')
-              ),
-            ],
-          );
-        },
-      );
-    } catch (_) {
-      // Ignore
+      });
     }
   }
 
